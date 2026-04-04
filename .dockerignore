@@ -1,0 +1,13 @@
+node_modules
+dist
+dist-server
+dist-ssr
+.git
+.serena
+.env*
+.envrc
+*.md
+*.log
+.DS_Store
+.vscode
+.idea
