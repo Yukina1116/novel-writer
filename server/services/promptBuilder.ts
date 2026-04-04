@@ -1,64 +1,4 @@
-
-import { GoogleGenAI } from '@google/genai';
-import { SettingItem, KnowledgeItem, Project, NovelChunk, AiSettings, Relation, PlotItem } from './types';
-import { useStore } from './store/index';
-
-// FIX: Updated to strictly follow GenAI initialization guidelines using process.env.API_KEY directly.
-export const getAiClient = () => {
-    return new GoogleGenAI({ apiKey: process.env.API_KEY });
-};
-
-export const API_TIMEOUT = 120000; // 120 seconds for general API calls
-export const WRITE_API_TIMEOUT = 300000; // 5 minutes for writing mode
-
-export const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
-  return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      reject(new Error('AIの応答がタイムアウトしました。ネットワーク接続を確認するか、少し待ってからもう一度お試しください。'));
-    }, ms);
-
-    promise.then(
-      (res) => {
-        clearTimeout(timeoutId);
-        resolve(res);
-      },
-      (err) => {
-        clearTimeout(timeoutId);
-        reject(err);
-      }
-    );
-  });
-};
-
-export const handleError = (error: any, functionName: string): { success: false; error: Error } => {
-    console.error(`Error in ${functionName}:`, error);
-    
-    let message = '不明なエラーが発生しました。';
-
-    // Prioritize nested error message if it exists, as seen in the logs.
-    if (error?.error?.message) {
-        message = error.error.message;
-    } else if (error?.message) {
-        message = error.message;
-    } else if (typeof error === 'string') {
-        message = error;
-    }
-
-    // Check for specific error types from the message content
-    if (message.includes('quota') || message.includes('RESOURCE_EXHAUSTED')) {
-        return { success: false as const, error: new Error('AIの無料利用枠の上限に達してしまいました。APIは時間経過で回復しますが、しばらく待っても改善しない場合は、Google AI Studioでプランや支払い方法を確認してみてください。') };
-    }
-    if (message.includes('API key not valid')) {
-        return { success: false as const, error: new Error('APIキーが無効です。設定を確認してください。') };
-    }
-    if (message.includes('timeout')) {
-        return { success: false as const, error: new Error('AIの応答がタイムアウトしました。ネットワーク接続を確認するか、少し待ってからもう一度お試しください。')};
-    }
-    
-    // For other cases, return the extracted or a generic message.
-    return { success: false as const, error: new Error(message) };
-};
-
+import { SettingItem, KnowledgeItem, NovelChunk, Relation } from '../../types';
 
 export const getPersonaInstruction = (persona: string, userName?: string): string => {
     let instruction = '';
@@ -87,11 +27,10 @@ export const getPersonaInstruction = (persona: string, userName?: string): strin
     return instruction;
 };
 
-
 export const formatSettings = (settings: SettingItem[]): string => {
     const characters = settings.filter(s => s.type === 'character');
     const worlds = settings.filter(s => s.type === 'world');
-    
+
     let formatted = '## Characters\n';
     characters.forEach(c => {
         formatted += `### ${c.name}\n`;
@@ -105,7 +44,7 @@ export const formatSettings = (settings: SettingItem[]): string => {
     worlds.forEach(w => {
         formatted += `### ${w.name}\n`;
         if (w.longDescription) formatted += `${w.longDescription}\n`;
-        if(w.fields){
+        if (w.fields) {
             w.fields.forEach(f => {
                 formatted += `- ${f.key}: ${f.value}\n`;
             });
@@ -132,7 +71,6 @@ export const formatRelations = (relations: Relation[], characters: SettingItem[]
     return formatted;
 };
 
-
 export const formatKnowledge = (knowledge: KnowledgeItem[]): string => {
     const activeKnowledge = knowledge.filter(k => !k.isArchived);
     const pinned = activeKnowledge.filter(k => k.isPinned);
@@ -143,9 +81,7 @@ export const formatKnowledge = (knowledge: KnowledgeItem[]): string => {
     const formatItems = (items: KnowledgeItem[]) => {
         const groupedByCategory = items.reduce((acc, item) => {
             const category = item.category || 'Uncategorized';
-            if (!acc[category]) {
-                acc[category] = [];
-            }
+            if (!acc[category]) acc[category] = [];
             acc[category].push(item);
             return acc;
         }, {} as Record<string, KnowledgeItem[]>);
@@ -166,16 +102,11 @@ export const formatKnowledge = (knowledge: KnowledgeItem[]): string => {
         formatted += '## Pinned Knowledge (Highest Priority Rules)\n';
         formatted += formatItems(pinned);
     }
-    
     if (unpinned.length > 0) {
         formatted += '## Knowledge Base (Immutable Rules)\n';
         formatted += formatItems(unpinned);
     }
-
-    if (formatted === '') {
-        return 'No knowledge base entries.';
-    }
-
+    if (formatted === '') return 'No knowledge base entries.';
     return formatted;
 };
 
@@ -192,24 +123,14 @@ export const formatNovelContent = (content: NovelChunk[], memoryScope: string): 
     }
 
     if (memoryScope === 'full_context') {
-        if (unpinned.length > 0) {
-            formatted += '## Full Story Content (from beginning to end)\n' + unpinned.map(c => c.text).join('\n\n');
-        }
+        if (unpinned.length > 0) formatted += '## Full Story Content (from beginning to end)\n' + unpinned.map(c => c.text).join('\n\n');
     } else if (memoryScope === 'summary') {
-        if (unpinned.length > 0) {
-            // For summary, provide a bit of recent context to bridge the gap.
-            formatted += '## Recent Story Content\n' + unpinned.slice(-3).map(c => c.text).join('\n\n');
-        }
+        if (unpinned.length > 0) formatted += '## Recent Story Content\n' + unpinned.slice(-3).map(c => c.text).join('\n\n');
     } else if (memoryScope === 'current_chapter') {
-        if (unpinned.length > 0) {
-            // Approximation: get last 10 chunks for a "chapter"
-            formatted += '## Recent Story Content\n' + unpinned.slice(-10).map(c => c.text).join('\n\n');
-        }
-    } else { // 'current_scene' and default
-        if (unpinned.length > 0) {
-            formatted += '## Recent Story Content\n' + unpinned.slice(-2).map(c => c.text).join('\n\n');
-        }
+        if (unpinned.length > 0) formatted += '## Recent Story Content\n' + unpinned.slice(-10).map(c => c.text).join('\n\n');
+    } else {
+        if (unpinned.length > 0) formatted += '## Recent Story Content\n' + unpinned.slice(-2).map(c => c.text).join('\n\n');
     }
-    
+
     return formatted.trim() || 'No relevant content to display.';
 };
