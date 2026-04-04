@@ -5,10 +5,8 @@ import { listProjects, getProject, createProjectApi } from '../projectApi';
 export const useFirestoreSync = () => {
     const [isInitializing, setIsInitializing] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const activeProjectId = useStore(state => state.activeProjectId);
     const flushSave = useStore(state => state.flushSave);
 
-    // Initial load: migrate localStorage then fetch from Firestore
     useEffect(() => {
         const init = async () => {
             try {
@@ -20,21 +18,29 @@ export const useFirestoreSync = () => {
                         const state = parsed?.state;
                         if (state?.allProjectsData) {
                             const projects = Object.values(state.allProjectsData) as any[];
-                            await Promise.all(projects.map(p => createProjectApi(p)));
-                            localStorage.removeItem('NOVEL_WRITER_storage');
-                            console.log(`Migrated ${projects.length} projects to Firestore`);
+                            let migrated = 0;
+                            for (const p of projects) {
+                                try {
+                                    await createProjectApi(p);
+                                    migrated++;
+                                } catch (e) {
+                                    console.error(`Failed to migrate project "${p.name || p.id}":`, e);
+                                }
+                            }
+                            console.log(`Migrated ${migrated}/${projects.length} projects to Firestore`);
                         }
                     } catch (e) {
-                        console.error('localStorage migration failed:', e);
+                        console.error('localStorage parse failed:', e);
                     }
+                    // Always remove localStorage regardless of migration result
+                    localStorage.removeItem('NOVEL_WRITER_storage');
                 }
 
                 // Step 2: Load project list from Firestore
                 const projectList = await listProjects();
                 if (projectList.length > 0) {
-                    // Fetch all projects
                     const projects = await Promise.all(
-                        projectList.map(p => getProject(p.id))
+                        projectList.map(p => getProject(p.id).catch(() => null))
                     );
                     const allProjectsData: Record<string, any> = {};
                     for (const p of projects) {
