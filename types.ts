@@ -201,7 +201,7 @@ export interface AppState {
     highlightedChunkId: string | null;
     projectTitle: string;
     editingChunkId: string | null;
-    saveStatus: 'synced' | 'saving' | 'dirty';
+    saveStatus: 'synced' | 'saving' | 'dirty' | 'error';
     isImageGenerating: boolean;
     leftPanelTab: LeftPanelTab;
     floatingWindows: FloatingWindow[];

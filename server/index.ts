@@ -9,6 +9,7 @@ import imageRoutes from './routes/image';
 import utilityRoutes from './routes/utility';
 import analysisRoutes from './routes/analysis';
 import dataRoutes from './routes/data';
+import projectRoutes from './routes/projects';
 
 async function startServer() {
     const app = express();
@@ -28,6 +29,9 @@ async function startServer() {
     app.use('/api/ai/image', imageRoutes);
     app.use('/api/ai/utility', utilityRoutes);
     app.use('/api/ai/analysis', analysisRoutes);
+
+    // Project CRUD routes
+    app.use('/api/projects', projectRoutes);
 
     // Data routes (tutorial, analysis-history)
     app.use('/api', dataRoutes);
