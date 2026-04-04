@@ -16,13 +16,23 @@ function stripUndefined(obj: any): any {
     return obj;
 }
 
+// Fields stored as subcollections to avoid 1MB doc limit
+const SUBCOLLECTION_FIELDS = ['novelContent', 'chatHistory', 'settings', 'knowledgeBase', 'plotBoard', 'timeline'] as const;
+
 function splitProject(project: any) {
-    const { historyTree, novelContent, chatHistory, ...meta } = project;
-    return {
-        meta: stripUndefined(meta),
-        novelContent: (novelContent || []).map(stripUndefined),
-        chatHistory: (chatHistory || []).map(stripUndefined),
-    };
+    const { historyTree, ...rest } = project;
+    const meta: any = {};
+    const subcollections: Record<string, any[]> = {};
+
+    for (const [key, value] of Object.entries(rest)) {
+        if ((SUBCOLLECTION_FIELDS as readonly string[]).includes(key)) {
+            subcollections[key] = (Array.isArray(value) ? value : []).map(stripUndefined);
+        } else {
+            meta[key] = value;
+        }
+    }
+
+    return { meta: stripUndefined(meta), subcollections };
 }
 
 export const listProjects = async (): Promise<Array<{ id: string; name: string; lastModified: string; isSimpleMode?: boolean }>> => {
@@ -37,24 +47,21 @@ export const getProject = async (id: string): Promise<Project | null> => {
     const doc = await docRef.get();
     if (!doc.exists) return null;
 
-    const meta = doc.data() as any;
+    const project = doc.data() as any;
 
-    // Read subcollections
-    const [chunksSnap, chatSnap] = await Promise.all([
-        docRef.collection('chunks').orderBy('_order').get(),
-        docRef.collection('chatHistory').orderBy('_order').get(),
-    ]);
+    // Read all subcollections in parallel
+    const snapshots = await Promise.all(
+        SUBCOLLECTION_FIELDS.map(name => docRef.collection(name).orderBy('_order').get())
+    );
 
-    meta.novelContent = chunksSnap.docs.map(d => {
-        const { _order, ...rest } = d.data();
-        return rest;
-    });
-    meta.chatHistory = chatSnap.docs.map(d => {
-        const { _order, ...rest } = d.data();
-        return rest;
+    SUBCOLLECTION_FIELDS.forEach((name, i) => {
+        project[name] = snapshots[i].docs.map(d => {
+            const { _order, ...rest } = d.data();
+            return rest;
+        });
     });
 
-    return meta as Project;
+    return project as Project;
 };
 
 export const createProject = async (project: Project): Promise<void> => {
@@ -66,16 +73,16 @@ export const updateProject = async (id: string, project: Project): Promise<void>
 };
 
 async function saveProject(project: Project): Promise<void> {
-    const { meta, novelContent, chatHistory } = splitProject(project);
-    const db = getFirestore();
+    const { meta, subcollections } = splitProject(project);
     const docRef = projectsCollection().doc(project.id);
 
-    // Write main document (without novelContent/chatHistory)
+    // Write main document (small metadata only)
     await docRef.set(meta);
 
-    // Write subcollections (delete old, write new)
-    await replaceSubcollection(docRef, 'chunks', novelContent);
-    await replaceSubcollection(docRef, 'chatHistory', chatHistory);
+    // Write all subcollections
+    for (const [name, items] of Object.entries(subcollections)) {
+        await replaceSubcollection(docRef, name, items);
+    }
 }
 
 async function replaceSubcollection(
@@ -113,7 +120,7 @@ export const deleteProject = async (id: string): Promise<void> => {
     const docRef = projectsCollection().doc(id);
 
     // Delete subcollections first
-    for (const subName of ['chunks', 'chatHistory']) {
+    for (const subName of SUBCOLLECTION_FIELDS) {
         const docs = await docRef.collection(subName).listDocuments();
         if (docs.length > 0) {
             const batch = db.batch();
