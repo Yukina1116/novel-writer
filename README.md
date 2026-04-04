@@ -1,20 +1,35 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 小説らいたー ver16
 
-# Run and deploy your AI Studio app
+AI駆動の小説執筆支援アプリケーション。
 
-This contains everything you need to run your app locally.
+## 技術スタック
 
-View your app in AI Studio: https://ai.studio/apps/7c6d2d07-ff7c-4b41-abcd-7b73ca3c7a3a
+- **フロントエンド**: React + TypeScript + Vite
+- **バックエンド**: Express（Cloud Run, asia-northeast1）
+- **AI**: Vertex AI（Gemini 2.5 Flash / Imagen 4.0）
+- **データ**: Firestore（Native mode）
+- **CI/CD**: GitHub Actions → Workload Identity Federation → Cloud Run
 
-## Run Locally
+## ローカル開発
 
-**Prerequisites:**  Node.js
+```bash
+npm install
+npm run dev    # http://localhost:3000
+```
 
+ローカルではAPIキーモードで動作します。`.env` に `GEMINI_API_KEY` を設定してください。
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## デプロイ
+
+`main` ブランチへのマージで Cloud Run に自動デプロイされます。
+
+**本番URL**: https://novel-writer-ramnh3ulya-an.a.run.app
+
+## コマンド
+
+| コマンド | 説明 |
+|---------|------|
+| `npm run dev` | 開発サーバー起動 |
+| `npm run build` | フロントエンドビルド |
+| `npm run start` | 本番サーバー起動 |
+| `npm run lint` | 型チェック（tsc --noEmit） |
