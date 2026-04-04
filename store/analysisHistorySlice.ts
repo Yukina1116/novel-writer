@@ -7,7 +7,7 @@ export interface AnalysisHistorySlice {
     saveAnalysisHistory: (newResult: AnalysisResult) => Promise<void>;
 }
 
-export const createAnalysisHistorySlice: StateCreator<AnalysisHistorySlice> = (set, get) => ({
+export const createAnalysisHistorySlice = (set, get): AnalysisHistorySlice => ({
     analysisHistory: [],
     loadAnalysisHistory: async () => {
         try {
