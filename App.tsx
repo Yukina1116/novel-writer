@@ -17,11 +17,13 @@ import { ProjectSelectionScreen } from './components/ProjectSelectionScreen';
 import { Toast } from './components/Toast';
 import { TutorialModeSelectionModal } from './components/TutorialModeSelectionModal';
 import AppMobile from './App.mobile';
+import { useFirestoreSync } from './hooks/useFirestoreSync';
 
 import { useShallow } from 'zustand/react/shallow';
 import { EMPTY_ARRAY } from './constants';
 
 export default function App() {
+    const { isInitializing, error: syncError } = useFirestoreSync();
     // --- Zustand Store Selectors ---
     const activeProjectId = useStore(state => state.activeProjectId);
     const allProjectsData = useStore(state => state.allProjectsData);
@@ -181,6 +183,12 @@ export default function App() {
         link.click();
         URL.revokeObjectURL(link.href);
     };
+
+    if (isInitializing) {
+        return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'sans-serif' }}>
+            <p>読み込み中...</p>
+        </div>;
+    }
 
     if (!activeProjectId || !activeProjectData) {
         return <ProjectSelectionScreen 

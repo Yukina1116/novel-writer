@@ -6,12 +6,10 @@ import { FONT_MAP } from '../constants';
 import * as analysisApi from '../analysisApi';
 
 const initialState = {
-    saveStatus: 'synced' as 'synced' | 'saving' | 'dirty',
     lastAnalysisResult: null as AnalysisResult | null,
 };
 
 export interface DataSlice {
-    saveStatus: 'synced' | 'saving' | 'dirty';
     lastAnalysisResult: AnalysisResult | null;
     setActiveProjectData: (updater: (data: Project) => Project, historyLabel?: { type: HistoryType; label: string }, options?: { mode: 'merge' | 'replace' }) => void;
     handleSaveSetting: (newItem: Partial<SettingItem | KnowledgeItem>, type?: 'character' | 'world' | 'knowledge') => void;
@@ -71,6 +69,8 @@ export const createDataSlice = (set, get): DataSlice => ({
         if (historyLabel) {
             addHistory(newProjectData, historyLabel);
         }
+
+        get().markDirty();
     },
     handleSaveSetting: (newItem, type) => {
         const { activeModal } = get();

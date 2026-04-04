@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Project, AppState, AppActions, HistoryTree, HistoryNode } from '../types';
 import { defaultAiSettings, defaultDisplaySettings, simpleModeAiSettings, simpleModeDisplaySettings } from '../constants';
 import { validateAndSanitizeProjectData } from '../utils';
+import { createProjectApi, deleteProjectApi } from '../projectApi';
 
 const initialState = {
     allProjectsData: {} as { [key: string]: Project },
@@ -78,11 +79,12 @@ export const createProjectSlice = (set, get): ProjectSlice => ({
         const historyTree = createInitialHistoryTree(newProject);
         newProject.historyTree = historyTree;
         
-        set(state => ({ 
-            allProjectsData: { ...state.allProjectsData, [newId]: newProject }, 
+        set(state => ({
+            allProjectsData: { ...state.allProjectsData, [newId]: newProject },
             activeProjectId: newId,
             historyTree: historyTree,
         }));
+        createProjectApi(newProject).catch(err => console.error('Failed to save new project:', err));
     },
     deleteProject: (projectId) => {
         set(state => {
@@ -93,6 +95,7 @@ export const createProjectSlice = (set, get): ProjectSlice => ({
                 activeProjectId: state.activeProjectId === projectId ? null : state.activeProjectId
             };
         });
+        deleteProjectApi(projectId).catch(err => console.error('Failed to delete project:', err));
     },
     importProject: (event) => {
         const file = event.target.files[0];
@@ -115,6 +118,7 @@ export const createProjectSlice = (set, get): ProjectSlice => ({
                         historyTree: historyTree,
                     };
                 });
+                createProjectApi(projectToLoad).catch(err => console.error('Failed to save imported project:', err));
             } catch (err) {
                 alert(`ファイルの読み込みに失敗しました: ${err.message}`);
                 console.error(err);
