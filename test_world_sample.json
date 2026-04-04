@@ -1,0 +1,180 @@
+{
+  "id": "project-sample-001",
+  "name": "テスト用：幻想王国アルテリア",
+  "lastModified": "2024-08-01T12:00:00.000Z",
+  "isSimpleMode": false,
+  "settings": [
+    {
+      "id": "char-001",
+      "type": "character",
+      "name": "リリア・ノックス",
+      "longDescription": "月の加護を受けた少女。幼い頃の記憶を失っている。",
+      "memo": "主人公。物語の鍵を握る。",
+      "exportDescription": "",
+      "furigana": "りりあ・のっくす",
+      "gender": "女性",
+      "age": "17",
+      "species": "人間",
+      "firstPersonPronoun": "私",
+      "personality": "明るく正義感が強いが、少し不器用。困っている人を見ると放っておけない。",
+      "origin": "不明",
+      "affiliation": "なし",
+      "speechPattern": "丁寧語を使うことが多いが、親しい相手には砕けた口調になる。",
+      "secret": "実は失われた王家の血を引いているが、本人はその事実を知らない。",
+      "themeColor": "#81e6d9",
+      "appearance": {
+        "imageUrl": "",
+        "traits": []
+      }
+    },
+    {
+      "id": "char-002",
+      "type": "character",
+      "name": "カイン・ヴァルド",
+      "longDescription": "王国の近衛騎士。リリアの過去を知る数少ない人物。",
+      "memo": "リリアを導く相棒役。",
+      "exportDescription": "",
+      "furigana": "かいん・ゔぁるど",
+      "gender": "男性",
+      "age": "24",
+      "species": "人間",
+      "firstPersonPronoun": "俺",
+      "personality": "冷静沈着で任務に忠実。ぶっきらぼうに見えるが、心根は優しい。",
+      "origin": "アルテリア王国王都",
+      "affiliation": "アルテリア王国近衛騎士団",
+      "speechPattern": "短く、的確な言葉を選ぶ。あまり感情を表に出さない。",
+      "secret": "女王の密命を受け、リリアを監視している。",
+      "themeColor": "#90cdf4",
+      "appearance": {
+        "imageUrl": "",
+        "traits": []
+      }
+    },
+    {
+      "id": "char-003",
+      "type": "character",
+      "name": "ルミナ女王",
+      "longDescription": "アルテリア王国の聡明な女王。リリアに特別な使命を与える。",
+      "memo": "物語のトリガーとなる重要人物。",
+      "exportDescription": "",
+      "furigana": "るみなじょおう",
+      "gender": "女性",
+      "age": "32",
+      "species": "人間",
+      "firstPersonPronoun": "わたくし",
+      "personality": "民を想う優しい為政者。しかし国の安定のためなら非情な決断も下す。",
+      "origin": "アルテリア王国王都",
+      "affiliation": "アルテリア王国",
+      "speechPattern": "優雅で落ち着いた、女王らしい話し方をする。",
+      "secret": "王国の存亡に関わる古代の盟約について隠している。",
+      "themeColor": "#fbb6ce",
+      "appearance": {
+        "imageUrl": "",
+        "traits": []
+      }
+    },
+    {
+      "id": "world-001",
+      "type": "world",
+      "name": "アルテリア王国",
+      "longDescription": "アルテリア王国は、女王ルミナによって統治される幻想的な国。月光の加護を受けた民が住み、魔法と科学が共存している。",
+      "memo": "AI動作検証用の仮想データです。自由に改変OK。",
+      "fields": [
+        { "key": "種別", "value": "王国" },
+        { "key": "通貨単位", "value": "ルナ" },
+        { "key": "気候", "value": "温暖で四季がある" },
+        { "key": "宗教", "value": "月の女神ルーナ信仰" },
+        { "key": "所属地域", "value": "中央大陸" }
+      ],
+      "mapImageUrl": ""
+    }
+  ],
+  "novelContent": [
+    {
+      "id": "chunk-001",
+      "text": "# プロローグ：月の記憶\n\nリリアは夢を見ていた。見たこともない、白亜の神殿。円形の祭壇に立つ巫女らしき女性が、夜空に浮かぶ巨大な月に向かって何かを祈っている。\nその手には、星の雫を固めたような美しいペンダントが握られていた。\n『――力を、あの子に』\n声が聞こえた気がして、リリアは手を伸ばす。しかし、その指先がペンダントに触れる寸前、世界は白い光に包まれた。"
+    },
+    {
+      "id": "chunk-002",
+      "text": "# 第一章：騎士との出会い\n\n「きゃっ！」\n人いきれのする王都の大通りで、リリアは誰かにぶつかって尻もちをついた。慌てて顔を上げると、目の前にいたのは、紺色の騎士服に身を包んだ青年だった。\n「すまない、大丈夫か？」\n無愛想だが、心配の色が浮かんだ声。彼――カイン・ヴァルドと名乗る近衛騎士との出会いが、彼女の運命を大きく動かすことになるとは、まだ誰も知らなかった。"
+    },
+    {
+      "id": "chunk-003",
+      "text": "# 第二章：失われた神殿\n\n女王ルミナの導きにより、リリアとカインは王都近郊の古代遺跡を訪れていた。\n「ここが……夢で見た場所に似ている……」\nリリアが胸元のペンダントを握りしめると、ペンダントが淡い光を放ち始める。その光に呼応するかのように、固く閉ざされていた遺跡の巨大な石の扉が、ゆっくりと音を立てて開いていった。"
+    }
+  ],
+  "chatHistory": [
+    { "role": "assistant", "text": "新しい物語を始めましょう！", "mode": "consult" },
+    { "role": "user", "text": "リリアがカインと出会うシーンを書いて", "mode": "write" },
+    { "role": "assistant", "text": "承知しました。どのような雰囲気の出会いにしますか？", "mode": "consult" }
+  ],
+  "knowledgeBase": [
+    {
+      "id": "kb-001",
+      "name": "月の加護",
+      "content": "古来よりアルテリア王国の民は月の女神ルーナに祈りを捧げることで加護を得てきた。加護を失うと魔法が使えなくなる。",
+      "category": "魔法体系",
+      "tags": ["重要設定", "魔法"]
+    },
+    {
+      "id": "kb-002",
+      "name": "古代遺跡",
+      "content": "王都近郊にある巨大な石造遺跡。失われた文明の名残とされ、月光を浴びると扉が開く。",
+      "category": "地名",
+      "tags": ["重要地点", "謎"]
+    }
+  ],
+  "plotBoard": [
+    {
+      "id": "plot-001",
+      "title": "プロローグ：月の記憶",
+      "summary": "リリアが夢の中で古代の儀式を見る場面。物語の導入。",
+      "type": "章のまとめ"
+    },
+    {
+      "id": "plot-002",
+      "title": "第一章：騎士との出会い",
+      "summary": "王都でリリアはカインと出会い、運命の旅が始まる。",
+      "type": "章のまとめ"
+    },
+    {
+      "id": "plot-003",
+      "title": "第二章：失われた神殿",
+      "summary": "古代遺跡の扉を開き、月の秘密に近づく。",
+      "type": "章のまとめ"
+    }
+  ],
+  "plotTypeColors": { "章のまとめ": "#22d3ee" },
+  "plotRelations": [],
+  "plotNodePositions": [],
+  "timelineLanes": [
+    {
+        "id": "lane-001",
+        "name": "アルテリア王国の歴史",
+        "color": "#6b7280"
+    }
+  ],
+  "timeline": [
+    { "id": "event-001", "laneId": "lane-001", "title": "アルテリア王国建国", "timestamp": "王国暦 0年", "description": "", "locationId": "", "customLocationName": "" },
+    { "id": "event-002", "laneId": "lane-001", "title": "月の女神ルーナ信仰の確立", "timestamp": "王国暦 250年頃", "description": "王国全土に月の女神への信仰が広まり、国教となる。", "locationId": "", "customLocationName": "" },
+    { "id": "event-003", "laneId": "lane-001", "title": "リリアの旅の始まり", "timestamp": "王国暦 1000年（現在）", "description": "主人公リリアが、自らの記憶とペンダントの謎を追う旅に出る。", "locationId": "", "customLocationName": "" }
+  ],
+  "aiSettings": {
+    "perspective": "third_person_limited", "length": 700, "tone": "ファンタジー, 少しシリアス", "creativity": "普通", "knowledgeAdherence": "普通", "suggestionFrequency": "普通", "memoryScope": "summary", "assistantPersona": "polite", "markdownFrequency": "普通", "showSpeakerInDialogue": false, "writingStyleMimicry": true, "generateMultipleContinuations": false, "applySpeakerColorToDialogue": true
+  },
+  "displaySettings": {
+    "theme": "dark", "fontFamily": "serif", "fontSize": 17, "swapSidebars": false
+  },
+  "characterRelations": [
+    { "id": "rel-001", "source": "char-001", "target": "char-002", "label": "信頼", "color": "#0ea5e9" },
+    { "id": "rel-002", "source": "char-001", "target": "char-003", "label": "恩義", "color": "#f59e0b" },
+    { "id": "rel-003", "source": "char-002", "target": "char-003", "label": "忠誠", "color": "#14b8a6" }
+  ],
+  "nodePositions": [
+      {"characterId": "char-001", "x": 200, "y": 300},
+      {"characterId": "char-002", "x": 400, "y": 150},
+      {"characterId": "char-003", "x": 600, "y": 300}
+  ],
+  "snapshots": [],
+  "userProfile": { "iconUrl": "", "name": "テストユーザー" }
+}
