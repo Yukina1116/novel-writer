@@ -123,8 +123,11 @@ export default function App() {
         
         const { handleSaveSetting } = useStore.getState();
         const existingKnowledge = activeProjectData.knowledgeBase || [];
-        
-        // 追加するヘルプ項目
+
+        // ヘルプ項目は初回（ナレッジが空の場合）のみ自動追加
+        // 削除後に再追加されるのを防ぐため、1件でも存在すればスキップ
+        if (existingKnowledge.length > 0) return;
+
         const helpKnowledgeItems = Object.entries(helpTexts).map(([key, modes]) => {
             const content = Object.entries(modes).map(([mode, content]) => {
                 return `【${mode}モード】\nタイトル: ${content.title}\n説明: ${content.desc}${content.shortcut ? `\nショートカット: ${content.shortcut}` : ''}${content.tech ? `\n技術: ${content.tech}` : ''}\n`;
@@ -136,13 +139,10 @@ export default function App() {
             };
         });
 
-        // すでに存在するかチェックして追加
         helpKnowledgeItems.forEach(item => {
-            if (!existingKnowledge.find(k => k.name === item.name)) {
-                handleSaveSetting(item, 'knowledge');
-            }
+            handleSaveSetting(item, 'knowledge');
         });
-    }, [activeProjectId, activeProjectData]);
+    }, [activeProjectId]);
 
     // Handle knowledge link clicks globally
     useEffect(() => {
