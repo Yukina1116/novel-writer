@@ -1,15 +1,10 @@
 /**
- * Firebase Auth Emulator + Admin SDK の疎通検証スクリプト。
- *
- * 前提: 別プロセスで `firebase emulators:start --only auth` が起動済み。
- * 手順: client SDK で匿名ログイン → idToken を取得 → admin SDK で verifyIdToken。
+ * 前提: 別プロセスで `npm run dev:emu` または `firebase emulators:start --only auth`
+ * が起動していること。未起動だと localhost:9099 への接続が無音でハング、または
+ * `auth/network-request-failed` で失敗するため、本スクリプトは 15 秒で打ち切る。
  */
 
-const EMULATOR_HOST =
-  process.env.FIREBASE_AUTH_EMULATOR_HOST ?? 'localhost:9099';
-process.env.FIREBASE_AUTH_EMULATOR_HOST = EMULATOR_HOST;
-
-const PROJECT_ID = 'novel-writer-dev';
+import './_setup-emulator-env.js';
 
 import { initializeApp as initClientApp } from 'firebase/app';
 import {
@@ -20,7 +15,11 @@ import {
 
 import { getFirebaseAuth } from '../server/firebaseAdmin.js';
 
-async function main(): Promise<void> {
+const PROJECT_ID = 'novel-writer-dev';
+const EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST!;
+const TIMEOUT_MS = 15_000;
+
+async function run(): Promise<void> {
   const clientApp = initClientApp({
     apiKey: 'fake-api-key-for-emulator',
     authDomain: `${PROJECT_ID}.firebaseapp.com`,
@@ -39,7 +38,25 @@ async function main(): Promise<void> {
   console.log(`[admin] verifyIdToken OK uid=${decoded.uid}`);
 }
 
-main().then(
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              `TIMEOUT ${ms}ms: emulator unreachable at ${EMULATOR_HOST}. ` +
+                `先に \`npm run dev:emu\` を別ターミナルで起動してください。`,
+            ),
+          ),
+        ms,
+      ).unref(),
+    ),
+  ]);
+}
+
+withTimeout(run(), TIMEOUT_MS).then(
   () => process.exit(0),
   (err: unknown) => {
     console.error('FAIL:', err);

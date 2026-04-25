@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server/index.ts",
-    "dev:emu": "concurrently -n vite,emu -c blue,yellow \"tsx server/index.ts\" \"firebase emulators:start --only auth\"",
+    "dev:emu": "concurrently --kill-others-on-fail -n vite,emu -c blue,yellow \"tsx server/index.ts\" \"firebase emulators:start --only auth\"",
     "build": "vite build",
     "start": "tsx server/index.ts",
     "lint": "tsc --noEmit",
