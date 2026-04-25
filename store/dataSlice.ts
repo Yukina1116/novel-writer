@@ -1,7 +1,8 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { Project, SettingItem, KnowledgeItem, PlotItem, Relation, NodePosition, TimelineEvent, PlotRelation, PlotNodePosition, TimelineLane, DisplaySettings, NovelChunk, HistoryType, AnalysisResult } from '../types';
-import { getChapterChunks, parseMarkdown } from '../utils';
+import { getChapterChunks } from '../utils';
+import { renderMarkdown } from '../utils/sanitizeHtml';
 import { FONT_MAP } from '../constants';
 import * as analysisApi from '../analysisApi';
 
@@ -536,7 +537,7 @@ export const createDataSlice = (set, get): DataSlice => ({
                     ${novelContent.map(chunk => {
                         const isTitle = chunk.text.startsWith('# ');
                         const chapterId = isTitle ? `ch-${chunk.id}` : '';
-                        return `<div id="${chapterId}">${parseMarkdown(chunk.text, settings.filter(s => s.type === 'character'), knowledgeBase, aiSettings)}</div>`;
+                        return `<div id="${chapterId}">${renderMarkdown(chunk.text, settings.filter(s => s.type === 'character'), knowledgeBase, aiSettings)}</div>`;
                     }).join('')}
                 </div>
                 ${charactersToExport.length > 0 ? `
@@ -562,7 +563,7 @@ export const createDataSlice = (set, get): DataSlice => ({
                         `).join('')}
                     </div>
                 ` : ''}
-                ${options.afterword ? `<div class="appendix"><h2>あとがき</h2><div>${parseMarkdown(options.afterword, [], [], aiSettings)}</div></div>` : ''}
+                ${options.afterword ? `<div class="appendix"><h2>あとがき</h2><div>${renderMarkdown(options.afterword, [], [], aiSettings)}</div></div>` : ''}
             </div>
         `;
         const fullHtml = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${escapeHtml(project.name)}</title><style>body { font-family: ${fontCss}; font-size: ${fontSize}px; line-height: 1.8; margin: 0; padding: 0; } .container { max-width: 800px; margin: 4rem auto; padding: 2rem; } ${themeStyles} h1, h2, h3 { line-height: 1.3; font-weight: bold; } h1.title { font-size: 2.5em; text-align: center; margin-bottom: 0.5em; } h1.chapter-title { font-size: 1.5em; margin-top: 3em; border-bottom: 1px solid; padding-bottom: 0.5em; } h2 { font-size: 1.2em; margin-top: 2em; border-bottom: 1px solid; padding-bottom: 0.3em;} p.author { text-align: center; font-size: 1.2em; color: #888; margin-bottom: 4em; } .cover { text-align: center; margin-bottom: 4rem; } .cover-image { max-width: 100%; height: auto; max-height: 70vh; margin: 0 auto 2rem; } .content > div { margin: 1.5em 0; } .toc { margin-bottom: 4rem; padding: 1.5rem; border: 1px solid #ccc; border-radius: 8px; } .toc ul { list-style: none; padding-left: 0; } .toc a { text-decoration: none; } .appendix { margin-top: 4rem; border-top: 1px solid #ccc; padding-top: 2rem; } .appendix h2 { border-bottom: none; } .char-card { margin-bottom: 2rem; overflow: hidden; } .char-card img { max-width: 150px; float: left; margin-right: 1rem; border-radius: 4px; } ruby { ruby-position: over; } rt { font-size: 0.7em; } .knowledge-link { text-decoration: none; color: inherit; font-weight: bold; }</style></head><body>${body}</body></html>`;

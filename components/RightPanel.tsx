@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as Icons from '../icons';
 import { useStore } from '../store/index';
-import { parseMarkdown } from '../utils';
+import { renderMarkdown } from '../utils/sanitizeHtml';
+
 import { Tooltip } from './Tooltip';
 import { HistoryPanel } from './panels/HistoryPanel';
 import { HorizontalResizableHandle } from './HorizontalResizableHandle';
@@ -288,7 +289,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({ userInputRef, isMobile =
                                         <div key={index} className={`flex items-start gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
                                             {msg.role === 'assistant' && <Icons.BotIcon />}
                                             <div className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-xl ${msg.role === 'user' ? (msg.mode === 'consult' ? 'bg-lime-600/50' : 'bg-blue-600/50') : (msg.mode === 'write' ? 'bg-blue-600/50' : 'bg-lime-600/50')}`}>
-                                                <div className="text-sm whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.text, settings.filter(s => s.type === 'character'), knowledgeBase, aiSettings, { applySpeakerColor: false, applyKnowledgeLinks: false, applyCustomColors: false }) }} />
+                                                <div className="text-sm whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text, settings.filter(s => s.type === 'character'), knowledgeBase, aiSettings, { applySpeakerColor: false, applyKnowledgeLinks: false, applyCustomColors: false }) }} />
                                             </div>
                                             {msg.role === 'user' && (userProfile?.iconUrl ? <img src={userProfile.iconUrl} alt="User Icon" className="h-6 w-6 rounded-full object-cover flex-shrink-0" /> : <Icons.UserIcon />)}
                                         </div>

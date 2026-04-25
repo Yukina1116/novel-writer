@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Icons from '../icons';
 import { NovelChunk, SettingItem, KnowledgeItem, AiSettings } from '../types';
-import { parseMarkdown } from '../utils';
+import { renderMarkdown } from '../utils/sanitizeHtml';
+
 
 export const PreviewModal = ({ isOpen, onClose, title, content, characters, knowledgeBase, aiSettings }) => {
     
@@ -25,7 +26,7 @@ export const PreviewModal = ({ isOpen, onClose, title, content, characters, know
                 <div className={`flex-grow overflow-y-auto p-6`}>
                     <div className={`prose prose-invert prose-lg max-w-full`}>
                         {content.map(chunk => (
-                             <div key={chunk.id} className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: parseMarkdown(chunk.text, characters, knowledgeBase, aiSettings) }} />
+                             <div key={chunk.id} className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: renderMarkdown(chunk.text, characters, knowledgeBase, aiSettings) }} />
                         ))}
                     </div>
                 </div>
