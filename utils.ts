@@ -129,22 +129,25 @@ export const parseMarkdown = (
     processedText = processedText.replace(/\*(.*?)\*/gs, '<em>$1</em>');
     processedText = processedText.replace(/~~(.*?)~~/gs, '<s>$1</s>');
     
-    // Links (internal for docs, anchors for page jumps, and external)
+    // Links: allow only http(s)://, internal docs (./), and anchors (#).
+    // Anything else (javascript:, data:, vbscript:, etc.) is rendered as plain
+    // text. Defense in depth: callers should still wrap the result in
+    // sanitizeHtml() (typically via renderMarkdown), but stripping unsafe
+    // hrefs here means a malicious href never reaches DOMPurify even if a
+    // future caller forgets to sanitize.
     processedText = processedText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
         if (url.startsWith('./')) {
-            // Use a data attribute to prevent navigation and handle via JS
             const docKey = url.substring(2);
             return `<a href="#" data-doc-key="${docKey}" class="internal-link">${text}</a>`;
         }
         if (url.startsWith('#')) {
-            // Create a valid href for the anchor link
             const anchorId = createAnchorId(url.substring(1));
             return `<a href="#${anchorId}" class="anchor-link">${text}</a>`;
         }
-        if (url.startsWith('http')) {
+        if (url.startsWith('http://') || url.startsWith('https://')) {
             return `<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`;
         }
-        return `<a href="${url}">${text}</a>`;
+        return text;
     });
 
     processedText = processedText.replace(/^### (.*$)/gm, (_, title) => `<h3 id="${createAnchorId(title)}">${title}</h3>`);

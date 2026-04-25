@@ -2,7 +2,8 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import * as Icons from '../icons';
 import { helpContent } from '../constants';
-import { parseMarkdown } from '../utils';
+
+import { renderMarkdown } from '../utils/sanitizeHtml';
 import { useStore } from '../store/index';
 
 const siteMapContent = `【プロジェクト選択画面】
@@ -585,7 +586,7 @@ export const HelpModal = ({ isOpen, onClose, topic }) => {
                             {section.example && (
                                 <div className="mt-3 p-3 bg-gray-900/50 rounded-md">
                                     <p className="text-xs text-gray-400 mb-1">文章例：</p>
-                                    <p className="text-sm font-mono italic" dangerouslySetInnerHTML={{ __html: `&quot;${parseMarkdown(section.example)}&quot;` }}></p>
+                                    <p className="text-sm font-mono italic" dangerouslySetInnerHTML={{ __html: `&quot;${renderMarkdown(section.example)}&quot;` }}></p>
                                 </div>
                             )}
                             {section.useCase && (
@@ -714,7 +715,7 @@ export const GeneralHelpModal = ({ isOpen, onClose }) => {
                         ) : (
                             <div
                                 className="prose prose-invert prose-lg max-w-full"
-                                dangerouslySetInnerHTML={{ __html: parseMarkdown(manualContent[activeDocKey] || '', [], [], undefined, { applyKnowledgeLinks: false }) }}
+                                dangerouslySetInnerHTML={{ __html: renderMarkdown(manualContent[activeDocKey] || '', [], [], undefined, { applyKnowledgeLinks: false }) }}
                             />
                         )}
                     </main>

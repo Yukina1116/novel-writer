@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useLayoutEffect, useMemo } from 're
 import { createPortal } from 'react-dom';
 import parse from 'html-react-parser';
 import { NovelChunk, SettingItem, KnowledgeItem, AiSettings } from '../types';
-import { parseMarkdown } from '../utils';
+import { renderMarkdown } from '../utils/sanitizeHtml';
+
 import * as Icons from '../icons';
 import { useStore } from '../store/index';
 import { Tooltip } from './Tooltip';
@@ -394,7 +395,7 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
                 <>
                     {chunk.isPinned && <Icons.PinIcon aria-hidden="true" className="absolute top-1 left-1 h-3 w-3 text-yellow-400 fill-current" title="この段落はピン留めされています" />}
                     <div className={`whitespace-pre-wrap ${chunk.isPinned ? 'pl-5' : ''} select-text`}>
-                        {parse(parseMarkdown(chunk.text, characters, knowledgeBase, aiSettings) || '<br/>')}
+                        {parse(renderMarkdown(chunk.text, characters, knowledgeBase, aiSettings) || '<br/>')}
                     </div>
                     <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity focus-within:opacity-100">
                         <button 
