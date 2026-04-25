@@ -49,7 +49,7 @@ jobs:
             --service-account=novel-writer-run@novel-writer-dev.iam.gserviceaccount.com
             --memory=512Mi
             --timeout=300
-            --allow-unauthenticated
+            --max-instances=2
             --set-env-vars=GCP_PROJECT=novel-writer-dev,GCP_LOCATION=asia-northeast1,USE_VERTEX_AI=true
 
       - name: Output URL

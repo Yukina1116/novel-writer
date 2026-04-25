@@ -1,0 +1,101 @@
+# ADR-0001: Local-first アーキテクチャの採用
+
+- Status: Accepted
+- Date: 2026-04-25
+- Decision Drivers: プライバシー要件、運用コスト最小化、データ主権
+
+## Context
+
+小説らいたー ver16 は AI 駆動の小説執筆支援 Web アプリ。現状（PR #10〜#14 を経た 2026-04-25 時点）の構成と課題:
+
+### 現状
+- FE: React + TypeScript + Vite
+- BE: Express on Cloud Run（asia-northeast1, novel-writer-dev）
+- AI: Vertex AI（gemini-2.5-flash, Imagen）
+- 永続化: Firestore がコンテンツ正本（PR #10 で localStorage→Firestore 移行済み）
+- 認証: なし（`--allow-unauthenticated` で全 API 無認証公開中）
+- ユーザー: ゼロ（未公開・開発段階）
+
+### 問題
+1. **コンテンツのクラウド保管に対するユーザー意向**: 創作物（小説本文・設定・プロット）をクラウドに置きたくない
+2. **無認証 API による課金リスク**: 誰でも Vertex AI / Imagen を叩けて GCP 課金が爆発し得る（実コード上、Imagen は 1 リクエスト 4 画像生成）
+3. **uid スコープ不在**: `server/services/projectService.ts` は全プロジェクト共有。任意のプロジェクトを誰でも読み書き削除可能
+4. **将来の収益化**: 課金機能を入れる前提で設計を再構築したい
+
+### 評価したオプション
+
+| 案 | 概要 | 評価 |
+|---|---|---|
+| **A. 現状維持（Firestore 正本）** | サーバーサイド永続化、認証だけ追加 | ❌ ユーザー意向に反する。コンテンツ漏洩リスクが残る |
+| **B. Local-first（IndexedDB 正本）+ メタのみクラウド** | コンテンツはブラウザ、識別/課金のみクラウド | ✅ 採用 |
+| **C. 完全クライアント完結** | サーバー不要、Vertex を直叩き | ❌ Vertex AI のキー露出、課金保護不能 |
+
+## Decision
+
+**B 案（Local-first + 認証メタクラウド）を採用する。**
+
+### アーキテクチャ概要
+- **ブラウザ IndexedDB（Dexie.js）= コンテンツ正本**
+  - projects, novelContent, chatHistory, settings, knowledgeBase, plotBoard, timeline, historyTree
+- **localStorage = UI 設定のみ**（theme, panelSize 等）
+- **Firestore = メタのみ**
+  - `users/{uid}`: email, plan, preferences
+  - `usage/{uid_yyyymm}`: AI 使用量カウンタ
+  - `stripeEvents/{eventId}`: Webhook 冪等化
+- **Cloud Storage = opt-in 暗号化バックアップ**（クライアント側 AES-GCM、E2EE）
+- **認証**: Firebase Auth（Google プロバイダのみ、Anonymous Auth は不採用）
+- **3 層プラン**:
+  - Tier 0: 未ログイン（AI 不可、ローカル執筆のみ）
+  - Tier 1: Google ログイン（無料、AI 月 30 回テキストのみ、Imagen 不可）
+  - Tier 2: Stripe 有料（AI 増枠、Imagen 可、E2EE バックアップ opt-in 可）
+- **複数端末同期は実装しない**（Export/Import で持ち歩く）
+
+### 意思決定の経緯
+1. 私（Claude）が初版アーキテクチャを提案
+2. `/codex plan` でセカンドオピニオン取得（threadId: 019dc4e5-65df-7e82-a5b4-12a3eadff26c）
+   - 主要修正: Anonymous Auth 不採用、Firestore project index 不採用、AI クォータは transaction 予約制 + requestId 冪等化、無料枠は回数ではなくコスト上限ベース
+3. `/codex security` でセキュリティレビュー取得（threadId: 019dc4f1-1fbe-7ba1-91d9-d5c049871861）
+   - 主要修正: Cloud Run の無認証公開停止が最優先、DOMPurify 必須、Stripe Webhook の raw body / 署名検証 / 冪等化、Cloud Storage 署名 URL の短命化と uid スコープ
+4. 緊急対応として Cloud Run を非公開化（`allUsers` の `roles/run.invoker` 削除）+ `max-instances=2` + 月 1,000 円予算アラート設定済み
+
+## Consequences
+
+### 利点
+- コンテンツがクラウドに残らない（プライバシー要件達成）
+- Vertex AI が認証必須になり、課金保護が確実
+- E2EE オプションでバックアップ希望者にも対応
+- Firestore 容量・読み書き量が大幅減（個人開発のコスト最小化）
+- 仕様シンプル化（複数端末同期を実装しない）
+
+### 欠点・受容するリスク
+- **端末紛失 = 小説喪失**（opt-in バックアップで緩和）
+- ブラウザのストレージクリアでデータ消失（Export 警告 UI で緩和）
+- 別端末で続きを書くには Export/Import 手作業が必要
+- E2EE は XSS 時に鍵・平文ともに流出（DOMPurify + CSP で緩和、設計上の限界として明記）
+
+### 開放する課題
+- Stripe 課金導入時の法務作業（利用規約、特商法、プライバシーポリシー）
+- 将来「複数端末同期」要望が出た場合の対応（CRDT 検討、ただし当面は Export/Import で対応）
+- Firebase Auth Emulator と Cloud Run の本番認証フローの差異（M3 で対応）
+
+## Implementation Roadmap
+
+| マイルストーン | 内容 | 状態 |
+|---|---|---|
+| M0 | 緊急対応（Cloud Run 非公開化、max-instances 制限、予算アラート） | ✅ 完了（2026-04-25） |
+| M1 | 基盤整備（IaC 化、防御層、Firebase 準備） | 🚧 着手中 |
+| M2 | 認証 + IndexedDB 移行 | ⏳ |
+| M3 | AI 認証ゲート + クォータ | ⏳ |
+| M4 | Export/Import + バックアップ警告 UI | ⏳ |
+| M5 | Stripe Subscription + Webhook + 法務 | ⏳ |
+| M6 | E2EE 暗号化バックアップ（任意機能、後回し可） | ⏳ |
+| M7 | 公開準備 | ⏳ |
+
+詳細は `docs/spec/m1/tasks.md` 以降を参照。
+
+## References
+
+- Codex plan review: 2026-04-25, threadId 019dc4e5-65df-7e82-a5b4-12a3eadff26c
+- Codex security review: 2026-04-25, threadId 019dc4f1-1fbe-7ba1-91d9-d5c049871861
+- アーキテクチャ図: `docs/diagrams/architecture-target.html`
+- 現状アーキテクチャ図: `docs/diagrams/architecture.html`
