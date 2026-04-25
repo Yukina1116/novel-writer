@@ -65,7 +65,7 @@ flowchart LR
     end
 
     subgraph FB["🔵 Firebase / GCP"]
-        FAuth["Firebase Auth<br/>Google + 匿名"]
+        FAuth["Firebase Auth<br/>Google のみ"]
         FS[("Firestore<br/>=== メタのみ ===<br/>users/{uid}<br/>  email, plan,<br/>  usage.{yyyymm},<br/>  preferences")]
         Vertex["Vertex AI<br/>gemini-2.5-flash<br/>Imagen"]
         GCS[("☁️ Cloud Storage<br/>backups/{uid}/*.enc<br/>(暗号化済み)")]
@@ -105,7 +105,7 @@ flowchart LR
 
 <h2>2. プラン Tier と権限マトリクス</h2>
 <table>
-<tr><th>機能</th><th>Tier 0: 匿名</th><th>Tier 1: 無料会員</th><th>Tier 2: 有料会員</th></tr>
+<tr><th>機能</th><th>Tier 0: 未ログイン</th><th>Tier 1: 無料会員</th><th>Tier 2: 有料会員</th></tr>
 <tr><td>ローカル執筆 (IndexedDB)</td><td>✅</td><td>✅</td><td>✅</td></tr>
 <tr><td>Export / Import (.json)</td><td>✅</td><td>✅</td><td>✅</td></tr>
 <tr><td>AI 続き生成・キャラ生成等</td><td>❌</td><td>△ 月 N 回（無料枠）</td><td>✅ 増枠 or 無制限</td></tr>
@@ -118,14 +118,12 @@ flowchart LR
 <div class="diagram">
 <pre class="mermaid">
 stateDiagram-v2
-    [*] --> anonymous: 初回起動
+    [*] --> unauthenticated: 初回起動<br/>(Firebase 匿名認証は不採用)
 
-    anonymous --> free: Google ログイン<br/>(Firebase linkWithCredential)
-    free --> anonymous: ログアウト
+    unauthenticated --> free: Google ログイン
+    free --> unauthenticated: ログアウト
 
-    free --> paid_pending: Stripe Checkout 開始
-    paid_pending --> paid: Webhook<br/>checkout.session.completed
-    paid_pending --> free: Checkout キャンセル
+    free --> paid: Stripe Checkout 完了<br/>+ Webhook 検証
 
     paid --> past_due: Webhook<br/>invoice.payment_failed
     past_due --> paid: 支払い回復
@@ -154,7 +152,7 @@ sequenceDiagram
     Auth-->>UI: JWT
     UI->>API: POST + Bearer JWT
     API->>API: verifyIdToken()
-    alt Tier 0 (匿名)
+    alt Tier 0 (未ログイン)
         API-->>UI: 401 / 403
     else Tier 1/2
         API->>FS: get users/{uid}
@@ -202,7 +200,7 @@ sequenceDiagram
 <h2>6. 移行ロードマップ</h2>
 <table>
 <tr><th>順</th><th>PR</th><th>内容</th><th>規模</th></tr>
-<tr><td>1</td><td>Firebase Auth + AI Gate</td><td>Google ログイン、`/api/ai/*` 全保護、匿名は 401</td><td>中</td></tr>
+<tr><td>1</td><td>Firebase Auth + AI Gate</td><td>Google ログイン、`/api/ai/*` 全保護、未ログインは 401</td><td>中</td></tr>
 <tr><td>2</td><td>レートリミット + 月次クォータ</td><td>users/{uid}.usage.{yyyymm} で増分管理、429 返却</td><td>中</td></tr>
 <tr><td>3</td><td>IndexedDB (Dexie) 移行 + Export/Import</td><td>Firestore projects → IndexedDB 一括移送、バックアップ警告UI</td><td><b>大</b></td></tr>
 <tr><td>4</td><td>Firestore スキーマ整理</td><td>projects コレクション削除、users/{uid} のみ</td><td>小</td></tr>

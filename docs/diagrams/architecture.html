@@ -39,11 +39,9 @@ flowchart LR
     subgraph Browser["🌐 ブラウザ (Client)"]
         direction TB
         UI["React UI<br/>App.tsx (Desktop 3panel)<br/>App.mobile.tsx (Mobile)"]
-        Store["Zustand Store<br/>9 slices + persist"]
-        LS[("💾 localStorage")]
+        Store["Zustand Store<br/>9 slices (メモリのみ・persist 未使用)"]
         ApiW["*Api.ts (fetch wrappers)<br/>→ apiClient.ts"]
         UI <--> Store
-        Store <--> LS
         UI --> ApiW
     end
 
@@ -179,26 +177,26 @@ flowchart TB
         Right["RightPanel"]
     end
 
-    subgraph StoreIdx["store/index.ts (combine + persist)"]
+    subgraph StoreIdx["store/index.ts (combine のみ・persist 未使用)"]
         direction LR
         ps["projectSlice<br/>CRUD・import/export"]
         us["uiSlice<br/>Modal/Tab/Toast"]
         ds["dataSlice<br/>本文/設定/ナレッジ/プロット/年表"]
         as["aiSlice<br/>生成・候補管理"]
         hs["historySlice<br/>tree undo/redo (10 ノード)"]
-        ss["syncSlice<br/>Firestore 同期"]
+        ss["syncSlice<br/>2秒 debounce + flushSave"]
         ts["tutorialSlice"]
         ahs["analysisHistorySlice"]
         fs["formSlice"]
     end
 
-    LSstore[("💾 localStorage<br/>persist middleware")]
-    Server["Express<br/>/api/projects/*  /api/data/*"]
-    Firestore[("Firestore<br/>projects / subcollection")]
+    LSinit[("localStorage<br/>初回マイグレーション時のみ読込<br/>(useFirestoreSync で除去)")]
+    Server["Express<br/>PUT /api/projects/:id"]
+    Firestore[("Firestore (正本)<br/>projects + 6 subcollections")]
 
     UIComp <--> StoreIdx
-    StoreIdx <--> LSstore
-    ss <--> Server
+    LSinit -. "1回だけ" .-> StoreIdx
+    ss --> Server
     Server <--> Firestore
 
     classDef ui fill:#e3f2fd,stroke:#1976d2;
