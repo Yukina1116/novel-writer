@@ -3,19 +3,28 @@ import { Request, Response, NextFunction } from 'express';
 const isDev = process.env.NODE_ENV !== 'production';
 
 interface SafeError {
-    name?: string;
+    name: string;
+    message: string;
     code?: string | number;
-    message?: string;
     stack?: string;
+    details?: unknown;
+    cause?: unknown;
 }
 
-function maskError(error: any): SafeError | any {
-    if (isDev) return error;
+const GENERIC_PROD_MESSAGE = 'AI処理でエラーが発生しました。時間を置いて再試行してください。';
+
+function maskError(error: unknown): SafeError {
+    if (error == null || (typeof error !== 'object' && typeof error !== 'function')) {
+        return { name: 'NonObjectError', message: String(error) };
+    }
+    const e = error as Record<string, unknown>;
     return {
-        name: error?.name,
-        code: error?.code,
-        message: error?.message,
-        stack: error?.stack,
+        name: typeof e.name === 'string' ? e.name : 'UnknownError',
+        message: typeof e.message === 'string' ? e.message : '',
+        code: typeof e.code === 'string' || typeof e.code === 'number' ? e.code : undefined,
+        stack: typeof e.stack === 'string' ? e.stack : undefined,
+        details: e.details,
+        cause: e.cause,
     };
 }
 
@@ -26,15 +35,21 @@ function extractMessage(error: any): string {
     return '不明なエラーが発生しました。';
 }
 
-export const handleApiError = (error: any, functionName: string): { status: number; message: string } => {
-    try {
-        console.error(`Error in ${functionName}:`, maskError(error));
-    } catch {
-        console.error(`Error in ${functionName}: <log mask failed>`);
+export class CorsRejectError extends Error {
+    constructor(message = 'Origin not allowed') {
+        super(message);
+        this.name = 'CorsRejectError';
     }
+}
+
+export const handleApiError = (error: any, functionName: string): { status: number; message: string } => {
+    console.error(`Error in ${functionName}:`, isDev ? error : maskError(error));
 
     const message = extractMessage(error);
 
+    if (error instanceof CorsRejectError) {
+        return { status: 403, message: 'このオリジンからのアクセスは許可されていません。' };
+    }
     if (message.includes('quota') || message.includes('RESOURCE_EXHAUSTED')) {
         return { status: 429, message: 'AIの無料利用枠の上限に達してしまいました。APIは時間経過で回復しますが、しばらく待っても改善しない場合は、Google AI Studioでプランや支払い方法を確認してみてください。' };
     }
@@ -45,10 +60,14 @@ export const handleApiError = (error: any, functionName: string): { status: numb
         return { status: 504, message: 'AIの応答がタイムアウトしました。ネットワーク接続を確認するか、少し待ってからもう一度お試しください。' };
     }
 
-    return { status: 500, message };
+    return {
+        status: 500,
+        message: isDev ? message : GENERIC_PROD_MESSAGE,
+    };
 };
 
 export const errorHandlerMiddleware = (err: any, _req: Request, res: Response, _next: NextFunction) => {
+    if (res.headersSent) return _next(err);
     const { status, message } = handleApiError(err, 'unhandled');
     res.status(status).json({ error: message });
 };

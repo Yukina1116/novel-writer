@@ -3,7 +3,7 @@ import path from 'path';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import { errorHandlerMiddleware } from './middleware/errorHandler';
+import { errorHandlerMiddleware, CorsRejectError } from './middleware/errorHandler';
 
 import novelRoutes from './routes/novel';
 import characterRoutes from './routes/character';
@@ -27,6 +27,7 @@ async function startServer() {
     const app = express();
     const PORT = parseInt(process.env.PORT || '3000', 10);
 
+    // Cloud Run is a single proxy hop; required for express-rate-limit IP detection.
     app.set('trust proxy', 1);
 
     app.use(helmet({
@@ -51,7 +52,7 @@ async function startServer() {
         origin: (origin, callback) => {
             if (!origin) return callback(null, true);
             if (allowedOrigins.includes(origin)) return callback(null, true);
-            return callback(new Error('Not allowed by CORS'));
+            return callback(new CorsRejectError());
         },
     }));
 

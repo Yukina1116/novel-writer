@@ -2,6 +2,7 @@ import DOMPurify from 'isomorphic-dompurify';
 import { parseMarkdown, ParseMarkdownOptions } from '../utils';
 import type { SettingItem, KnowledgeItem, AiSettings } from '../types';
 
+// Allowlist mirrors parseMarkdown's output. Update both when adding new markdown features.
 const ALLOWED_TAGS = [
     'p', 'br', 'h1', 'h2', 'h3',
     'strong', 'em', 'u', 's', 'code', 'pre',
@@ -17,11 +18,11 @@ const ALLOWED_ATTR = [
 ];
 
 export function sanitizeHtml(dirty: string): string {
-    if (!dirty) return '';
+    if (typeof dirty !== 'string' || !dirty) return '';
     return DOMPurify.sanitize(dirty, {
         ALLOWED_TAGS,
         ALLOWED_ATTR,
-        ALLOW_DATA_ATTR: true,
+        ALLOW_DATA_ATTR: false,
     });
 }
 

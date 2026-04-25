@@ -131,7 +131,10 @@ export const parseMarkdown = (
     
     // Links: allow only http(s)://, internal docs (./), and anchors (#).
     // Anything else (javascript:, data:, vbscript:, etc.) is rendered as plain
-    // text so DOMPurify never even sees a malicious href.
+    // text. Defense in depth: callers should still wrap the result in
+    // sanitizeHtml() (typically via renderMarkdown), but stripping unsafe
+    // hrefs here means a malicious href never reaches DOMPurify even if a
+    // future caller forgets to sanitize.
     processedText = processedText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
         if (url.startsWith('./')) {
             const docKey = url.substring(2);
