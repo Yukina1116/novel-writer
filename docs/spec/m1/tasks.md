@@ -166,7 +166,7 @@ M3（AI 認証ゲート）の前段階として、Firebase Auth/Admin SDK と Em
 ## M1 完了の定義
 
 - [x] PR-A merged & deployed & AC A1〜A3 全 PASS（2026-04-25 完了、PR #17）
-- [ ] PR-B merged & local検証完了 & AC B1〜B7 全 PASS
+- [x] PR-B merged & local検証完了 & AC B1〜B7 全 PASS（2026-04-25 完了、PR #18）
 - [ ] PR-C merged & local検証完了 & AC C1〜C3 全 PASS
 - [ ] 本ファイル `docs/spec/m1/tasks.md` の全チェックボックスが `[x]`
 - [ ] M1 振り返りを ADR 末尾に追記（任意）
