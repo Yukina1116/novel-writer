@@ -3,9 +3,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import * as Icons from '../icons';
 import { ChatMessage } from '../types';
+import { useRequiresAuth } from '../hooks/useRequiresAuth';
 
 // --- Image Generation Modal ---
 export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePrompt, onApplyImage, characterDescription, isGenerating: isGeneratingProp }) => {
+    const { canUseAi, reason: aiBlockedReason } = useRequiresAuth();
     const [mode, setMode] = useState<'simple' | 'detailed'>('simple');
     const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
     const [chatInput, setChatInput] = useState('');
@@ -157,10 +159,10 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
                             className="w-full bg-gray-900 border border-gray-600 rounded-md px-3 py-2 text-sm resize-none overflow-y-auto max-h-48 focus:ring-0 text-white" />
                     </div>
                     <div className="flex-shrink-0 pt-4 space-y-2">
-                        <button onClick={handleRefine} disabled={isBusy || !refinementInput.trim()} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-cyan-600 text-sm rounded-md hover:bg-cyan-500 transition text-white disabled:bg-gray-600">
+                        <button onClick={handleRefine} disabled={!canUseAi || isBusy || !refinementInput.trim()} title={!canUseAi ? aiBlockedReason : undefined} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-cyan-600 text-sm rounded-md hover:bg-cyan-500 transition text-white disabled:bg-gray-600 disabled:cursor-not-allowed">
                             <Icons.MagicWandIcon /> 修正して再生成
                         </button>
-                        <button onClick={handleFinalize} disabled={isBusy} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-sm rounded-md hover:bg-emerald-500 transition text-white disabled:bg-gray-600">
+                        <button onClick={handleFinalize} disabled={!canUseAi || isBusy} title={!canUseAi ? aiBlockedReason : undefined} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-sm rounded-md hover:bg-emerald-500 transition text-white disabled:bg-gray-600 disabled:cursor-not-allowed">
                             この画像で決定する
                         </button>
                     </div>
@@ -197,7 +199,7 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
                                 className="flex-1 bg-transparent border-none px-4 py-2 text-sm resize-none overflow-y-auto max-h-32 focus:ring-0 text-white"
                                 disabled={isBusy} />
                         </div>
-                        <button type="submit" className="bg-cyan-600 text-white rounded-full p-2 hover:bg-cyan-500 self-end flex-shrink-0" disabled={isBusy || !chatInput.trim()}><Icons.SendIcon /></button>
+                        <button type="submit" className="bg-cyan-600 text-white rounded-full p-2 hover:bg-cyan-500 self-end flex-shrink-0 disabled:bg-gray-600 disabled:cursor-not-allowed" disabled={!canUseAi || isBusy || !chatInput.trim()} title={!canUseAi ? aiBlockedReason : undefined}><Icons.SendIcon /></button>
                     </form>
                 </div>
             );
@@ -214,8 +216,9 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
                                 const prompt = `masterpiece, best quality, anime style, full body, 1girl, solo, simple white background, no text, no letters, ${characterDescription.replace(/[\n\r:]+/g, ', ')}`;
                                 handleGenerate(prompt);
                             }}
-                            disabled={isBusy || !characterDescription.trim()}
-                            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-cyan-600 text-sm rounded-md hover:bg-cyan-500 transition text-white disabled:bg-gray-600"
+                            disabled={!canUseAi || isBusy || !characterDescription.trim()}
+                            title={!canUseAi ? aiBlockedReason : undefined}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-cyan-600 text-sm rounded-md hover:bg-cyan-500 transition text-white disabled:bg-gray-600 disabled:cursor-not-allowed"
                         >
                             <Icons.MoonIcon /> 画像を生成
                         </button>

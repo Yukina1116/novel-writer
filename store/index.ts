@@ -9,8 +9,9 @@ import { createTutorialSlice, TutorialSlice } from './tutorialSlice';
 import { createAnalysisHistorySlice, AnalysisHistorySlice } from './analysisHistorySlice';
 import { createFormSlice, FormSlice } from './formSlice';
 import { createSyncSlice, SyncSlice } from './syncSlice';
+import { createAuthSlice, AuthSlice } from './authSlice';
 
-export const useStore = create<AppState & AppActions & ProjectSlice & UiSlice & DataSlice & AiSlice & HistorySlice & TutorialSlice & AnalysisHistorySlice & FormSlice & SyncSlice>()(
+export const useStore = create<AppState & AppActions & ProjectSlice & UiSlice & DataSlice & AiSlice & HistorySlice & TutorialSlice & AnalysisHistorySlice & FormSlice & SyncSlice & AuthSlice>()(
     (set, get, api) => ({
         ...createProjectSlice(set, get),
         ...createUiSlice(set, get),
@@ -21,6 +22,7 @@ export const useStore = create<AppState & AppActions & ProjectSlice & UiSlice & 
         ...createAnalysisHistorySlice(set, get),
         ...createFormSlice(set, get),
         ...createSyncSlice(set, get),
+        ...createAuthSlice(set, get),
         loadInitialState: () => {},
     })
 );

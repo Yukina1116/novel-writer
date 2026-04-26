@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as Icons from '../icons';
 import { useStore } from '../store/index';
 import { Tooltip } from './Tooltip';
+import { AuthButton } from './AuthButton';
 import { loadAnalysisHistory as loadAnalysisHistoryFromDb } from '../db/analysisHistoryRepository';
 
 interface HeaderProps {
@@ -284,6 +285,8 @@ export const Header: React.FC<HeaderProps> = ({ displayMenuButtonRef, isMobile =
                         </button>
                     )}
                     
+                     <AuthButton />
+
                      <Tooltip helpId="sidebar_right" placement="left">
                         <button onClick={() => setIsRightSidebarOpen(p => !p)} className="p-2 rounded-full text-text-main hover:bg-text-main hover:text-app-bg transition btn-pressable">{isRightSidebarOpen ? <Icons.PanelRightCloseIcon className="h-5 w-5" /> : <Icons.PanelRightIcon className="h-5 w-5" />}</button>
                      </Tooltip>

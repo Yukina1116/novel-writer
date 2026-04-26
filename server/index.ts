@@ -38,10 +38,21 @@ async function startServer() {
                     defaultSrc: ["'self'"],
                     scriptSrc: ["'self'", "'unsafe-inline'"],
                     styleSrc: ["'self'", "'unsafe-inline'"],
-                    imgSrc: ["'self'", 'data:', 'https:'],
-                    connectSrc: ["'self'"],
+                    // lh3.googleusercontent.com: Google profile avatars (Firebase Auth).
+                    imgSrc: ["'self'", 'data:', 'https:', 'https://lh3.googleusercontent.com'],
+                    // Firebase Auth REST endpoints (identitytoolkit/securetoken) +
+                    // generic googleapis (token endpoint) + firebaseapp (auth handler).
+                    connectSrc: [
+                        "'self'",
+                        'https://*.googleapis.com',
+                        'https://*.firebaseapp.com',
+                        'https://identitytoolkit.googleapis.com',
+                        'https://securetoken.googleapis.com',
+                    ],
                     fontSrc: ["'self'", 'data:'],
                     objectSrc: ["'none'"],
+                    // Firebase Auth popup needs to load auth handler iframe + Google sign-in.
+                    frameSrc: ['https://*.firebaseapp.com', 'https://accounts.google.com'],
                     frameAncestors: ["'none'"],
                 },
             },
