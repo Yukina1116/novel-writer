@@ -73,7 +73,9 @@ const SuggestionHistoryModal: React.FC<{
     plotSuggestions: PlotItem[];
     onApprovePlot: (s: PlotItem, type: 'plot') => void;
     loadingKnowledge: string | null;
-}> = ({ isOpen, onClose, knowledgeSuggestions, onApproveKnowledge, plotSuggestions, onApprovePlot, loadingKnowledge }) => {
+    canUseAi: boolean;
+    aiBlockedReason: string;
+}> = ({ isOpen, onClose, knowledgeSuggestions, onApproveKnowledge, plotSuggestions, onApprovePlot, loadingKnowledge, canUseAi, aiBlockedReason }) => {
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[100] p-4" onClick={onClose}>
@@ -89,10 +91,11 @@ const SuggestionHistoryModal: React.FC<{
                             {knowledgeSuggestions?.length > 0 ? knowledgeSuggestions.map((s) => (
                                 <div key={s.id} className="bg-app-bg p-3 rounded-md flex justify-between items-center gap-4">
                                     <p className="text-xs text-text-main flex-grow">{s.content}</p>
-                                    <button 
-                                        onClick={() => onApproveKnowledge(s)} 
-                                        disabled={loadingKnowledge === s.content}
-                                        className="flex-shrink-0 px-3 py-1 bg-accent text-white text-xs rounded hover:bg-accent/90 disabled:bg-text-muted flex items-center justify-center min-w-[60px]"
+                                    <button
+                                        onClick={() => onApproveKnowledge(s)}
+                                        disabled={!canUseAi || loadingKnowledge === s.content}
+                                        title={!canUseAi ? aiBlockedReason : undefined}
+                                        className="flex-shrink-0 px-3 py-1 bg-accent text-white text-xs rounded hover:bg-accent/90 disabled:bg-text-muted disabled:cursor-not-allowed flex items-center justify-center min-w-[60px]"
                                     >
                                         {loadingKnowledge === s.content ? <Icons.LoaderIcon className="h-3 w-3 animate-spin" /> : '採用する'}
                                     </button>
@@ -432,13 +435,15 @@ export const RightPanel: React.FC<RightPanelProps> = ({ userInputRef, isMobile =
             </div>
             {userMode === 'pro' && (
                 <SuggestionHistoryModal 
-                    isOpen={isHistoryOpen} 
-                    onClose={() => setIsHistoryOpen(false)} 
-                    knowledgeSuggestions={archivedKnowledgeSuggestions} 
-                    onApproveKnowledge={handleApproveKnowledgeSuggestion} 
-                    plotSuggestions={archivedPlotSuggestions} 
-                    onApprovePlot={handleApproveSuggestion} 
-                    loadingKnowledge={loadingKnowledge} 
+                    isOpen={isHistoryOpen}
+                    onClose={() => setIsHistoryOpen(false)}
+                    knowledgeSuggestions={archivedKnowledgeSuggestions}
+                    onApproveKnowledge={handleApproveKnowledgeSuggestion}
+                    plotSuggestions={archivedPlotSuggestions}
+                    onApprovePlot={handleApproveSuggestion}
+                    loadingKnowledge={loadingKnowledge}
+                    canUseAi={canUseAi}
+                    aiBlockedReason={aiBlockedReason}
                 />
             )}
         </div>

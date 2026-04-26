@@ -8,6 +8,7 @@ import { HelpPopover } from '../HelpPopover';
 import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../../store/index';
 import { compressImage } from '../../utils';
+import { useRequiresAuth } from '../../hooks/useRequiresAuth';
 
 interface CharacterFormProps {
     isOpen: boolean;
@@ -32,6 +33,7 @@ export const CharacterForm: React.FC<CharacterFormProps> = ({
     onShowHelp,
     isMobile = false,
 }) => {
+    const { canUseAi, reason: aiBlockedReason } = useRequiresAuth();
     // Local form state
     const [name, setName] = useState('');
     const [appearance, setAppearance] = useState<{ imageUrl: string; traits: { key: string; value: string }[] }>({ imageUrl: '', traits: [] });
@@ -411,7 +413,7 @@ export const CharacterForm: React.FC<CharacterFormProps> = ({
                                             <Icons.UploadCloudIcon className="h-5 w-5" />
                                             <span>ファイルを選択</span>
                                         </label>
-                                        <button type="button" onClick={onOpenImageGenModal} className={`w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-600 rounded-lg transition btn-pressable text-teal-300 hover:bg-gray-700/50 hover:border-teal-500 ${isMobile ? 'py-3' : 'py-1.5 text-sm'}`}>
+                                        <button type="button" onClick={onOpenImageGenModal} disabled={!canUseAi} title={!canUseAi ? aiBlockedReason : undefined} className={`w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-600 rounded-lg transition btn-pressable text-teal-300 hover:bg-gray-700/50 hover:border-teal-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent ${isMobile ? 'py-3' : 'py-1.5 text-sm'}`}>
                                             <Icons.MoonIcon className="h-5 w-5" />
                                             <span className="text-teal-400">AIで立ち絵を生成</span>
                                         </button>
@@ -431,7 +433,7 @@ export const CharacterForm: React.FC<CharacterFormProps> = ({
                                             {renderLabel("名前 *", "name")}
                                             <div className="flex items-center gap-2">
                                                 <input type="text" value={name} onChange={e => { setName(e.target.value); markEdited('name'); }} className={inputClass} required />
-                                                <button type="button" onClick={() => setIsNameGeneratorOpen(true)} className={`flex-shrink-0 text-gray-400 hover:text-indigo-400 bg-gray-900 border border-gray-600 rounded-md ${isMobile ? 'p-3' : 'p-2'}`}><Icons.DiceIcon className="h-5 w-5"/></button>
+                                                <button type="button" onClick={() => setIsNameGeneratorOpen(true)} disabled={!canUseAi} title={!canUseAi ? aiBlockedReason : undefined} className={`flex-shrink-0 text-gray-400 hover:text-indigo-400 bg-gray-900 border border-gray-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed ${isMobile ? 'p-3' : 'p-2'}`}><Icons.DiceIcon className="h-5 w-5"/></button>
                                             </div>
                                         </div>
                                         <div>{renderLabel("ふりがな", "furigana")}<input type="text" value={furigana} onChange={e => { setFurigana(e.target.value); markEdited('furigana'); }} className={inputClass}/></div>
