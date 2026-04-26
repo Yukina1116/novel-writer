@@ -33,9 +33,8 @@ const toCurrentUser = (user: User | null): CurrentUser | null =>
         photoURL: user.photoURL,
     } : null;
 
-// Centralizes the get()-cast pattern shared across all auth error paths.
-// Mirrors the cast style used by sibling slices (projectSlice etc.) since
-// store action types are unioned at composition time, not in the slice.
+// Slice-local view of get(): showToast lives on UiSlice but the type union
+// only resolves at store composition time, so we cast here.
 const reportAuthError = (
     get: () => unknown,
     prefix: string,
@@ -82,8 +81,18 @@ export const createAuthSlice = (set, get): AuthSlice => ({
             await signInWithPopup(auth, provider);
             // currentUser update flows through onAuthStateChanged listener.
         } catch (error: unknown) {
+            // User-intent cancels (closed popup, double-clicked sign-in) are
+            // not errors — silence them so the toast stays for actual problems
+            // (network failure, popup blocker, provider config).
+            const code = (error as { code?: string }).code;
+            if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+                return;
+            }
             console.error('signInWithGoogle failed:', error);
-            const message = reportAuthError(get, 'ログインに失敗しました', error);
+            const prefix = code === 'auth/popup-blocked'
+                ? 'ポップアップがブロックされました。許可してから再度お試しください'
+                : 'ログインに失敗しました';
+            const message = reportAuthError(get, prefix, error);
             set({ authError: message });
         }
     },
