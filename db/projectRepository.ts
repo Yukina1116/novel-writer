@@ -1,6 +1,6 @@
 import { Project } from '../types';
 import { validateAndSanitizeProjectData } from '../utils';
-import { db, ProjectListEntry } from './dexie';
+import { getDb, ProjectListEntry } from './dexie';
 
 // historyTree omitted: memory-only by ADR-0001; persisting would defeat the cap
 // and bloat IndexedDB. Whitelist (not blocklist) so future legacy keys from
@@ -67,7 +67,7 @@ const stripInternalKeys = (value: unknown): unknown => {
 };
 
 export const listProjects = async (): Promise<ProjectListEntry[]> => {
-    const projects = await db.projects.orderBy('lastModified').reverse().toArray();
+    const projects = await getDb().projects.orderBy('lastModified').reverse().toArray();
     return projects.map(p => ({
         id: p.id,
         name: p.name,
@@ -76,17 +76,24 @@ export const listProjects = async (): Promise<ProjectListEntry[]> => {
     }));
 };
 
+/**
+ * Returns the project for `id`, or null if no record exists.
+ * @throws {ProjectValidationError} if the record is found but missing
+ *   required fields. Dexie does not enforce schema on read, so callers
+ *   must treat this as a corrupted-record signal.
+ */
 export const getProject = async (id: string): Promise<Project | null> => {
-    const project = await db.projects.get(id);
-    return project ?? null;
+    const project = await getDb().projects.get(id);
+    if (!project) return null;
+    return validateAndSanitizeProjectData(project);
 };
 
 export const putProject = async (project: Project): Promise<void> => {
     const sanitized = validateAndSanitizeProjectData(project);
     const persistable = pickPersistableFields(sanitized);
-    await db.projects.put(stripInternalKeys(persistable) as Project);
+    await getDb().projects.put(stripInternalKeys(persistable) as Project);
 };
 
 export const deleteProject = async (id: string): Promise<void> => {
-    await db.projects.delete(id);
+    await getDb().projects.delete(id);
 };
