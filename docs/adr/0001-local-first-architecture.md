@@ -102,7 +102,7 @@
 
 ## M1 振り返り（2026-04-26）
 
-3 PR (#17 PR-A, #18 PR-B, #19 PR-C) 全て計画通り逐次マージ完了。所要時間は計画値（合計 4 〜 6 時間）に対し実績ほぼ一致。
+3 PR (#17 PR-A, #18 PR-B, #19 PR-C) 全て計画通り逐次マージ完了。実作業時間として計画値（合計 4 〜 6 時間）に対し実績ほぼ一致（カレンダー時間ではなく純粋な作業時間ベースの主観評価）。
 
 **うまくいった点:**
 
@@ -113,5 +113,9 @@
 **課題・M3 以降への申し送り:**
 
 - 自動テスト未整備のため、AC 検証は手動 curl/手動操作中心。M3（認証ゲート本実装）から契約テスト + ルール unit テストの導入を本格検討
-- PR-C の admin SDK スタブには「prod で `applicationDefault()` 失敗時の logError 統合」「prod で projectId env 必須化」「`__resetFirebaseAdminAppForTesting()` 露出検討」を後回しにしている。M3 で routes に組み込むタイミングで一括対応する（PR #19 コメントに引き継ぎ事項として記録済み）
-- GitHub Actions の各 action が Node 20 ベース。2026-06-02 から Node 24 強制、2026-09-16 廃止予定。M2 着手前後で `actions/checkout@v5` 等の major 追従を一括実施する
+- PR-C の admin SDK スタブには次の 4 項目を後回しにしている。M3 で routes に組み込むタイミングで一括対応する（PR #19 コメントに引き継ぎ事項として記録済み）:
+  1. prod で `applicationDefault()` 失敗時の `logError` 統合（errorIds.ts 連携）
+  2. prod で `projectId` env 未設定時の fail-fast（dev fallback の段階的廃止）
+  3. test スクリプトの Anonymous プロバイダ未許可エラー時の具体メッセージ化（`auth/admin-restricted-operation` 検出時）
+  4. テスト用 `__resetFirebaseAdminAppForTesting()` の露出検討（NODE_ENV ガード付き）
+- GitHub Actions の各 action が Node 20 ベース。**廃止予定日は暫定**（公式 [GitHub blog (2025-09-19)](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/) は "fall of 2026" と曖昧表現、PR #17 のデプロイログ由来で `2026-06-02` 強制 / `2026-09-16` 廃止と推定）。M2 着手前後で公式状況を再確認のうえ `actions/checkout@v5` 等の major 追従を一括実施する
