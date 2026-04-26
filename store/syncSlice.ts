@@ -4,7 +4,8 @@ export interface SyncSlice {
     saveStatus: 'synced' | 'saving' | 'dirty' | 'error';
     lastSyncError: string | null;
     _saveTimer: ReturnType<typeof setTimeout> | null;
-    // True when an edit happens during an in-flight save; flushSave re-runs after completion.
+    // Set by markDirty/flushSave when saveStatus === 'saving'. flushSave checks it
+    // post-await so writes during the in-flight putProject are not lost.
     _pendingFlush: boolean;
     markDirty: () => void;
     flushSave: () => Promise<void>;
@@ -51,8 +52,19 @@ export const createSyncSlice = (set, get): SyncSlice => ({
             }
         } catch (error: any) {
             console.error('Failed to save project:', error);
-            set({ saveStatus: 'error' as const, lastSyncError: error.message });
-            (get() as any).showToast?.(`保存に失敗しました: ${error.message}`, 'error');
+            // Schedule a retry so subsequent edits aren't stranded by a transient
+            // failure (quota / DB closed by another tab / Dexie open race).
+            const retryTimer = setTimeout(() => get().flushSave(), 5000);
+            set({
+                saveStatus: 'error' as const,
+                lastSyncError: error.message,
+                _pendingFlush: false,
+                _saveTimer: retryTimer,
+            });
+            (get() as any).showToast?.(
+                `保存に失敗しました（5秒後に自動再試行します）: ${error.message}`,
+                'error',
+            );
         }
     },
 });

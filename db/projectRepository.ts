@@ -2,9 +2,9 @@ import { Project } from '../types';
 import { validateAndSanitizeProjectData } from '../utils';
 import { db, ProjectListEntry } from './dexie';
 
-// historyTree is intentionally excluded (memory-only, max 10 nodes per ADR-0001).
-// Other unknown fields (e.g. `_order` from legacy Firestore docs) are dropped
-// by this whitelist to satisfy AC A6.
+// historyTree omitted: memory-only by ADR-0001; persisting would defeat the cap
+// and bloat IndexedDB. Whitelist (not blocklist) so future legacy keys from
+// imported JSON cannot leak into IndexedDB.
 const PERSISTABLE_KEYS = [
     'id',
     'name',
@@ -28,6 +28,19 @@ const PERSISTABLE_KEYS = [
     'displaySettings',
 ] as const satisfies readonly (keyof Project)[];
 
+// Compile-time tripwire: errors out if a required Project field is added without
+// being whitelisted above (or explicitly excluded). Adjust the exclusion union
+// when intentionally omitting a field.
+type RequiredProjectKeys = {
+    [K in keyof Project]-?: undefined extends Project[K] ? never : K;
+}[keyof Project];
+type _MissingFromWhitelist = Exclude<
+    RequiredProjectKeys,
+    typeof PERSISTABLE_KEYS[number] | 'historyTree'
+>;
+const _coverageCheck: [_MissingFromWhitelist] extends [never] ? true : never = true;
+void _coverageCheck;
+
 const pickPersistableFields = (project: Project): Project => {
     const out: Record<string, unknown> = {};
     for (const key of PERSISTABLE_KEYS) {
@@ -37,9 +50,9 @@ const pickPersistableFields = (project: Project): Project => {
     return out as unknown as Project;
 };
 
-// Drop legacy Firestore subcollection internals such as `_order` recursively.
-// AC A6 requires Import payloads to be sanitized; the top-level whitelist
-// alone misses fields nested inside settings / knowledgeBase / novelContent etc.
+// Recursive pass: pickPersistableFields whitelists only the top level, but
+// legacy fields like _order can be nested under settings/knowledgeBase/
+// novelContent. AC A6.
 const stripInternalKeys = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(stripInternalKeys);
     if (value && typeof value === 'object') {
