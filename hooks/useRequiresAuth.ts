@@ -1,6 +1,6 @@
+import { useMemo } from 'react';
 import { useStore } from '../store/index';
-
-export const TIER0_REASON = 'ログインして利用してください（AI 機能は無料アカウントから）';
+import { TIER0_REASON } from '../store/authConstants';
 
 export interface RequiresAuthState {
     /** True when the current user has a sufficient tier to use AI. */
@@ -14,8 +14,11 @@ export interface RequiresAuthState {
 // gate (Bearer token verification) is M3 scope.
 export const useRequiresAuth = (): RequiresAuthState => {
     const authStatus = useStore((state) => state.authStatus);
-    if (authStatus === 'authenticated') {
-        return { canUseAi: true, reason: '' };
-    }
-    return { canUseAi: false, reason: TIER0_REASON };
+    // Memo so consumers' button props stay reference-stable across renders.
+    return useMemo<RequiresAuthState>(
+        () => authStatus === 'authenticated'
+            ? { canUseAi: true, reason: '' }
+            : { canUseAi: false, reason: TIER0_REASON },
+        [authStatus],
+    );
 };

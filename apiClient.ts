@@ -1,4 +1,5 @@
 import { useStore } from './store/index';
+import { TIER0_API_BLOCK_MESSAGE } from './store/authConstants';
 
 const API_BASE = '/api/ai';
 
@@ -7,14 +8,13 @@ const API_BASE = '/api/ai';
 // yet gated), this prevents the request from reaching the BE. The real
 // authorization check (Bearer token verification) is M3 BE work; this gate
 // is purely a soft guardrail and surfaces an actionable error toast.
-const TIER0_BLOCK_MESSAGE = 'ログインしてから AI 機能をご利用ください。';
 
 export async function apiCall<T>(
     endpoint: string,
     body: unknown
 ): Promise<{ success: true; data: T } | { success: false; error: Error }> {
     if (useStore.getState().authStatus !== 'authenticated') {
-        return { success: false as const, error: new Error(TIER0_BLOCK_MESSAGE) };
+        return { success: false as const, error: new Error(TIER0_API_BLOCK_MESSAGE) };
     }
     try {
         const res = await fetch(`${API_BASE}${endpoint}`, {

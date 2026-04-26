@@ -33,6 +33,22 @@ const toCurrentUser = (user: User | null): CurrentUser | null =>
         photoURL: user.photoURL,
     } : null;
 
+// Centralizes the get()-cast pattern shared across all auth error paths.
+// Mirrors the cast style used by sibling slices (projectSlice etc.) since
+// store action types are unioned at composition time, not in the slice.
+const reportAuthError = (
+    get: () => unknown,
+    prefix: string,
+    error: unknown,
+): string => {
+    const message = error instanceof Error ? error.message : String(error);
+    (get() as { showToast?: (m: string, t: string) => void }).showToast?.(
+        `${prefix}: ${message}`,
+        'error',
+    );
+    return message;
+};
+
 export const createAuthSlice = (set, get): AuthSlice => ({
     currentUser: null,
     authStatus: 'initializing' as AuthStatus,
@@ -52,15 +68,8 @@ export const createAuthSlice = (set, get): AuthSlice => ({
             },
             (error) => {
                 console.error('onAuthStateChanged error:', error);
-                set({
-                    currentUser: null,
-                    authStatus: 'unauthenticated',
-                    authError: error.message,
-                });
-                (get() as { showToast?: (m: string, t: string) => void }).showToast?.(
-                    `認証状態の取得に失敗しました: ${error.message}`,
-                    'error',
-                );
+                const message = reportAuthError(get, '認証状態の取得に失敗しました', error);
+                set({ currentUser: null, authStatus: 'unauthenticated', authError: message });
             },
         );
         return unsubscribe;
@@ -73,13 +82,9 @@ export const createAuthSlice = (set, get): AuthSlice => ({
             await signInWithPopup(auth, provider);
             // currentUser update flows through onAuthStateChanged listener.
         } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : String(error);
             console.error('signInWithGoogle failed:', error);
+            const message = reportAuthError(get, 'ログインに失敗しました', error);
             set({ authError: message });
-            (get() as { showToast?: (m: string, t: string) => void }).showToast?.(
-                `ログインに失敗しました: ${message}`,
-                'error',
-            );
         }
     },
 
@@ -89,19 +94,9 @@ export const createAuthSlice = (set, get): AuthSlice => ({
             await firebaseSignOut(auth);
             // currentUser update flows through onAuthStateChanged listener.
         } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : String(error);
             console.error('signOut failed:', error);
+            const message = reportAuthError(get, 'ログアウトに失敗しました', error);
             set({ authError: message });
-            (get() as { showToast?: (m: string, t: string) => void }).showToast?.(
-                `ログアウトに失敗しました: ${message}`,
-                'error',
-            );
         }
     },
 });
-
-// Tier derivation: pure function over auth state.
-// Tier 0 = unauthenticated (or initializing), Tier 1 = authenticated.
-// Tier 2 (Stripe) is M5 scope; not represented yet.
-export const selectTier = (state: Pick<AuthSlice, 'authStatus'>): 0 | 1 =>
-    state.authStatus === 'authenticated' ? 1 : 0;
