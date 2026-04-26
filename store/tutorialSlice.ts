@@ -1,4 +1,4 @@
-
+import { loadTutorialState, saveTutorialState } from '../db/tutorialRepository';
 
 const initialState = {
     isTutorialActive: false,
@@ -65,9 +65,8 @@ export const createTutorialSlice = (set, get): TutorialSlice => ({
     ...initialState,
     loadTutorialData: async () => {
         try {
-            const response = await fetch('/api/tutorial');
-            const data = await response.json();
-            set(data);
+            const flags = await loadTutorialState();
+            set(flags);
         } catch (error) {
             console.error('Failed to load tutorial data', error);
         }
@@ -82,11 +81,7 @@ export const createTutorialSlice = (set, get): TutorialSlice => ({
             hasCompletedGlobalTimelineTutorial: state.hasCompletedGlobalTimelineTutorial,
         };
         try {
-            await fetch('/api/tutorial', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(dataToSave),
-            });
+            await saveTutorialState(dataToSave);
         } catch (error) {
             console.error('Failed to save tutorial data', error);
         }

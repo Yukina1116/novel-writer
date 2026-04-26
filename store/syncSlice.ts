@@ -1,4 +1,4 @@
-import { updateProjectApi } from '../projectApi';
+import { putProject } from '../db/projectRepository';
 
 export interface SyncSlice {
     saveStatus: 'synced' | 'saving' | 'dirty' | 'error';
@@ -34,7 +34,7 @@ export const createSyncSlice = (set, get): SyncSlice => ({
 
         try {
             const project = allProjectsData[activeProjectId];
-            await updateProjectApi(activeProjectId, project);
+            await putProject(project);
             set({ saveStatus: 'synced' as const, lastSyncError: null });
         } catch (error: any) {
             console.error('Failed to save project:', error);

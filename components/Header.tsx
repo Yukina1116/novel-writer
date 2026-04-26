@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as Icons from '../icons';
 import { useStore } from '../store/index';
 import { Tooltip } from './Tooltip';
+import { loadAnalysisHistory as loadAnalysisHistoryFromDb } from '../db/analysisHistoryRepository';
 
 interface HeaderProps {
     displayMenuButtonRef: React.RefObject<HTMLButtonElement>;
@@ -115,7 +116,7 @@ export const Header: React.FC<HeaderProps> = ({ displayMenuButtonRef, isMobile =
                 historyTree: state.historyTree,
                 pinnedSettingIds: state.pinnedSettingIds,
             },
-            analysisHistory: await fetch('/api/analysis-history').then(res => res.json())
+            analysisHistory: { history: await loadAnalysisHistoryFromDb() }
         };
 
         const blob = new Blob([JSON.stringify(allData, null, 2)], { type: 'application/json' });
