@@ -37,6 +37,22 @@ const pickPersistableFields = (project: Project): Project => {
     return out as unknown as Project;
 };
 
+// Drop legacy Firestore subcollection internals such as `_order` recursively.
+// AC A6 requires Import payloads to be sanitized; the top-level whitelist
+// alone misses fields nested inside settings / knowledgeBase / novelContent etc.
+const stripInternalKeys = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(stripInternalKeys);
+    if (value && typeof value === 'object') {
+        const out: Record<string, unknown> = {};
+        for (const k of Object.keys(value)) {
+            if (k.startsWith('_')) continue;
+            out[k] = stripInternalKeys((value as Record<string, unknown>)[k]);
+        }
+        return out;
+    }
+    return value;
+};
+
 export const listProjects = async (): Promise<ProjectListEntry[]> => {
     const projects = await db.projects.orderBy('lastModified').reverse().toArray();
     return projects.map(p => ({
@@ -54,7 +70,8 @@ export const getProject = async (id: string): Promise<Project | null> => {
 
 export const putProject = async (project: Project): Promise<void> => {
     const sanitized = validateAndSanitizeProjectData(project);
-    await db.projects.put(pickPersistableFields(sanitized));
+    const persistable = pickPersistableFields(sanitized);
+    await db.projects.put(stripInternalKeys(persistable) as Project);
 };
 
 export const deleteProject = async (id: string): Promise<void> => {
