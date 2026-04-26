@@ -36,7 +36,8 @@
 
 ### アーキテクチャ概要
 - **ブラウザ IndexedDB（Dexie.js）= コンテンツ正本**
-  - projects, novelContent, chatHistory, settings, knowledgeBase, plotBoard, timeline, historyTree
+  - projects, novelContent, chatHistory, settings, knowledgeBase, plotBoard, timeline
+  - `historyTree` は永続化対象外（メモリのみ、最大10ノード、リロードでリセット）
 - **localStorage = UI 設定のみ**（theme, panelSize 等）
 - **Firestore = メタのみ**
   - `users/{uid}`: email, plan, preferences
@@ -95,8 +96,9 @@
 
 ## References
 
-- Codex plan review: 2026-04-25, threadId 019dc4e5-65df-7e82-a5b4-12a3eadff26c
-- Codex security review: 2026-04-25, threadId 019dc4f1-1fbe-7ba1-91d9-d5c049871861
+- Codex plan review (ADR initial): 2026-04-25, threadId 019dc4e5-65df-7e82-a5b4-12a3eadff26c
+- Codex security review (ADR initial): 2026-04-25, threadId 019dc4f1-1fbe-7ba1-91d9-d5c049871861
+- Codex plan review (M2 spec PR #22): 2026-04-26, threadId 019dc8b9-72d8-7813-94c4-fd1333be10d7
 - アーキテクチャ図: `docs/diagrams/architecture-target.html`
 - 現状アーキテクチャ図: `docs/diagrams/architecture.html`
 
