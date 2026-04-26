@@ -197,13 +197,18 @@ export default function App() {
     }
 
     if (!activeProjectId || !activeProjectData) {
-        return <ProjectSelectionScreen 
-            projects={Object.values(allProjectsData)} 
-            onCreateProject={createProject} 
-            onDeleteProject={deleteProject} 
-            onImportProject={importProject} 
-            onSelectProject={setActiveProjectId} 
-        />;
+        return (
+            <>
+                <Toast />
+                <ProjectSelectionScreen
+                    projects={Object.values(allProjectsData)}
+                    onCreateProject={createProject}
+                    onDeleteProject={deleteProject}
+                    onImportProject={importProject}
+                    onSelectProject={setActiveProjectId}
+                />
+            </>
+        );
     }
 
     // Mobile View

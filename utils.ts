@@ -294,19 +294,29 @@ const isValidKnowledgeItem = (item: any): item is KnowledgeItem => {
 };
 // Add more specific validators for other types as needed...
 
+// Distinguishable from runtime/IO errors so callers can tell schema-corrupted
+// records apart from transient infrastructure failures (e.g. IDB transaction
+// abort) and message the user accordingly.
+export class ProjectValidationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'ProjectValidationError';
+    }
+}
+
 export const validateAndSanitizeProjectData = (data: any): Project => {
     if (!isObject(data)) {
-        throw new Error('プロジェクトファイルが有効なオブジェクトではありません。');
+        throw new ProjectValidationError('プロジェクトファイルが有効なオブジェクトではありません。');
     }
 
     const sanitized: Partial<Project> = { ...data };
 
     // --- Validate mandatory fields ---
     if (!isString(sanitized.id) || !sanitized.id) {
-        throw new Error('プロジェクトIDが無効または存在しません。');
+        throw new ProjectValidationError('プロジェクトIDが無効または存在しません。');
     }
     if (!isString(sanitized.name) || !sanitized.name) {
-        throw new Error('プロジェクト名が無効または存在しません。');
+        throw new ProjectValidationError('プロジェクト名が無効または存在しません。');
     }
     if (!isString(sanitized.lastModified) || isNaN(new Date(sanitized.lastModified).getTime())) {
         sanitized.lastModified = new Date().toISOString();

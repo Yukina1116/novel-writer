@@ -43,4 +43,7 @@ const createDb = (): AppDexieDb => {
     return instance;
 };
 
-export const db: AppDexieDb = createDb();
+// Lazy init: defer construction so failures throw at the call site (catchable
+// by useLocalSync) instead of at module evaluation (white-screening the app).
+let _db: AppDexieDb | null = null;
+export const getDb = (): AppDexieDb => (_db ??= createDb());
