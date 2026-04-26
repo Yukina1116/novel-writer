@@ -84,7 +84,10 @@ export const createProjectSlice = (set, get): ProjectSlice => ({
             activeProjectId: newId,
             historyTree: historyTree,
         }));
-        putProject(newProject).catch(err => console.error('Failed to save new project:', err));
+        putProject(newProject).catch(err => {
+            console.error('Failed to save new project:', err);
+            (get() as any).showToast?.(`プロジェクトの保存に失敗しました: ${err.message}`, 'error');
+        });
     },
     deleteProject: (projectId) => {
         set(state => {
@@ -95,7 +98,10 @@ export const createProjectSlice = (set, get): ProjectSlice => ({
                 activeProjectId: state.activeProjectId === projectId ? null : state.activeProjectId
             };
         });
-        deleteProjectFromDb(projectId).catch(err => console.error('Failed to delete project:', err));
+        deleteProjectFromDb(projectId).catch(err => {
+            console.error('Failed to delete project:', err);
+            (get() as any).showToast?.(`プロジェクトの削除に失敗しました: ${err.message}`, 'error');
+        });
     },
     importProject: (event) => {
         const file = event.target.files[0];
@@ -118,7 +124,10 @@ export const createProjectSlice = (set, get): ProjectSlice => ({
                         historyTree: historyTree,
                     };
                 });
-                putProject(projectToLoad).catch(err => console.error('Failed to save imported project:', err));
+                putProject(projectToLoad).catch(err => {
+                    console.error('Failed to save imported project:', err);
+                    (get() as any).showToast?.(`インポートしたプロジェクトの保存に失敗しました: ${err.message}`, 'error');
+                });
             } catch (err) {
                 alert(`ファイルの読み込みに失敗しました: ${err.message}`);
                 console.error(err);

@@ -39,6 +39,7 @@ export const createSyncSlice = (set, get): SyncSlice => ({
         } catch (error: any) {
             console.error('Failed to save project:', error);
             set({ saveStatus: 'error' as const, lastSyncError: error.message });
+            (get() as any).showToast?.(`保存に失敗しました: ${error.message}`, 'error');
         }
     },
 });

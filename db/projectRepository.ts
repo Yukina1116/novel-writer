@@ -2,6 +2,41 @@ import { Project } from '../types';
 import { validateAndSanitizeProjectData } from '../utils';
 import { db, ProjectListEntry } from './dexie';
 
+// historyTree is intentionally excluded (memory-only, max 10 nodes per ADR-0001).
+// Other unknown fields (e.g. `_order` from legacy Firestore docs) are dropped
+// by this whitelist to satisfy AC A6.
+const PERSISTABLE_KEYS = [
+    'id',
+    'name',
+    'lastModified',
+    'isSimpleMode',
+    'settings',
+    'novelContent',
+    'chatHistory',
+    'knowledgeBase',
+    'knowledgeCategoryOrder',
+    'plotBoard',
+    'plotTypeColors',
+    'plotRelations',
+    'plotNodePositions',
+    'timeline',
+    'timelineLanes',
+    'characterRelations',
+    'nodePositions',
+    'userProfile',
+    'aiSettings',
+    'displaySettings',
+] as const satisfies readonly (keyof Project)[];
+
+const pickPersistableFields = (project: Project): Project => {
+    const out: Record<string, unknown> = {};
+    for (const key of PERSISTABLE_KEYS) {
+        const value = project[key];
+        if (value !== undefined) out[key] = value;
+    }
+    return out as unknown as Project;
+};
+
 export const listProjects = async (): Promise<ProjectListEntry[]> => {
     const projects = await db.projects.orderBy('lastModified').reverse().toArray();
     return projects.map(p => ({
@@ -17,10 +52,9 @@ export const getProject = async (id: string): Promise<Project | null> => {
     return project ?? null;
 };
 
-// historyTree is intentionally not persisted (memory-only, max 10 nodes per ADR-0001).
 export const putProject = async (project: Project): Promise<void> => {
-    const { historyTree: _omitted, ...rest } = validateAndSanitizeProjectData(project);
-    await db.projects.put(rest as Project);
+    const sanitized = validateAndSanitizeProjectData(project);
+    await db.projects.put(pickPersistableFields(sanitized));
 };
 
 export const deleteProject = async (id: string): Promise<void> => {

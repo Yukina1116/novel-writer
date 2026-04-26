@@ -23,7 +23,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { EMPTY_ARRAY } from './constants';
 
 export default function App() {
-    const { isInitializing, error: syncError } = useLocalSync();
+    const { isInitializing } = useLocalSync();
     // --- Zustand Store Selectors ---
     const activeProjectId = useStore(state => state.activeProjectId);
     const allProjectsData = useStore(state => state.allProjectsData);
