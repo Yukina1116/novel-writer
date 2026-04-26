@@ -85,7 +85,7 @@
 |---|---|---|
 | M0 | 緊急対応（Cloud Run 非公開化、max-instances 制限、予算アラート） | ✅ 完了（2026-04-25） |
 | M1 | 基盤整備（IaC 化、防御層、Firebase 準備） | ✅ 完了（2026-04-26） |
-| M2 | 認証 + IndexedDB 移行 | ⏳ |
+| M2 | 認証 + IndexedDB 移行 | 🚧 進行中（PR-A IndexedDB 移行 ✅ 2026-04-26 PR #24 / PR-B Auth FE ⏳ / PR-C 旧ルート退役 ⏳） |
 | M3 | AI 認証ゲート + クォータ | ⏳ |
 | M4 | Export/Import + バックアップ警告 UI | ⏳ |
 | M5 | Stripe Subscription + Webhook + 法務 | ⏳ |
