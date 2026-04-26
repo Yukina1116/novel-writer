@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import { Project } from '../types';
+import { AnalysisResult, Project } from '../types';
 
 export interface ProjectListEntry {
     id: string;
@@ -19,7 +19,7 @@ export interface TutorialStateRecord {
 
 export interface AnalysisHistoryRecord {
     key: string;
-    history: unknown[];
+    history: AnalysisResult[];
 }
 
 export type AppDexieDb = Dexie & {
@@ -33,26 +33,14 @@ export const DB_VERSION = 1;
 export const TUTORIAL_STATE_VERSION = 1;
 export const ANALYSIS_HISTORY_KEY = 'current';
 
-let dbInstance: AppDexieDb | null = null;
-
-export const getDb = (): AppDexieDb => {
-    if (dbInstance) return dbInstance;
-    const db = new Dexie(DB_NAME) as AppDexieDb;
-    db.version(DB_VERSION).stores({
+const createDb = (): AppDexieDb => {
+    const instance = new Dexie(DB_NAME) as AppDexieDb;
+    instance.version(DB_VERSION).stores({
         projects: 'id, lastModified',
         tutorialState: 'version',
         analysisHistory: 'key',
     });
-    dbInstance = db;
-    return db;
+    return instance;
 };
 
-export const isIndexedDbAvailable = async (): Promise<boolean> => {
-    if (typeof indexedDB === 'undefined') return false;
-    try {
-        await getDb().open();
-        return true;
-    } catch {
-        return false;
-    }
-};
+export const db: AppDexieDb = createDb();
