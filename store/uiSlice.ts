@@ -274,7 +274,9 @@ export const createUiSlice = (set, get): UiSlice => ({
     setUserMode: (mode) => set({ userMode: mode }),
     setUndoScope: (scope) => set({ undoScope: scope }),
     showToast: (message, type = 'info') => {
-        if (!get().showToastNotifications) return;
+        // Errors must reach the user even when info-level notifications are muted
+        // (data-loss signals like save failures must not be silenceable).
+        if (type !== 'error' && !get().showToastNotifications) return;
         set({ toast: { id: Date.now(), message, type } });
         setTimeout(() => {
             set(state => state.toast?.message === message ? { toast: null } : {});

@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Project, AppState, AppActions, HistoryTree, HistoryNode } from '../types';
 import { defaultAiSettings, defaultDisplaySettings, simpleModeAiSettings, simpleModeDisplaySettings } from '../constants';
 import { validateAndSanitizeProjectData } from '../utils';
-import { createProjectApi, deleteProjectApi } from '../projectApi';
+import { deleteProject as deleteProjectFromDb, putProject } from '../db/projectRepository';
 
 const initialState = {
     allProjectsData: {} as { [key: string]: Project },
@@ -84,7 +84,10 @@ export const createProjectSlice = (set, get): ProjectSlice => ({
             activeProjectId: newId,
             historyTree: historyTree,
         }));
-        createProjectApi(newProject).catch(err => console.error('Failed to save new project:', err));
+        putProject(newProject).catch(err => {
+            console.error('Failed to save new project:', err);
+            (get() as any).showToast?.(`プロジェクトの保存に失敗しました: ${err.message}`, 'error');
+        });
     },
     deleteProject: (projectId) => {
         set(state => {
@@ -95,7 +98,10 @@ export const createProjectSlice = (set, get): ProjectSlice => ({
                 activeProjectId: state.activeProjectId === projectId ? null : state.activeProjectId
             };
         });
-        deleteProjectApi(projectId).catch(err => console.error('Failed to delete project:', err));
+        deleteProjectFromDb(projectId).catch(err => {
+            console.error('Failed to delete project:', err);
+            (get() as any).showToast?.(`プロジェクトの削除に失敗しました: ${err.message}`, 'error');
+        });
     },
     importProject: (event) => {
         const file = event.target.files[0];
@@ -118,7 +124,10 @@ export const createProjectSlice = (set, get): ProjectSlice => ({
                         historyTree: historyTree,
                     };
                 });
-                createProjectApi(projectToLoad).catch(err => console.error('Failed to save imported project:', err));
+                putProject(projectToLoad).catch(err => {
+                    console.error('Failed to save imported project:', err);
+                    (get() as any).showToast?.(`インポートしたプロジェクトの保存に失敗しました: ${err.message}`, 'error');
+                });
             } catch (err) {
                 alert(`ファイルの読み込みに失敗しました: ${err.message}`);
                 console.error(err);

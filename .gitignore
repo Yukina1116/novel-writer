@@ -35,3 +35,6 @@ dist-ssr
 
 # Serena
 .serena/
+
+# Playwright MCP screenshots/snapshots
+.playwright-mcp/
