@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../store/index';
 import { Project } from '../types';
 import { getProject, listProjects } from '../db/projectRepository';
+import { ProjectValidationError } from '../utils';
 
 const LOCAL_DB_INIT_FAILED_MESSAGE =
     'ローカルデータの読み込みに失敗しました。プライベートモードや容量不足で IndexedDB が利用できない場合、データはメモリ上のみ保持され、リロードで失われます。';
@@ -15,16 +16,21 @@ export const useLocalSync = () => {
             try {
                 const projectList = await listProjects();
                 if (projectList.length === 0) {
-                    if (useStore.getState().activeProjectId) {
-                        useStore.setState({ activeProjectId: null });
-                    }
+                    useStore.setState({ activeProjectId: null });
                     return;
                 }
 
+                let validationFailures = 0;
+                let infrastructureFailures = 0;
                 const projects = await Promise.all(
                     projectList.map(p =>
                         getProject(p.id).catch((err: unknown) => {
                             console.error(`Failed to load project ${p.id}:`, err);
+                            if (err instanceof ProjectValidationError) {
+                                validationFailures++;
+                            } else {
+                                infrastructureFailures++;
+                            }
                             return null;
                         }),
                     ),
@@ -34,14 +40,12 @@ export const useLocalSync = () => {
                     if (p) allProjectsData[p.id] = p;
                 }
 
-                // Preserve projectList ordering (lastModified DESC) but filter to
-                // entries that loaded successfully — this is the only safe pool
-                // for activeProjectId (allProjectsData keyspace).
+                // Filter while preserving listProjects' lastModified-DESC order
+                // so the fallback below picks the most recent healthy project.
                 const healthyProjects = projectList.filter(p => allProjectsData[p.id]);
-                const corruptedCount = projectList.length - healthyProjects.length;
 
-                // Reuse pre-existing activeProjectId only if its record loaded
-                // successfully (dangling-id guard for stale cross-session state).
+                // Dangling-id guard: a persisted activeProjectId may point at a
+                // project that is now missing or corrupted across sessions.
                 const existingId = useStore.getState().activeProjectId;
                 const validExistingId =
                     existingId && allProjectsData[existingId] ? existingId : null;
@@ -52,9 +56,13 @@ export const useLocalSync = () => {
                     activeProjectId: validExistingId ?? fallbackId,
                 });
 
-                if (corruptedCount > 0) {
+                const failureCount = validationFailures + infrastructureFailures;
+                if (failureCount > 0) {
+                    const detail = infrastructureFailures > 0
+                        ? '一時的なエラーの可能性があります。リロードで復旧する場合があります'
+                        : '破損データを除外しました';
                     useStore.getState().showToast(
-                        `プロジェクト ${corruptedCount} 件の読み込みに失敗しました（破損データを除外しました）`,
+                        `プロジェクト ${failureCount} 件の読み込みに失敗しました（${detail}）`,
                         'error',
                     );
                 }

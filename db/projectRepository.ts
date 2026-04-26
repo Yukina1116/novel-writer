@@ -76,12 +76,15 @@ export const listProjects = async (): Promise<ProjectListEntry[]> => {
     }));
 };
 
+/**
+ * Returns the project for `id`, or null if no record exists.
+ * @throws {ProjectValidationError} if the record is found but missing
+ *   required fields. Dexie does not enforce schema on read, so callers
+ *   must treat this as a corrupted-record signal.
+ */
 export const getProject = async (id: string): Promise<Project | null> => {
     const project = await getDb().projects.get(id);
     if (!project) return null;
-    // Mirror putProject's validation on read: Dexie does NOT enforce schema,
-    // so a record missing required fields (id/name) reaches this point. Throw
-    // here so consumers can treat the row as corrupted and fall back safely.
     return validateAndSanitizeProjectData(project);
 };
 
