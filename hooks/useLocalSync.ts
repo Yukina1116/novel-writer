@@ -3,8 +3,8 @@ import { useStore } from '../store/index';
 import { Project } from '../types';
 import { getProject, listProjects } from '../db/projectRepository';
 
-const INDEXED_DB_UNAVAILABLE_MESSAGE =
-    'このブラウザでは IndexedDB が利用できません（プライベートモードや容量制限の可能性があります）。データはメモリ上のみ保持され、リロードで失われます。';
+const LOCAL_DB_INIT_FAILED_MESSAGE =
+    'ローカルデータの読み込みに失敗しました。プライベートモードや容量不足で IndexedDB が利用できない場合、データはメモリ上のみ保持され、リロードで失われます。';
 
 export const useLocalSync = () => {
     const [isInitializing, setIsInitializing] = useState(true);
@@ -30,7 +30,7 @@ export const useLocalSync = () => {
             } catch (e: unknown) {
                 console.error('Local persistence init failed:', e);
                 const detail = e instanceof Error ? e.message : String(e);
-                const message = `${INDEXED_DB_UNAVAILABLE_MESSAGE}（${detail}）`;
+                const message = `${LOCAL_DB_INIT_FAILED_MESSAGE}（詳細: ${detail}）`;
                 setError(message);
                 useStore.getState().showToast(message, 'error');
             } finally {
