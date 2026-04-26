@@ -83,7 +83,7 @@
 | マイルストーン | 内容 | 状態 |
 |---|---|---|
 | M0 | 緊急対応（Cloud Run 非公開化、max-instances 制限、予算アラート） | ✅ 完了（2026-04-25） |
-| M1 | 基盤整備（IaC 化、防御層、Firebase 準備） | 🚧 着手中 |
+| M1 | 基盤整備（IaC 化、防御層、Firebase 準備） | ✅ 完了（2026-04-26） |
 | M2 | 認証 + IndexedDB 移行 | ⏳ |
 | M3 | AI 認証ゲート + クォータ | ⏳ |
 | M4 | Export/Import + バックアップ警告 UI | ⏳ |
@@ -99,3 +99,19 @@
 - Codex security review: 2026-04-25, threadId 019dc4f1-1fbe-7ba1-91d9-d5c049871861
 - アーキテクチャ図: `docs/diagrams/architecture-target.html`
 - 現状アーキテクチャ図: `docs/diagrams/architecture.html`
+
+## M1 振り返り（2026-04-26）
+
+3 PR (#17 PR-A, #18 PR-B, #19 PR-C) 全て計画通り逐次マージ完了。所要時間は計画値（合計 4 〜 6 時間）に対し実績ほぼ一致。
+
+**うまくいった点:**
+
+- ADR + tasks.md でスペックを先に固めたため、各 PR の AC が明確で「完了とは何か」のブレが出なかった
+- PR-B でマルチエージェントレビューが silent failure を 3 件検出（H1 maskError ガード / H2 CORS reject 漏洩 / H3 Vertex AI エラー素通し）→ 同 PR 内で修正でき、後追い PR を発生させずに済んだ
+- PR-C で `_setup-emulator-env.ts` を副作用 import に分離する設計を、レビュー反映の段階で取り入れた（M3 で firebaseAdmin.ts top-level に env 依存が入っても hoisting で壊れない構造）
+
+**課題・M3 以降への申し送り:**
+
+- 自動テスト未整備のため、AC 検証は手動 curl/手動操作中心。M3（認証ゲート本実装）から契約テスト + ルール unit テストの導入を本格検討
+- PR-C の admin SDK スタブには「prod で `applicationDefault()` 失敗時の logError 統合」「prod で projectId env 必須化」「`__resetFirebaseAdminAppForTesting()` 露出検討」を後回しにしている。M3 で routes に組み込むタイミングで一括対応する（PR #19 コメントに引き継ぎ事項として記録済み）
+- GitHub Actions の各 action が Node 20 ベース。2026-06-02 から Node 24 強制、2026-09-16 廃止予定。M2 着手前後で `actions/checkout@v5` 等の major 追従を一括実施する

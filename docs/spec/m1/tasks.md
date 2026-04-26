@@ -1,8 +1,9 @@
 # M1: 基盤整備 タスク表
 
-- Status: 🚧 In Progress
+- Status: ✅ Completed
 - Owner: yasushi-honda
 - Started: 2026-04-25
+- Completed: 2026-04-26
 - Related ADR: [ADR-0001](../../adr/0001-local-first-architecture.md)
 
 ## ゴール
@@ -167,9 +168,9 @@ M3（AI 認証ゲート）の前段階として、Firebase Auth/Admin SDK と Em
 
 - [x] PR-A merged & deployed & AC A1〜A3 全 PASS（2026-04-25 完了、PR #17）
 - [x] PR-B merged & local検証完了 & AC B1〜B7 全 PASS（2026-04-25 完了、PR #18）
-- [x] PR-C local検証完了 & AC C1〜C3 全 PASS（2026-04-26 完了、merge 待ち PR #19）
-- [ ] 本ファイル `docs/spec/m1/tasks.md` の全チェックボックスが `[x]`
-- [ ] M1 振り返りを ADR 末尾に追記（任意）
+- [x] PR-C merged & local検証完了 & AC C1〜C3 全 PASS（2026-04-26 完了、PR #19）
+- [x] 本ファイル `docs/spec/m1/tasks.md` の全チェックボックスが `[x]`
+- [x] M1 振り返りを ADR 末尾に追記（任意）
 
 ## M1 後フォローアップ（M1 完了後に対応、Issue 化はしない）
 
