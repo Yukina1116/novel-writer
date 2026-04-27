@@ -3,8 +3,8 @@ import React from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Project, AppState, AppActions, HistoryTree, HistoryNode } from '../types';
 import { defaultAiSettings, defaultDisplaySettings, simpleModeAiSettings, simpleModeDisplaySettings } from '../constants';
-import { validateAndSanitizeProjectData } from '../utils';
 import { deleteProject as deleteProjectFromDb, putProject } from '../db/projectRepository';
+import { readFileAsText } from '../utils/readFileAsText';
 
 const initialState = {
     allProjectsData: {} as { [key: string]: Project },
@@ -103,38 +103,29 @@ export const createProjectSlice = (set, get): ProjectSlice => ({
             (get() as any).showToast?.(`プロジェクトの削除に失敗しました: ${err.message}`, 'error');
         });
     },
-    importProject: (event) => {
-        const file = event.target.files[0];
+    // Import goes through backupSlice (prepareImport + ImportConflictModal) to
+    // handle multi-project bundles and conflict resolution. ProjectSelectionScreen
+    // still uses this single-project entry point for the legacy ".json" file
+    // input, deferring to the same pipeline.
+    importProject: async (event) => {
+        const file = event.target.files?.[0];
+        if (event.target) event.target.value = '';
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const parsedJson = JSON.parse(e.target.result as string);
-                const rawProjectData = (parsedJson.project && parsedJson.project.id) ? parsedJson.project : parsedJson;
-                let projectToLoad = validateAndSanitizeProjectData(rawProjectData);
-
-                const historyTree = projectToLoad.historyTree || createInitialHistoryTree(projectToLoad);
-                projectToLoad = { ...projectToLoad, historyTree };
-
-                set(state => {
-                    return {
-                        ...state,
-                        allProjectsData: { ...state.allProjectsData, [projectToLoad.id]: projectToLoad },
-                        activeProjectId: projectToLoad.id,
-                        historyTree: historyTree,
-                    };
-                });
-                putProject(projectToLoad).catch(err => {
-                    console.error('Failed to save imported project:', err);
-                    (get() as any).showToast?.(`インポートしたプロジェクトの保存に失敗しました: ${err.message}`, 'error');
-                });
-            } catch (err) {
-                alert(`ファイルの読み込みに失敗しました: ${err.message}`);
-                console.error(err);
-            }
+        type ImportSurface = {
+            prepareImport: (raw: string) => Promise<unknown>;
+            openModal?: (type: string) => void;
+            showToast?: (m: string, t?: 'info' | 'success' | 'error') => void;
         };
-        reader.readAsText(file);
-        event.target.value = null;
+        const store = get() as ImportSurface;
+        try {
+            const raw = await readFileAsText(file);
+            await store.prepareImport(raw);
+            store.openModal?.('importConflict');
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            store.showToast?.(`ファイルの読み込みに失敗しました: ${msg}`, 'error');
+            console.error(err);
+        }
     },
     setSimpleMode: (isSimple) => {
         const project = get().allProjectsData[get().activeProjectId];

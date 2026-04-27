@@ -332,7 +332,44 @@ export type ModalType =
   | 'syncDialog'
   | 'tutorialModeSelection'
   | 'displaySettings'
-  | 'importText';
+  | 'importText'
+  | 'importConflict';
+
+// --- Backup (M4) ---
+
+// Schema version for full-data backup. Bump when adding/removing top-level
+// keys or changing project-field shape. Importing a higher version must fail
+// loudly (AC-4) so users do not silently lose data.
+export const BACKUP_SCHEMA_VERSION = 1;
+
+export interface BackupV1 {
+    schemaVersion: 1;
+    exportedAt: string;
+    appVersion: string;
+    projects: Project[];
+    tutorialState: {
+        hasCompletedGlobalTutorial?: boolean;
+        hasCompletedGlobalKnowledgeTutorial?: boolean;
+        hasCompletedGlobalChartTutorial?: boolean;
+        hasCompletedGlobalPlotBoardTutorial?: boolean;
+        hasCompletedGlobalTimelineTutorial?: boolean;
+    };
+    analysisHistory: AnalysisResult[];
+}
+
+export type ImportConflictResolution = 'overwrite' | 'duplicate' | 'skip';
+
+export interface ImportConflict {
+    incomingId: string;
+    incomingName: string;
+    existingName: string;
+    resolution: ImportConflictResolution;
+}
+
+export interface ImportPlan {
+    backup: BackupV1;
+    conflicts: ImportConflict[];
+}
 
 export interface AppActions {
     loadInitialState: () => void;

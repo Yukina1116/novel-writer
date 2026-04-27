@@ -16,6 +16,7 @@ import { useSidebarResize } from './hooks/useSidebarResize';
 import { ProjectSelectionScreen } from './components/ProjectSelectionScreen';
 import { Toast } from './components/Toast';
 import { TutorialModeSelectionModal } from './components/TutorialModeSelectionModal';
+import { BackupWarningBanner } from './components/BackupWarningBanner';
 import AppMobile from './App.mobile';
 import { useLocalSync } from './hooks/useLocalSync';
 
@@ -56,10 +57,15 @@ export default function App() {
     const setEditingChunkId = useStore(state => state.setEditingChunkId);
     const loadTutorialData = useStore(state => state.loadTutorialData);
     const initAuth = useStore(state => state.initAuth);
+    const initBackupState = useStore(state => state.initBackupState);
 
     useEffect(() => {
         loadTutorialData();
     }, [loadTutorialData]);
+
+    useEffect(() => {
+        void initBackupState();
+    }, [initBackupState]);
 
     useEffect(() => {
         const unsubscribe = initAuth();
@@ -200,6 +206,8 @@ export default function App() {
         return (
             <>
                 <Toast />
+                <ModalManager displayMenuButtonRef={displayMenuButtonRef} isMobile={isMobile} />
+                <BackupWarningBanner />
                 <ProjectSelectionScreen
                     projects={Object.values(allProjectsData)}
                     onCreateProject={createProject}
@@ -236,6 +244,7 @@ export default function App() {
 
     const mainContent = (
         <div className="flex-1 flex flex-col bg-app-bg min-w-0 min-h-0">
+            <BackupWarningBanner />
             <Header displayMenuButtonRef={displayMenuButtonRef} />
             <NovelEditor />
         </div>

@@ -41,7 +41,7 @@ type _MissingFromWhitelist = Exclude<
 const _coverageCheck: [_MissingFromWhitelist] extends [never] ? true : never = true;
 void _coverageCheck;
 
-const pickPersistableFields = (project: Project): Project => {
+export const pickPersistableFields = (project: Project): Project => {
     const out: Record<string, unknown> = {};
     for (const key of PERSISTABLE_KEYS) {
         const value = project[key];
@@ -53,7 +53,7 @@ const pickPersistableFields = (project: Project): Project => {
 // Recursive pass: pickPersistableFields whitelists only the top level, but
 // legacy fields like _order can be nested under settings/knowledgeBase/
 // novelContent. AC A6.
-const stripInternalKeys = (value: unknown): unknown => {
+export const stripInternalKeys = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(stripInternalKeys);
     if (value && typeof value === 'object') {
         const out: Record<string, unknown> = {};

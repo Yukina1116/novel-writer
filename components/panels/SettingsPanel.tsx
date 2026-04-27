@@ -1,8 +1,10 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import * as Icons from '../../icons';
 import { useStore } from '../../store/index';
 import { Tooltip } from '../Tooltip';
+import { STALE_BACKUP_DAYS, formatLastExportedAt } from '../../utils/backupFormat';
+import { readFileAsText } from '../../utils/readFileAsText';
 
 interface SettingsPanelProps {
     onExportProject: () => void;
@@ -12,6 +14,27 @@ interface SettingsPanelProps {
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onExportProject, onExportTxt }) => {
     const openModal = useStore(state => state.openModal);
     const userMode = useStore(state => state.userMode);
+    const lastExportedAt = useStore(state => state.lastExportedAt);
+    const isStale = useStore(state => state.isBackupStale());
+    const isExporting = useStore(state => state.isExporting);
+    const exportAllData = useStore(state => state.exportAllData);
+    const prepareImport = useStore(state => state.prepareImport);
+    const showToast = useStore(state => state.showToast);
+    const importInputRef = useRef<HTMLInputElement>(null);
+
+    const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        try {
+            const raw = await readFileAsText(file);
+            await prepareImport(raw);
+            openModal('importConflict');
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'インポートの準備に失敗しました';
+            showToast(msg, 'error');
+        }
+    };
     
     const tools = useMemo(() => [
         { label: '相関図', icon: <Icons.UserCogIcon />, action: () => openModal('characterChart'), color: 'text-violet-300', helpId: 'chart_open' },
@@ -67,6 +90,40 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onExportProject, o
                             <span>{exp.label}</span>
                         </button>
                     ))}
+                </div>
+            </div>
+
+            <div>
+                <h3 className="text-sm font-semibold text-gray-400 mb-2">全データバックアップ</h3>
+                <div className={`text-xs mb-2 ${isStale ? 'text-yellow-400' : 'text-gray-400'}`}>
+                    最終バックアップ: {formatLastExportedAt(lastExportedAt)}
+                    {isStale && ` (推奨は${STALE_BACKUP_DAYS}日以内)`}
+                </div>
+                <div className="space-y-2">
+                    <button
+                        type="button"
+                        onClick={() => void exportAllData()}
+                        disabled={isExporting}
+                        className="w-full text-sm px-3 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-md transition flex items-center gap-2 btn-pressable text-white disabled:opacity-50"
+                    >
+                        <Icons.DownloadIcon className="h-4 w-4 mr-1 flex-shrink-0" />
+                        <span>{isExporting ? 'エクスポート中…' : '全データをエクスポート'}</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => importInputRef.current?.click()}
+                        className="w-full text-sm px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-md transition flex items-center gap-2 btn-pressable text-gray-300"
+                    >
+                        <Icons.UploadIcon className="h-4 w-4 mr-1 flex-shrink-0" />
+                        <span>バックアップから復元</span>
+                    </button>
+                    <input
+                        type="file"
+                        ref={importInputRef}
+                        onChange={handleImportFile}
+                        accept=".json,application/json"
+                        className="hidden"
+                    />
                 </div>
             </div>
         </div>
