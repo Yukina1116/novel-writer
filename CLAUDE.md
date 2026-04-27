@@ -38,21 +38,25 @@ AI駆動の小説執筆支援アプリ（小説らいたーver16）。React + Ty
 Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI (gemini-2.5-flash) / Firestore
 ```
 
-| ルート | サービス / 認証 | 用途 |
+全 `/api/ai/*` route は `mountAiRoutes` で `verifyIdToken` middleware (M3 PR-E) を一括 mount し、各 endpoint は `withUsageQuota` 高階関数 (M3 PR-F) で reserve→handler→commit/cancel の 3 phase ラップ。FE `apiClient.ts` (M3 PR-G) が Bearer 自動付与 + `requestId` 自動生成 + 401/429/503/409 共通分類器を担当。
+
+| ルート | サービス / 認証・クォータ | 用途 |
 |-------|---------|------|
-| `/api/ai/novel/generate` | novelService | 小説続き生成 |
-| `/api/ai/character/{update,reply,image-prompt}` | characterService | キャラクター作成・更新 |
-| `/api/ai/world/{update,reply}` | worldService | 世界観設定 |
-| `/api/ai/image/generate` | imageService | Imagen画像生成 |
-| `/api/ai/utility/{names,knowledge-name,extract-character}` | utilityService | 名前生成、キャラ抽出等 |
-| `/api/ai/analysis/import` | analysisService | テキストインポート分析 |
+| `/api/ai/novel/generate` | novelService + `withUsageQuota('novel/generate', 200 sen)` | 小説続き生成 |
+| `/api/ai/character/{update,reply,image-prompt}` | characterService + `withUsageQuota('character/*', 100 sen)` | キャラクター作成・更新 |
+| `/api/ai/world/{update,reply}` | worldService + `withUsageQuota('world/*', 100 sen)` | 世界観設定 |
+| `/api/ai/image/generate` | imageService + `withUsageQuota('image/generate', 1000 sen)` | Imagen画像生成 |
+| `/api/ai/utility/{names,knowledge-name,extract-character}` | utilityService + `withUsageQuota('utility/*', 50-100 sen)` | 名前生成、キャラ抽出等 |
+| `/api/ai/analysis/import` | analysisService + `withUsageQuota('analysis/import', 200 sen)` | テキストインポート分析 |
 | `/api/users/init` | verifyIdToken middleware → Firestore `users/{uid}` を transaction で冪等初期化（M2 PR-C） | ログイン直後のユーザーメタ初期化 |
 
 - **AIクライアント**: `server/aiClient.ts` — `USE_VERTEX_AI=true`でVertex AI、それ以外はAPIキーモード
 - **プロンプト構築**: `server/services/promptBuilder.ts` — format系ユーティリティ
 - **Firebase Admin**: `server/firebaseAdmin.ts` — `getFirebaseAdminApp()` / `getFirebaseAuth()` / `getFirebaseFirestore()`（M2 PR-C で `firestoreClient.ts` から統合）
-- **認証ミドルウェア**: `server/middleware/verifyIdToken.ts` — `Authorization: Bearer <ID Token>` 検証、transient（503）/permanent（401）分類（M2 PR-C 導入、M3 で `/api/ai/*` にも適用予定）
-- **フロントエンドAPI**: ルート直下の `*Api.ts` はfetchラッパー（`apiClient.ts`経由）。Project の永続化 API（旧 `projectApi.ts`）は M2 PR-A で削除済み
+- **認証ミドルウェア**: `server/middleware/verifyIdToken.ts` — `Authorization: Bearer <ID Token>` 検証、transient（503）/permanent（401）分類（M2 PR-C 導入、M3 PR-E で `/api/ai/*` 全 endpoint に展開）
+- **usage クォータ**: `server/services/usageService.ts` (reserve/commit/cancel + transaction 予約 + requestId 冪等)、`server/middleware/withUsageQuota.ts` (高階関数ラップ)、`server/services/usageConfig.ts` (Tier 1=月 100 円 + route 別 sen)。詳細は `docs/spec/m3/usage-cost-config.md`
+- **エラー分類**: `server/middleware/errorHandler.ts` の `handleApiError(error, fn, context: 'ai' | 'firestore' | 'usage')` で文言と分類戦略を context 別に切替（M3 PR-F で table-driven 化、context 必須）
+- **フロントエンドAPI**: ルート直下の `*Api.ts` はfetchラッパー（`apiClient.ts`経由）。`apiClient.ts` が Bearer 自動付与 + `requestId` 自動生成 + 401/429/503/409 を `AuthGateErrorCode` 列挙でユーザー向け文言に分類（M3 PR-G）。Project の永続化 API（旧 `projectApi.ts`）は M2 PR-A で削除済み
 
 ### 状態管理（Zustand slices pattern）
 
@@ -69,7 +73,7 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 | tutorialSlice | 5種チュートリアルの進捗（IndexedDB の `tutorialState` ストア） |
 | analysisHistorySlice | テキストインポート分析の履歴（IndexedDB の `analysisHistory` ストア） |
 | formSlice | フォーム状態 |
-| authSlice | Firebase Auth 状態（`currentUser` / `authStatus: 'initializing' \| 'unauthenticated' \| 'authenticated'` / `authError`、IndexedDB は uid に紐付けない設計、M2 PR-B で導入） |
+| authSlice | Firebase Auth 状態（`currentUser` / `authStatus: 'initializing' \| 'unauthenticated' \| 'authenticated'` / `authError` / `needsUserInit` / `retryUserInit()`、IndexedDB は uid に紐付けない設計、M2 PR-B で導入、M3 PR-G で users/init transient retry signal 追加） |
 
 ### 型定義
 

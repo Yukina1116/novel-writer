@@ -86,7 +86,7 @@
 | M0 | 緊急対応（Cloud Run 非公開化、max-instances 制限、予算アラート） | ✅ 完了（2026-04-25） |
 | M1 | 基盤整備（IaC 化、防御層、Firebase 準備） | ✅ 完了（2026-04-26） |
 | M2 | 認証 + IndexedDB 移行 | ✅ 完了（PR-A IndexedDB 移行 2026-04-26 PR #24 / PR-Bx useLocalSync hardening 2026-04-27 PR #31 / PR-B Auth FE 2026-04-27 PR #29 / PR-C 旧ルート退役 + verifyIdToken + users/init + firestore.rules 2026-04-27） |
-| M3 | AI 認証ゲート + クォータ | 🚧 進行中（PR-D テスト基盤 + 持越 #1/#4/#5 / PR-E AI 認証ゲート + 起動 probe + handleApiError 共通化 + 持越 #3 完了 2026-04-27 PR #37 #39 / PR-F〜G 残） |
+| M3 | AI 認証ゲート + クォータ | ✅ 完了（PR-D テスト基盤 + 持越 #1/#4/#5 PR #37 / PR-E BE 認証ゲート + 起動 probe + handleApiError 共通化 + 持越 #3 PR #39 / PR-F usage クォータ + 持越 + Issue #40 PR #45 / PR-G FE 統合 + Cloud Run public 化 + 持越 #2 2026-04-27） |
 | M4 | Export/Import + バックアップ警告 UI | ⏳ |
 | M5 | Stripe Subscription + Webhook + 法務 | ⏳ |
 | M6 | E2EE 暗号化バックアップ（任意機能、後回し可） | ⏳ |
@@ -147,3 +147,32 @@
   3. **`applicationDefault()` eager init**: ADC 未設定環境では `getFirebaseAdminApp()` が初回 request 時に同期 throw する。M3 で起動時 probe（`startServer()` 内で `getFirebaseAuth()` 呼出）を追加して fail-fast 化
   4. **型強化（`AuthedRequest` / `sanitizeForUpdate` undefined フリー戻り値）**: type-design-analyzer 指摘の改善案。M3 の AI 経路で `verifyIdToken` 通過後の handler が増えるタイミングで型を引き締める
   5. **`verifyIdToken` の transient エラーコード拡張**: `/codex review` セカンドオピニオン指摘。現状の `TRANSIENT_AUTH_CODES` Set は `auth/internal-error` / `auth/network-request-failed` / `auth/service-unavailable` + `ETIMEDOUT` / `ECONNRESET` / `ENOTFOUND` をカバーするが、`ECONNREFUSED` / `EAI_AGAIN` / `app/network-error` 形式が permanent (401) に落ちる余地あり。M2 では実害トースト誤分類程度なので、M3 で AI 認証ゲート適用前に広げる
+
+
+## M3 振り返り（2026-04-27）
+
+4 PR + 2 補助 PR でマイルストーン完了。同日中に PR-D/E/F/G を逐次マージし、Stripe (M5) を後回しにする戦略の通り「課金保護成立」までを完成させた。
+
+| PR | 内容 | 状態 |
+|---|---|---|
+| #37 PR-D | テスト基盤 (vitest + supertest) + 持越 #1/#4/#5 | ✅ |
+| #39 PR-E | BE 認証ゲート + 起動 probe + handleApiError 共通化 + 持越 #3 | ✅ |
+| #44 PR-CI | Issue #41 deploy.yml に test job 追加 (PR-F 着手前の regression 検知) | ✅ |
+| #45 PR-F | usage クォータ (transaction reserve + requestId 冪等) + Issue #40 + 持越/PR-E 反映 | ✅ |
+| #46 PR-G | FE 統合 (apiCall Bearer + requestId + 共通分類器 + 持越 #2 needsUserInit retry) + Cloud Run public 化 | ✅ |
+
+**うまくいった点:**
+
+- ADR + tasks.md + handoff/LATEST.md の 3 点で「次に何をするか」を毎セッション 30 秒で再開できた。M3 のように 4 PR を逐次走らせるマイルストーンでは、handoff の更新が次セッションの起動コストを最小化した
+- PR-F 着手前に Issue #41 (P0 CI test job) を別 PR で先行マージしたため、PR-F/G のような大規模 PR で merge 時 regression を CI で阻止できる構造ができた。順序判断が効いた
+- PR-F で `withUsageQuota` 高階関数を導入し、AI route 6 ファイルを純粋な service ラップに簡素化。PR-G の FE 改修も `apiClient.ts` 1 ファイルで cross-cutting concern を集約できた。「BE 高階関数 + FE ラッパー」の対称構造が変更影響範囲を最小化した
+- `/review-pr` 6 エージェント並列 + `/codex review` MCP セカンドオピニオンの組み合わせで PR-F の "month boundary silent failure" / "commit 失敗時 reservation 残存" / "extractMessage 連結境界 false positive" 等、self-review では見逃しがちな経路を merge 前に検出
+- `ReservationHandle` で UTC 月境界跨ぎの silent failure を排除する設計は evaluator 指摘で初めて気づいた経路。第三者評価が「実装の前提知識なし」で読むことの価値を再確認
+
+**課題・M4 以降への申し送り:**
+
+- **後送り Issue 候補（rating 5-7、本 PR スコープ外）**: Sen branded type / AiRouteKey ↔ Express path 単一レジストリ化 / ReservationHandle 内部 docId 化 / processedIds sliding window 警告ログ / AC F8 動的検証（route ファイル全件 withUsageQuota ラップ確認）/ AuthedRequest assertion 関数化 / 401 自動 sign-out 実装。次マイルストーン着手前に triage 基準（rating ≥ 7 + confidence ≥ 80）を満たすものは Issue 化、それ以外は M4/M5 の対応 PR で吸収する判断
+- **残量バー UI**: PR-G スコープ外として保留中（usage rules 緩和 + コンポーネント追加が必要）。M4 で Export/Import UI と一緒に実装するか、M5 Stripe 連携時に「枠拡張動線」とセットで実装するかは要検討
+- **actual metadata 精算**: Vertex AI 応答の usage_metadata から token 数を取得して `commit` の actualCost を補正する経路。observability 拡張として M3 完了後に検討。現状は固定 estimatedCost で運用
+- **本番 Firestore へのルールデプロイ**: PR-G merge 後に `firebase deploy --only firestore:rules -P novel-writer-dev` を手動実行が必要。usage コレクション全拒否を本番に反映する DoD
+- **Cloud Run public 化後の curl 検証**: PR-G の DoD として「401 (Authorization なし) を本番 URL で確認」を merge 後に手動実施。401 でなければ即座に `gcloud run services update --no-allow-unauthenticated` で rollback する手順を確立
