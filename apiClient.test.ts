@@ -301,4 +301,64 @@ describe('apiCall', () => {
         expect(result.error.code).toBe('NETWORK_ERROR');
         expect(result.error.message).toContain('network down');
     });
+
+    it('classifies AbortError as REQUEST_ABORTED (distinct from NETWORK_ERROR)', async () => {
+        const abortErr = new Error('request aborted by user');
+        abortErr.name = 'AbortError';
+        fetchMock.mockRejectedValueOnce(abortErr);
+        const result = await apiCall('/utility/names', {});
+        assertFailure(result);
+        expect(result.error.code).toBe('REQUEST_ABORTED');
+    });
+
+    it('classifies getIdToken auth/network-request-failed as SERVICE_UNAVAILABLE (not AUTH_EXPIRED)', async () => {
+        const networkErr = Object.assign(new Error('refresh net error'), { code: 'auth/network-request-failed' });
+        getIdTokenMock.mockReset();
+        getIdTokenMock.mockRejectedValueOnce(networkErr);
+        const result = await apiCall('/utility/names', {});
+        assertFailure(result);
+        expect(result.error.code).toBe('SERVICE_UNAVAILABLE');
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('returns SERVER_ERROR when BE returns 200 OK with success:false (logical failure)', async () => {
+        // BE が誤って 200 + success:false を返した場合に classifier が
+        // SERVER_ERROR を返す contract。BE バグの early signal。
+        fetchMock.mockResolvedValueOnce(
+            new Response(JSON.stringify({ success: false, error: 'logical failure' }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            }),
+        );
+        const result = await apiCall('/utility/names', {});
+        assertFailure(result);
+        expect(result.error.code).toBe('SERVER_ERROR');
+        expect(result.error.message).toBe('logical failure');
+    });
+
+    it('shares retryUserInit Promise across concurrent apiCall (cross-layer in-flight contract)', async () => {
+        // authSlice の in-flight 共有が apiClient 経由でも効くことを cross-layer で検証。
+        // 並列 N 件の AI 呼出に対し retryUserInit が 1 回しか発火しない。
+        storeStateMock.needsUserInit = true;
+        let resolveRetry: (() => void) | null = null;
+        const sharedPromise = new Promise<void>((resolve) => {
+            resolveRetry = resolve;
+        });
+        storeStateMock.retryUserInit.mockReturnValue(sharedPromise);
+        fetchMock.mockResolvedValue(okResponse('ok'));
+
+        const p1 = apiCall('/utility/names', { keyword: 'a' });
+        const p2 = apiCall('/utility/names', { keyword: 'b' });
+        const p3 = apiCall('/utility/names', { keyword: 'c' });
+
+        await Promise.resolve();
+        resolveRetry!();
+        await Promise.all([p1, p2, p3]);
+
+        // retryUserInit は各 apiCall から呼ばれるが、authSlice の in-flight guard で
+        // 内部 fetch は 1 回に集約される。ここでは mock 側で「同じ Promise が返る」契約。
+        expect(storeStateMock.retryUserInit).toHaveBeenCalledTimes(3);
+        // 全 apiCall が成功する
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
 });

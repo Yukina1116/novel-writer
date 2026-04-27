@@ -67,6 +67,12 @@ jobs:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE }}:${{ github.sha }}
+          # --allow-unauthenticated: BE 側で `verifyIdToken` middleware が全
+          # /api/* を保護しており (server/aiRoutes.ts の mountAiRoutes 経由)、
+          # public 化しても無認証 access は構造的に不可能。詳細は
+          # ADR-0001 §M3 振り返り / docs/spec/m3/tasks.md PR-G。
+          # この flag を外すと FE が 403 で詰むため、本番 rollback 時のみ
+          # `gcloud run services update novel-writer --no-allow-unauthenticated` を使う。
           flags: >-
             --service-account=novel-writer-run@novel-writer-dev.iam.gserviceaccount.com
             --memory=512Mi

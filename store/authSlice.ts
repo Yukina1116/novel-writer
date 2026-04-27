@@ -54,6 +54,22 @@ const reportAuthError = (
     return message;
 };
 
+// users/init 呼出のエラー型。status が必須なので、catch 側で type guard を
+// 通せば「foreign error が status 未定義のまま transient 判定に流れ込む」
+// silent fallthrough を防げる。
+export interface UserInitError extends Error {
+    status: number;
+}
+
+const isUserInitError = (e: unknown): e is UserInitError =>
+    e instanceof Error && typeof (e as { status?: unknown }).status === 'number';
+
+const makeUserInitError = (message: string, status: number): UserInitError => {
+    const err = new Error(message) as UserInitError;
+    err.status = status;
+    return err;
+};
+
 // users/init 呼出で transient と扱うべき HTTP status。
 // - 503: Firestore UNAVAILABLE / DEADLINE_EXCEEDED 由来 (handleApiError)
 // - 504: Gateway timeout、Cloud Run / プロキシ層由来
@@ -73,17 +89,17 @@ const callUsersInit = async (user: User): Promise<void> => {
     } catch (fetchErr) {
         // ネットワーク断 / CORS 拒否等で fetch 自体が throw した場合、status=0 で
         // transient 扱いにする（isTransientUserInitError が 0 を transient 判定）。
-        const error = new Error(
+        throw makeUserInitError(
             fetchErr instanceof Error ? fetchErr.message : 'network error',
-        ) as Error & { status?: number };
-        error.status = 0;
-        throw error;
+            0,
+        );
     }
     if (resp.ok) return;
     const body = await resp.json().catch(() => null) as { error?: string } | null;
-    const error = new Error(body?.error ?? `users/init responded ${resp.status}`) as Error & { status?: number };
-    error.status = resp.status;
-    throw error;
+    throw makeUserInitError(
+        body?.error ?? `users/init responded ${resp.status}`,
+        resp.status,
+    );
 };
 
 // 同時多発防止のための module-scope in-flight guard。同一 retry が複数 AI 呼出
@@ -141,12 +157,17 @@ export const createAuthSlice = (set, get): AuthSlice => ({
             } catch (initError: unknown) {
                 console.error('users/init failed:', initError);
                 reportAuthError(get, 'ユーザー初期化に失敗しました', initError);
-                const status = (initError as { status?: number }).status ?? 0;
-                if (isTransientUserInitError(status)) {
+                // type guard 経由で UserInitError の status を読む。foreign error
+                // (例: SDK 内部の TypeError) は status 不明のため transient 判定せず、
+                // needsUserInit=false のまま (= AI 呼出で AUTH_EXPIRED 経路に倒す)。
+                if (isUserInitError(initError) && isTransientUserInitError(initError.status)) {
                     set({ needsUserInit: true });
                 }
             }
         } catch (error: unknown) {
+            // User-intent cancels (closed popup, double-clicked sign-in) are
+            // not errors — silence them so the toast stays for actual problems
+            // (network failure, popup blocker, provider config).
             const code = (error as { code?: string }).code;
             if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
                 return;

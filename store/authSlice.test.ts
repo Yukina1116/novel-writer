@@ -61,9 +61,9 @@ describe('retryUserInit', () => {
     });
 
     it('clears needsUserInit even when retry throws (no permanent retry loop)', async () => {
-        // M3 PR-G review fix: retryUserInit が permanent 失敗で throw した場合
-        // needsUserInit=true のままだと AI 呼出のたびに無限 retry ループに入る。
-        // throw しつつ flag を false に戻す contract を固定。
+        // retryUserInit が permanent 失敗で throw した場合、needsUserInit=true
+        // のままだと AI 呼出のたびに無限 retry ループに入る。throw しつつ flag
+        // を false に戻す contract を固定。
         const { slice, state } = createTestSlice();
         state.needsUserInit = true;
         fetchMock.mockResolvedValueOnce(

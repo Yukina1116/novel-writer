@@ -24,9 +24,12 @@ export type AuthGateErrorCode =
     | 'SERVICE_UNAVAILABLE'
     | 'DUPLICATE_REQUEST'
     | 'NETWORK_ERROR'
+    | 'REQUEST_ABORTED'
     | 'SERVER_ERROR';
 
-export type ApiCallError = Error & { code?: AuthGateErrorCode; status?: number };
+// code は必須。`makeError` 経由で生成された ApiCallError は必ず分類済みで、
+// 呼出元の switch (code) で silent fallthrough が起きない契約。
+export type ApiCallError = Error & { code: AuthGateErrorCode; status?: number };
 
 const makeError = (code: AuthGateErrorCode, message: string, status?: number): ApiCallError => {
     const err = new Error(message) as ApiCallError;
@@ -36,7 +39,7 @@ const makeError = (code: AuthGateErrorCode, message: string, status?: number): A
 };
 
 // 既知の HTTP status と BE 返却 code から FE 共通文言にマップ。
-// BE の `withUsageQuota` が 401/429/503/409 + code field を返す前提。
+// BE が 401/429/503/409 + `{code, error}` envelope を返す前提。
 // 全経路が必ず `AuthGateErrorCode` を持つ ApiCallError を返し、呼出元の
 // switch 文での silent fallthrough を防ぐ。
 const classifyHttpError = (
@@ -138,7 +141,20 @@ export async function apiCall<T>(
         idToken = await user.getIdToken();
     } catch (tokenErr) {
         console.error('getIdToken failed:', tokenErr);
-        return { success: false as const, error: makeError('AUTH_EXPIRED', AUTH_EXPIRED_MESSAGE) };
+        // refresh token revoke (再ログイン必須) と一時的な network 障害 (再試行で復帰可)
+        // を区別する。前者は AUTH_EXPIRED、後者は SERVICE_UNAVAILABLE で UI 文言が
+        // 真逆になるため。
+        const tokenErrCode = (tokenErr as { code?: unknown }).code;
+        const isNetworkErr = typeof tokenErrCode === 'string' && (
+            tokenErrCode === 'auth/network-request-failed' ||
+            tokenErrCode === 'auth/internal-error'
+        );
+        return {
+            success: false as const,
+            error: isNetworkErr
+                ? makeError('SERVICE_UNAVAILABLE', SERVICE_UNAVAILABLE_MESSAGE)
+                : makeError('AUTH_EXPIRED', AUTH_EXPIRED_MESSAGE),
+        };
     }
 
     const bodyWithRequestId = ensureRequestId(body);
@@ -146,7 +162,11 @@ export async function apiCall<T>(
     try {
         return await performFetch<T>(endpoint, bodyWithRequestId, idToken);
     } catch (error: unknown) {
-        // ネットワーク断 / fetch 例外。code を必ず付与して呼出元の switch を安全に。
+        // ユーザー取消 (AbortController) と本物の network 障害を区別する。前者は
+        // debug 時に「ユーザー操作」として識別したいため REQUEST_ABORTED で分離。
+        if (error instanceof Error && error.name === 'AbortError') {
+            return { success: false as const, error: makeError('REQUEST_ABORTED', error.message || 'リクエストが取り消されました。') };
+        }
         const message = error instanceof Error && error.message ? error.message : NETWORK_ERROR_MESSAGE;
         return { success: false as const, error: makeError('NETWORK_ERROR', message) };
     }
