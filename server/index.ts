@@ -105,7 +105,7 @@ async function startServer() {
 
     // 順序: aiLimiter → verifyIdToken → 各 route。認証失敗も rate limit を消費させて
     // brute-force / DoS から守る。詳細は server/aiRoutes.ts。
-    mountAiRoutes(app, aiLimiter);
+    mountAiRoutes(app, { rateLimit: aiLimiter });
 
     app.use('/api/users', usersRoutes);
 

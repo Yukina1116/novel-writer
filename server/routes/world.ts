@@ -1,29 +1,17 @@
 import { Router } from 'express';
 import { updateWorldData, generateWorldReply } from '../services/worldService';
-import { handleApiError } from '../middleware/errorHandler';
+import { withUsageQuota } from '../middleware/withUsageQuota';
 
 const router = Router();
 
-router.post('/update', async (req, res) => {
-    try {
-        const { chatHistory, currentWorldData, intent } = req.body;
-        const data = await updateWorldData(chatHistory, currentWorldData, intent);
-        res.json({ success: true, data });
-    } catch (error) {
-        const { status, message } = handleApiError(error, 'updateWorldData');
-        res.status(status).json({ success: false, error: message });
-    }
-});
+router.post('/update', withUsageQuota('world/update', async (req) => {
+    const { chatHistory, currentWorldData, intent } = req.body;
+    return await updateWorldData(chatHistory, currentWorldData, intent);
+}));
 
-router.post('/reply', async (req, res) => {
-    try {
-        const { updatedWorldData } = req.body;
-        const data = await generateWorldReply(updatedWorldData);
-        res.json({ success: true, data });
-    } catch (error) {
-        const { status, message } = handleApiError(error, 'generateWorldReply');
-        res.status(status).json({ success: false, error: message });
-    }
-});
+router.post('/reply', withUsageQuota('world/reply', async (req) => {
+    const { updatedWorldData } = req.body;
+    return await generateWorldReply(updatedWorldData);
+}));
 
 export default router;

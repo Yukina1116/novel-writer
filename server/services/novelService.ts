@@ -2,7 +2,6 @@ import { Type, GenerateContentResponse } from '@google/genai';
 import { NovelChunk, ChatMessage, SettingItem, KnowledgeItem, AiSettings, Relation, PlotItem, UserMode } from '../../types';
 import { getAiClient, TEXT_MODEL } from '../aiClient';
 import { getPersonaInstruction, formatSettings, formatRelations, formatKnowledge, formatNovelContent } from './promptBuilder';
-import { handleApiError } from '../middleware/errorHandler';
 
 export const generateNovelContinuation = async ({
     prompt,

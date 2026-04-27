@@ -1,40 +1,22 @@
 import { Router } from 'express';
 import { generateNames, generateKnowledgeName, extractCharacterInfo } from '../services/utilityService';
-import { handleApiError } from '../middleware/errorHandler';
+import { withUsageQuota } from '../middleware/withUsageQuota';
 
 const router = Router();
 
-router.post('/names', async (req, res) => {
-    try {
-        const { category, keywords } = req.body;
-        const data = await generateNames(category, keywords);
-        res.json({ success: true, data });
-    } catch (error) {
-        const { status, message } = handleApiError(error, 'generateNames');
-        res.status(status).json({ success: false, error: message });
-    }
-});
+router.post('/names', withUsageQuota('utility/names', async (req) => {
+    const { category, keywords } = req.body;
+    return await generateNames(category, keywords);
+}));
 
-router.post('/knowledge-name', async (req, res) => {
-    try {
-        const { sentence } = req.body;
-        const data = await generateKnowledgeName(sentence);
-        res.json({ success: true, data });
-    } catch (error) {
-        const { status, message } = handleApiError(error, 'generateKnowledgeName');
-        res.status(status).json({ success: false, error: message });
-    }
-});
+router.post('/knowledge-name', withUsageQuota('utility/knowledge-name', async (req) => {
+    const { sentence } = req.body;
+    return await generateKnowledgeName(sentence);
+}));
 
-router.post('/extract-character', async (req, res) => {
-    try {
-        const { characterName, novelContent } = req.body;
-        const data = await extractCharacterInfo(characterName, novelContent);
-        res.json({ success: true, data });
-    } catch (error) {
-        const { status, message } = handleApiError(error, 'extractCharacterInfo');
-        res.status(status).json({ success: false, error: message });
-    }
-});
+router.post('/extract-character', withUsageQuota('utility/extract-character', async (req) => {
+    const { characterName, novelContent } = req.body;
+    return await extractCharacterInfo(characterName, novelContent);
+}));
 
 export default router;
