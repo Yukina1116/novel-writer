@@ -29,13 +29,13 @@ AI駆動の小説執筆支援アプリ（小説らいたーver16）。React + Ty
 [ActivityBar] | [LeftPanel] | [NovelEditor] | [RightPanel]
 ```
 
-### AI API層（サーバーサイド）
+### API層（サーバーサイド）
 
 ```
-Browser → fetch(/api/ai/*) → server/routes/ → server/services/ → Vertex AI (gemini-2.5-flash)
+Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI (gemini-2.5-flash) / Firestore
 ```
 
-| ルート | サービス | 用途 |
+| ルート | サービス / 認証 | 用途 |
 |-------|---------|------|
 | `/api/ai/novel/generate` | novelService | 小説続き生成 |
 | `/api/ai/character/{update,reply,image-prompt}` | characterService | キャラクター作成・更新 |
@@ -43,10 +43,13 @@ Browser → fetch(/api/ai/*) → server/routes/ → server/services/ → Vertex 
 | `/api/ai/image/generate` | imageService | Imagen画像生成 |
 | `/api/ai/utility/{names,knowledge-name,extract-character}` | utilityService | 名前生成、キャラ抽出等 |
 | `/api/ai/analysis/import` | analysisService | テキストインポート分析 |
+| `/api/users/init` | verifyIdToken middleware → Firestore `users/{uid}` を transaction で冪等初期化（M2 PR-C） | ログイン直後のユーザーメタ初期化 |
 
 - **AIクライアント**: `server/aiClient.ts` — `USE_VERTEX_AI=true`でVertex AI、それ以外はAPIキーモード
 - **プロンプト構築**: `server/services/promptBuilder.ts` — format系ユーティリティ
-- **フロントエンドAPI**: ルート直下の `*Api.ts` はfetchラッパー（`apiClient.ts`経由）
+- **Firebase Admin**: `server/firebaseAdmin.ts` — `getFirebaseAdminApp()` / `getFirebaseAuth()` / `getFirebaseFirestore()`（M2 PR-C で `firestoreClient.ts` から統合）
+- **認証ミドルウェア**: `server/middleware/verifyIdToken.ts` — `Authorization: Bearer <ID Token>` 検証、transient（503）/permanent（401）分類（M2 PR-C 導入、M3 で `/api/ai/*` にも適用予定）
+- **フロントエンドAPI**: ルート直下の `*Api.ts` はfetchラッパー（`apiClient.ts`経由）。Project の永続化 API（旧 `projectApi.ts`）は M2 PR-A で削除済み
 
 ### 状態管理（Zustand slices pattern）
 

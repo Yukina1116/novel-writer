@@ -11,8 +11,7 @@ import worldRoutes from './routes/world';
 import imageRoutes from './routes/image';
 import utilityRoutes from './routes/utility';
 import analysisRoutes from './routes/analysis';
-import dataRoutes from './routes/data';
-import projectRoutes from './routes/projects';
+import usersRoutes from './routes/users';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -114,8 +113,14 @@ async function startServer() {
     app.use('/api/ai/utility', utilityRoutes);
     app.use('/api/ai/analysis', analysisRoutes);
 
-    app.use('/api/projects', projectRoutes);
-    app.use('/api', dataRoutes);
+    app.use('/api/users', usersRoutes);
+
+    // Any unmatched /api/* path must 404 instead of falling through to the
+    // SPA fallback (dev: Vite middleware / prod: index.html static). Without
+    // this, unknown API endpoints would return HTML and look "alive".
+    app.use('/api', (_req, res) => {
+        res.status(404).json({ success: false, error: 'Not Found' });
+    });
 
     if (isDev) {
         const { createServer: createViteServer } = await import('vite');

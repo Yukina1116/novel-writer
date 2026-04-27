@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server/index.ts",
-    "dev:emu": "VITE_USE_AUTH_EMULATOR=true concurrently --kill-others-on-fail -n vite,emu -c blue,yellow \"tsx server/index.ts\" \"firebase emulators:start --only auth\"",
+    "dev:emu": "VITE_USE_AUTH_EMULATOR=true FIREBASE_AUTH_EMULATOR_HOST=localhost:9099 FIRESTORE_EMULATOR_HOST=localhost:8080 concurrently --kill-others-on-fail -n vite,emu -c blue,yellow \"tsx server/index.ts\" \"firebase emulators:start --only auth,firestore\"",
     "build": "vite build",
     "start": "tsx server/index.ts",
     "lint": "tsc --noEmit",
     "preview": "vite preview",
-    "test:firebase-admin": "tsx scripts/test-firebase-admin.ts"
+    "test:firebase-admin": "tsx scripts/test-firebase-admin.ts",
+    "test:firestore-rules": "firebase emulators:exec --only firestore \"tsx scripts/test-firestore-rules.ts\""
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -40,6 +41,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
     "@types/cors": "^2.8.19",
     "@types/dompurify": "^3.0.5",
     "@types/express": "^5.0.6",

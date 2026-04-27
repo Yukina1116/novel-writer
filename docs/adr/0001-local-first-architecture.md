@@ -85,7 +85,7 @@
 |---|---|---|
 | M0 | 緊急対応（Cloud Run 非公開化、max-instances 制限、予算アラート） | ✅ 完了（2026-04-25） |
 | M1 | 基盤整備（IaC 化、防御層、Firebase 準備） | ✅ 完了（2026-04-26） |
-| M2 | 認証 + IndexedDB 移行 | 🚧 進行中（PR-A IndexedDB 移行 ✅ 2026-04-26 PR #24 / PR-Bx useLocalSync hardening ✅ 2026-04-27 PR #31 / PR-B Auth FE ✅ 2026-04-27 PR #29 / PR-C 旧ルート退役 ⏳） |
+| M2 | 認証 + IndexedDB 移行 | ✅ 完了（PR-A IndexedDB 移行 2026-04-26 PR #24 / PR-Bx useLocalSync hardening 2026-04-27 PR #31 / PR-B Auth FE 2026-04-27 PR #29 / PR-C 旧ルート退役 + verifyIdToken + users/init + firestore.rules 2026-04-27） |
 | M3 | AI 認証ゲート + クォータ | ⏳ |
 | M4 | Export/Import + バックアップ警告 UI | ⏳ |
 | M5 | Stripe Subscription + Webhook + 法務 | ⏳ |
@@ -121,3 +121,28 @@
   3. test スクリプトの Anonymous プロバイダ未許可エラー時の具体メッセージ化（`auth/admin-restricted-operation` 検出時）
   4. テスト用 `__resetFirebaseAdminAppForTesting()` の露出検討（NODE_ENV ガード付き）
 - GitHub Actions の各 action が Node 20 ベース。**廃止予定日は暫定**（公式 [GitHub blog (2025-09-19)](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/) は "fall of 2026" と曖昧表現、PR #17 のデプロイログ由来で `2026-06-02` 強制 / `2026-09-16` 廃止と推定）。M2 着手前後で公式状況を再確認のうえ `actions/checkout@v5` 等の major 追従を一括実施する
+
+## M2 振り返り（2026-04-27）
+
+4 PR（#24 PR-A IndexedDB / #29 PR-B Auth FE / #31 PR-Bx useLocalSync hardening / PR-C 旧ルート退役）でマイルストーン完了。PR-Bx は当初計画外で、`/review-pr` が PR-A merge 後に検出した堅牢性課題（Issue #27/#28）を吸収したもの。
+
+**うまくいった点:**
+
+- ADR-0001 の Local-first 方針と「IndexedDB は uid に紐付けない」設計を tasks.md 冒頭で明示したため、PR-B での「ログイン切替時の挙動」設計が一切ぶれなかった
+- PR-C 着手前にすでに PR-A で `projectApi.ts`（FE）が削除済み、`/api/projects` 系が呼ばれない状態が成立していた → PR-C は純粋に「サーバー側削除 + 認証導入」のみで済み、影響範囲が小さく検証が高速に回せた
+- `firestore.rules` ユニットテストを `@firebase/rules-unit-testing@^4.0.1`（firebase@11 互換版）+ `firebase emulators:exec` で導入。10 ケース全 PASS で C6 達成、M3 以降のテスト基盤の足掛かりにもなった
+- `verifyIdToken` で transient（503）/ permanent（401）分類を最初から実装（rules/error-handling.md §3 準拠）。M3 で AI 経路に流用する際も追加実装不要
+- 旧 API への curl が SPA fallback で 200 HTML を返してしまう問題を AC C1 検証中に発見 → `app.use('/api', ...)` の 404 フォールバックを追加。dev/prod とも未登録 API パスは確実に 404 になる
+
+**課題・M3 以降への申し送り:**
+
+- `firebase.json` に Firestore emulator を追加（port 8080）、`dev:emu` script を `auth,firestore` 両起動に拡張。`FIREBASE_AUTH_EMULATOR_HOST` / `FIRESTORE_EMULATOR_HOST` を script で export し admin SDK の自動検出に乗せた → M3 で本格テストを書く際もこの env 注入で十分動く
+- PR-C で M1 申し送りの admin SDK スタブ 4 項目は「未対応のまま M3 へ持ち越し」と判断。理由: 本 PR で `verifyIdToken` 経路が実コードで走り始めたため、4 項目は M3 の AI 認証ゲート実装と同タイミングで route 全体に統合適用するのが整理しやすい
+- 本番 Firestore へのルールデプロイ（`firebase deploy --only firestore:rules -P novel-writer-dev`）は手元未実行。M2 完了の定義には含めず、M3 着手前に手動デプロイ + 動作確認を行う前提とする（rules/firebase.md の手順に従う）
+- 自動テスト基盤（vitest 等）は引き続き未導入。M3 着手時に rules unit test と同居しやすい構成（vitest + tsx）を本格検討
+- evaluator 評価で LOW 指摘として残った「`/api/users/init` の Firestore 書込みエラー（UNAVAILABLE / deadline-exceeded 等）の transient/permanent 分類」は M2 PR-C では暫定対応に留め、汎用化は M3 持ち越し。`/review-pr` の silent-failure-hunter 指摘で users.ts に inline で `formatFirestoreError` を導入（503/500 分類）したが、AI 経路（`/api/ai/*`）でも同等に必要なため、M3 で `verifyIdToken` を AI 経路に展開するタイミングで `handleApiError` を Firestore エラーコードに対応させ共通化する
+- `/review-pr` で指摘された M3 持ち越し項目:
+  1. **CLAUDE.md MUST #5 route 層 Partial Update assertion gap**: `/api/users/init` route が `tx.update` payload に `createdAt`/`plan` を含めないことを route の挙動として直接 assert する自動テスト未整備（rules unit test の "update ALLOWED" は rules 許可判定であり route の payload 構築は未検証）。M3 で vitest + supertest 基盤を導入する際にこの gap を埋める
+  2. **FE 側の users/init 失敗 retry signal**: ネットワーク失敗で users/init が落ちても `currentUser` は authenticated のまま。`needsUserInit` flag を保持して M3 の AI gating で再試行する仕組みを追加
+  3. **`applicationDefault()` eager init**: ADC 未設定環境では `getFirebaseAdminApp()` が初回 request 時に同期 throw する。M3 で起動時 probe（`startServer()` 内で `getFirebaseAuth()` 呼出）を追加して fail-fast 化
+  4. **型強化（`AuthedRequest` / `sanitizeForUpdate` undefined フリー戻り値）**: type-design-analyzer 指摘の改善案。M3 の AI 経路で `verifyIdToken` 通過後の handler が増えるタイミングで型を引き締める

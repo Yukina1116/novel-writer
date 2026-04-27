@@ -78,8 +78,27 @@ export const createAuthSlice = (set, get): AuthSlice => ({
         try {
             set({ authError: null });
             const provider = new GoogleAuthProvider();
-            await signInWithPopup(auth, provider);
+            const result = await signInWithPopup(auth, provider);
             // currentUser update flows through onAuthStateChanged listener.
+
+            // Server-side transaction creates/refreshes users/{uid} metadata
+            // and preserves createdAt across re-logins. Failure here is
+            // surfaced via toast but does not block login — future AI gating
+            // will check this metadata server-side on each AI request.
+            try {
+                const idToken = await result.user.getIdToken();
+                const resp = await fetch('/api/users/init', {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${idToken}` },
+                });
+                if (!resp.ok) {
+                    const body = await resp.json().catch(() => null) as { error?: string } | null;
+                    throw new Error(body?.error ?? `users/init responded ${resp.status}`);
+                }
+            } catch (initError) {
+                console.error('users/init failed:', initError);
+                reportAuthError(get, 'ユーザー初期化に失敗しました', initError);
+            }
         } catch (error: unknown) {
             // User-intent cancels (closed popup, double-clicked sign-in) are
             // not errors — silence them so the toast stays for actual problems
