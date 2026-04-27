@@ -9,15 +9,17 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 
 const EMULATOR_HOST_PATTERN = /^[\w.-]+:\d+$/;
 
-function hasEmulatorHost(envVar: string): boolean {
+export function hasEmulatorHost(envVar: string): boolean {
   const host = process.env[envVar]?.trim();
   return Boolean(host) && EMULATOR_HOST_PATTERN.test(host!);
 }
 
 // emulator 用の admin SDK 初期化は credential を渡さない。Auth または
-// Firestore のいずれかが emulator 設定されていれば credential を省略する
+// Firestore のいずれかが host:port 形式で設定されていれば credential を省略する
 // （ADC 未設定環境で applicationDefault() を呼ばないため）。
-function isEmulatorMode(): boolean {
+// startupProbe.ts もこの判定を共有する（lax な Boolean(env) 判定で誤って
+// probe が skip され silent failure になるリスクを排除）。
+export function isEmulatorMode(): boolean {
   return hasEmulatorHost('FIREBASE_AUTH_EMULATOR_HOST') || hasEmulatorHost('FIRESTORE_EMULATOR_HOST');
 }
 

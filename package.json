@@ -10,8 +10,9 @@
     "start": "tsx server/index.ts",
     "lint": "tsc --noEmit",
     "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --exclude tests/integration/**",
+    "test:watch": "vitest --exclude tests/integration/**",
+    "test:integration": "firebase emulators:exec --only auth,firestore \"vitest run tests/integration\"",
     "test:firebase-admin": "tsx scripts/test-firebase-admin.ts",
     "test:firestore-rules": "firebase emulators:exec --only firestore \"tsx scripts/test-firestore-rules.ts\""
   },

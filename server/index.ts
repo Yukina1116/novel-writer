@@ -4,13 +4,9 @@ import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { errorHandlerMiddleware, CorsRejectError } from './middleware/errorHandler';
+import { probeFirebaseAuth } from './startupProbe';
+import { mountAiRoutes } from './aiRoutes';
 
-import novelRoutes from './routes/novel';
-import characterRoutes from './routes/character';
-import worldRoutes from './routes/world';
-import imageRoutes from './routes/image';
-import utilityRoutes from './routes/utility';
-import analysisRoutes from './routes/analysis';
 import usersRoutes from './routes/users';
 
 const isDev = process.env.NODE_ENV !== 'production';
@@ -23,6 +19,8 @@ const allowedOrigins = isDev
     ];
 
 async function startServer() {
+    probeFirebaseAuth();
+
     const app = express();
     const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -105,13 +103,9 @@ async function startServer() {
         res.json({ status: 'ok' });
     });
 
-    app.use('/api/ai', aiLimiter);
-    app.use('/api/ai/novel', novelRoutes);
-    app.use('/api/ai/character', characterRoutes);
-    app.use('/api/ai/world', worldRoutes);
-    app.use('/api/ai/image', imageRoutes);
-    app.use('/api/ai/utility', utilityRoutes);
-    app.use('/api/ai/analysis', analysisRoutes);
+    // 順序: aiLimiter → verifyIdToken → 各 route。認証失敗も rate limit を消費させて
+    // brute-force / DoS から守る。詳細は server/aiRoutes.ts。
+    mountAiRoutes(app, aiLimiter);
 
     app.use('/api/users', usersRoutes);
 

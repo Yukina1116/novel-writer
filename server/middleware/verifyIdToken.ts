@@ -28,7 +28,13 @@ const TRANSIENT_NETWORK_CODES = new Set<string>([
 
 // 期待された permanent エラー = ユーザー操作（再ログイン）で復旧する経路。
 // このリストにない permanent は分類漏れ / SDK breaking / 設定ミスの可能性があり、
-// console.error で観測性を確保する（M3 PR-D /review-pr silent-failure-hunter 指摘）。
+// console.error で観測性を確保する。
+//
+// auth/quota-exceeded は意図的に追加していない: 公式ドキュメント
+// (https://firebase.google.com/docs/auth/admin/errors) では verifyIdToken() の
+// 文書化された throw は id-token-expired / id-token-revoked / invalid-id-token /
+// argument-error / internal-error のみ。auth/quota-exceeded は SMS 送信経路で
+// 発生するため verifyIdToken では出ない想定。万一観測したらこのコメントを更新する。
 const EXPECTED_PERMANENT_AUTH_CODES = new Set<string>([
     'auth/argument-error',
     'auth/id-token-expired',
