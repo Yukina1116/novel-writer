@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import * as Icons from '../icons';
 import { ChatMessage, SettingItem } from '../types';
 import { updateCharacterData, generateCharacterReply } from '../characterApi';
+import { useRequiresAuth } from '../hooks/useRequiresAuth';
 
 const mergeCharacterData = (original, patch) => {
     if (!patch || typeof patch !== 'object') return original;
@@ -118,6 +119,7 @@ export const CharacterGenerationModal = ({ isOpen, onClose, onApply, initialData
     const userInputRef = useRef(null);
     const isMac = useMemo(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0, []);
     const modifierKeyText = isMac ? '⌘Cmd' : 'Ctrl';
+    const { canUseAi, reason: aiBlockedReason } = useRequiresAuth();
 
     useEffect(() => {
         if (isOpen) {
@@ -380,7 +382,7 @@ export const CharacterGenerationModal = ({ isOpen, onClose, onApply, initialData
                                                     <p className="mt-1">例: <kbd>「服装のアイデアを出して」</kbd></p>
                                                     <svg className="absolute text-gray-900 h-2 w-full left-0 top-full" x="0px" y="0px" viewBox="0 0 255 255"><polygon className="fill-current" points="0,0 127.5,127.5 255,0"/></svg>
                                                 </div>
-                                                <button type="button" onClick={() => handleSendMessage('consult')} disabled={isBusy || !userInput.trim()} className="flex items-center gap-2 px-4 py-2 text-sm rounded-md font-semibold btn-pressable btn-invert-lime disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed">
+                                                <button type="button" onClick={() => handleSendMessage('consult')} disabled={!canUseAi || isBusy || !userInput.trim()} title={!canUseAi ? aiBlockedReason : undefined} className="flex items-center gap-2 px-4 py-2 text-sm rounded-md font-semibold btn-pressable btn-invert-lime disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed">
                                                     <Icons.LightbulbIcon className="h-5 w-5" />
                                                     相談する
                                                 </button>
@@ -391,7 +393,7 @@ export const CharacterGenerationModal = ({ isOpen, onClose, onApply, initialData
                                                     <p className="mt-1">例: <kbd>「性格を『優しい』に変更して」</kbd></p>
                                                     <svg className="absolute text-gray-900 h-2 w-full left-0 top-full" x="0px" y="0px" viewBox="0 0 255 255"><polygon className="fill-current" points="0,0 127.5,127.5 255,0"/></svg>
                                                 </div>
-                                                <button type="button" onClick={() => handleSendMessage('update')} disabled={isBusy || !userInput.trim()} className="flex items-center gap-2 px-4 py-2 text-sm rounded-md font-semibold btn-pressable btn-invert-indigo disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed">
+                                                <button type="button" onClick={() => handleSendMessage('update')} disabled={!canUseAi || isBusy || !userInput.trim()} title={!canUseAi ? aiBlockedReason : undefined} className="flex items-center gap-2 px-4 py-2 text-sm rounded-md font-semibold btn-pressable btn-invert-indigo disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed">
                                                     <Icons.CogIcon className="h-5 w-5" />
                                                     設定に反映
                                                 </button>

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import * as Icons from '../icons';
 import { useStore } from '../store/index';
 import { AnalysisResult, SettingItem, KnowledgeItem, ExtractedCharacterDetail } from '../types';
+import { useRequiresAuth } from '../hooks/useRequiresAuth';
 
 type PreviewTarget = {
   type: 'character' | 'world' | 'knowledge';
@@ -12,6 +13,7 @@ type PreviewTarget = {
 };
 
 export const ImportTextModal: React.FC = () => {
+  const { canUseAi, reason: aiBlockedReason } = useRequiresAuth();
   const [inputText, setInputText] = useState('');
   const [step, setStep] = useState<'input' | 'reflect'>('input');
   const [previewItem, setPreviewItem] = useState<PreviewTarget | null>(null);
@@ -162,8 +164,9 @@ export const ImportTextModal: React.FC = () => {
                 <div className="mt-6 flex gap-2">
                   <button
                     onClick={handleAnalyze}
-                    disabled={isLoading || !inputText.trim()}
-                    className="flex-grow h-12 flex items-center justify-center gap-2 px-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition font-bold disabled:opacity-50 shadow-lg"
+                    disabled={!canUseAi || isLoading || !inputText.trim()}
+                    title={!canUseAi ? aiBlockedReason : undefined}
+                    className="flex-grow h-12 flex items-center justify-center gap-2 px-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition font-bold disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
                   >
                     <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
                       {isLoading ? <Icons.LoaderIcon className="animate-spin h-5 w-5" /> : <Icons.TIcon className="h-5 w-5" />}

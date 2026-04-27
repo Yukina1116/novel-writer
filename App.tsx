@@ -55,10 +55,16 @@ export default function App() {
     const redo = useStore(state => state.redo);
     const setEditingChunkId = useStore(state => state.setEditingChunkId);
     const loadTutorialData = useStore(state => state.loadTutorialData);
-    
+    const initAuth = useStore(state => state.initAuth);
+
     useEffect(() => {
         loadTutorialData();
     }, [loadTutorialData]);
+
+    useEffect(() => {
+        const unsubscribe = initAuth();
+        return unsubscribe;
+    }, [initAuth]);
     
     const displayMenuButtonRef = useRef(null);
     const userInputRef = useRef<HTMLTextAreaElement>(null);

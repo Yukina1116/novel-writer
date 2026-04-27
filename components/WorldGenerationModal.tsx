@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import * as Icons from '../icons';
 import { ChatMessage, SettingItem } from '../types';
 import { updateWorldData, generateWorldReply } from '../worldApi';
+import { useRequiresAuth } from '../hooks/useRequiresAuth';
 
 const mergeWorldData = (original, patch) => {
     if (!patch || typeof patch !== 'object') return original;
@@ -99,6 +100,7 @@ export const WorldGenerationModal = ({ isOpen, onClose, onApply, initialData }) 
     const [isHelpOpen, setIsHelpOpen] = useState(false);
     const chatEndRef = useRef(null);
     const userInputRef = useRef(null);
+    const { canUseAi, reason: aiBlockedReason } = useRequiresAuth();
     const isMac = useMemo(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0, []);
     const modifierKeyText = isMac ? '⌘Cmd' : 'Ctrl';
 
@@ -296,7 +298,7 @@ export const WorldGenerationModal = ({ isOpen, onClose, onApply, initialData }) 
                                         }
                                     </div>
                                     {mode === 'create' ? (
-                                        <button type="submit" disabled={isBusy || !userInput.trim()} className="flex items-center gap-2 px-4 py-2 text-sm rounded-md font-semibold btn-pressable btn-invert-teal disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed">
+                                        <button type="submit" disabled={!canUseAi || isBusy || !userInput.trim()} title={!canUseAi ? aiBlockedReason : undefined} className="flex items-center gap-2 px-4 py-2 text-sm rounded-md font-semibold btn-pressable btn-invert-teal disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed">
                                             <Icons.SendIcon className="h-5 w-5" />
                                             送信
                                         </button>
@@ -308,7 +310,7 @@ export const WorldGenerationModal = ({ isOpen, onClose, onApply, initialData }) 
                                                     <p className="mt-1">例: <kbd>「この世界の魔法についてアイデアを出して」</kbd></p>
                                                     <svg className="absolute text-gray-900 h-2 w-full left-0 top-full" x="0px" y="0px" viewBox="0 0 255 255"><polygon className="fill-current" points="0,0 127.5,127.5 255,0"/></svg>
                                                 </div>
-                                                <button type="button" onClick={() => handleSendMessage('consult')} disabled={isBusy || !userInput.trim()} className="flex items-center gap-2 px-4 py-2 text-sm rounded-md font-semibold btn-pressable btn-invert-lime disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed">
+                                                <button type="button" onClick={() => handleSendMessage('consult')} disabled={!canUseAi || isBusy || !userInput.trim()} title={!canUseAi ? aiBlockedReason : undefined} className="flex items-center gap-2 px-4 py-2 text-sm rounded-md font-semibold btn-pressable btn-invert-lime disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed">
                                                     <Icons.LightbulbIcon className="h-5 w-5" />
                                                     相談する
                                                 </button>
@@ -319,7 +321,7 @@ export const WorldGenerationModal = ({ isOpen, onClose, onApply, initialData }) 
                                                     <p className="mt-1">例: <kbd>「通貨を『ギル』に設定して」</kbd></p>
                                                     <svg className="absolute text-gray-900 h-2 w-full left-0 top-full" x="0px" y="0px" viewBox="0 0 255 255"><polygon className="fill-current" points="0,0 127.5,127.5 255,0"/></svg>
                                                 </div>
-                                                <button type="button" onClick={() => handleSendMessage('update')} disabled={isBusy || !userInput.trim()} className="flex items-center gap-2 px-4 py-2 text-sm rounded-md font-semibold btn-pressable btn-invert-indigo disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed">
+                                                <button type="button" onClick={() => handleSendMessage('update')} disabled={!canUseAi || isBusy || !userInput.trim()} title={!canUseAi ? aiBlockedReason : undefined} className="flex items-center gap-2 px-4 py-2 text-sm rounded-md font-semibold btn-pressable btn-invert-indigo disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed">
                                                     <Icons.CogIcon className="h-5 w-5" />
                                                     設定に反映
                                                 </button>

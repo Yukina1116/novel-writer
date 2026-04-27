@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import * as Icons from '../icons';
+import { useRequiresAuth } from '../hooks/useRequiresAuth';
 
 interface NameGeneratorProps {
     isOpen: boolean;
@@ -31,6 +32,7 @@ export const NameGenerator: React.FC<NameGeneratorProps> = ({
     const modalRef = useRef<HTMLDivElement>(null);
     const isMac = useMemo(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0, []);
     const modifierKeyText = isMac ? '⌘Cmd' : 'Ctrl';
+    const { canUseAi, reason: aiBlockedReason } = useRequiresAuth();
 
     const presetCategories = ['ファンタジー風', 'SF風', '現代日本風', '中華風', '地名', '組織名', '技名'];
 
@@ -149,7 +151,7 @@ export const NameGenerator: React.FC<NameGeneratorProps> = ({
                     </div>
                     
                     <div className="mt-6">
-                        <button onClick={handleGenerateClick} disabled={isLoading} className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-md disabled:bg-gray-500 btn-pressable btn-invert-indigo">
+                        <button onClick={handleGenerateClick} disabled={!canUseAi || isLoading} title={!canUseAi ? aiBlockedReason : undefined} className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-md disabled:bg-gray-500 disabled:cursor-not-allowed btn-pressable btn-invert-indigo">
                             {isLoading ? <Icons.LoaderIcon className="h-5 w-5" /> : <Icons.MoonIcon className="h-5 w-5" />}
                             {isLoading ? '生成中...' : `名前を生成 (${modifierKeyText}+Enter)`}
                         </button>

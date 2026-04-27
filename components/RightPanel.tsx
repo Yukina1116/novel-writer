@@ -9,6 +9,7 @@ import { HorizontalResizableHandle } from './HorizontalResizableHandle';
 import { useHorizontalResize } from '../hooks/useHorizontalResize';
 import { ChatMessage, PlotItem } from '../types';
 import { QuickSettingsArea } from './QuickSettingsArea';
+import { useRequiresAuth } from '../hooks/useRequiresAuth';
 
 interface RightPanelProps {
     userInputRef: React.RefObject<HTMLTextAreaElement>;
@@ -72,7 +73,9 @@ const SuggestionHistoryModal: React.FC<{
     plotSuggestions: PlotItem[];
     onApprovePlot: (s: PlotItem, type: 'plot') => void;
     loadingKnowledge: string | null;
-}> = ({ isOpen, onClose, knowledgeSuggestions, onApproveKnowledge, plotSuggestions, onApprovePlot, loadingKnowledge }) => {
+    canUseAi: boolean;
+    aiBlockedReason: string;
+}> = ({ isOpen, onClose, knowledgeSuggestions, onApproveKnowledge, plotSuggestions, onApprovePlot, loadingKnowledge, canUseAi, aiBlockedReason }) => {
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[100] p-4" onClick={onClose}>
@@ -88,10 +91,11 @@ const SuggestionHistoryModal: React.FC<{
                             {knowledgeSuggestions?.length > 0 ? knowledgeSuggestions.map((s) => (
                                 <div key={s.id} className="bg-app-bg p-3 rounded-md flex justify-between items-center gap-4">
                                     <p className="text-xs text-text-main flex-grow">{s.content}</p>
-                                    <button 
-                                        onClick={() => onApproveKnowledge(s)} 
-                                        disabled={loadingKnowledge === s.content}
-                                        className="flex-shrink-0 px-3 py-1 bg-accent text-white text-xs rounded hover:bg-accent/90 disabled:bg-text-muted flex items-center justify-center min-w-[60px]"
+                                    <button
+                                        onClick={() => onApproveKnowledge(s)}
+                                        disabled={!canUseAi || loadingKnowledge === s.content}
+                                        title={!canUseAi ? aiBlockedReason : undefined}
+                                        className="flex-shrink-0 px-3 py-1 bg-accent text-white text-xs rounded hover:bg-accent/90 disabled:bg-text-muted disabled:cursor-not-allowed flex items-center justify-center min-w-[60px]"
                                     >
                                         {loadingKnowledge === s.content ? <Icons.LoaderIcon className="h-3 w-3 animate-spin" /> : '採用する'}
                                     </button>
@@ -152,6 +156,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({ userInputRef, isMobile =
     const setUserInput = useStore(state => state.setUserInput);
     const setGenerationMode = useStore(state => state.setGenerationMode);
     const submitMessage = useStore(state => state.submitMessage);
+    const { canUseAi, reason: aiBlockedReason } = useRequiresAuth();
     const handleAdoptContinuation = useStore(state => state.handleAdoptContinuation);
     const handleRejectContinuation = useStore(state => state.handleRejectContinuation);
     const regenerateContinuations = useStore(state => state.regenerateContinuations);
@@ -298,12 +303,12 @@ export const RightPanel: React.FC<RightPanelProps> = ({ userInputRef, isMobile =
                                     <div ref={chatEndRef} />
                                 </div>
                                 {continuationChoices && continuationChoices.length > 0 && <div className="p-3 bg-gray-700/50 rounded-lg border border-indigo-500/50 my-4"><h4 className="text-sm font-semibold text-indigo-300 flex items-center gap-2 mb-3"><Icons.SparklesIcon /> AIからの複数展開の提案</h4><div className="space-y-3">{continuationChoices.map((choice) => ( <div key={choice.id} className="bg-gray-800 p-3 rounded-md"><h5 className="font-bold text-indigo-400">{choice.title}</h5><p className="text-sm text-gray-300 mt-1 line-clamp-3">{choice.text}</p><div className="text-right mt-2 flex justify-end gap-2"><button onClick={() => handleRejectContinuation(choice.id)} className="px-3 py-1 rounded-md text-xs font-semibold btn-pressable btn-invert-red">却下</button><button onClick={() => handleAdoptContinuation(choice.text)} className="px-3 py-1 rounded-md text-xs font-semibold btn-pressable btn-invert-green">この展開を採用</button></div></div> ))}</div></div>}
-                                {continuationChoices && continuationChoices.length === 0 && <div className="p-3 bg-gray-700/50 rounded-lg border border-indigo-500/50 my-4 text-center"><p className="text-sm text-gray-400 mb-3">すべての提案を却下しました。</p><button onClick={regenerateContinuations} disabled={isLoading} className="px-4 py-2 text-sm rounded-md btn-pressable btn-invert-indigo disabled:bg-gray-500">{isLoading ? '生成中...' : 'やり直す'}</button></div>}
+                                {continuationChoices && continuationChoices.length === 0 && <div className="p-3 bg-gray-700/50 rounded-lg border border-indigo-500/50 my-4 text-center"><p className="text-sm text-gray-400 mb-3">すべての提案を却下しました。</p><button onClick={regenerateContinuations} disabled={!canUseAi || isLoading} title={!canUseAi ? aiBlockedReason : undefined} className="px-4 py-2 text-sm rounded-md btn-pressable btn-invert-indigo disabled:bg-gray-500 disabled:cursor-not-allowed">{isLoading ? '生成中...' : 'やり直す'}</button></div>}
                             </div>
                             {(aiSuggestions?.knowledge?.length > 0 || aiSuggestions?.plot?.length > 0) && <div className="p-4 border-t border-gray-700/50 max-h-64 overflow-y-auto flex-shrink-0 space-y-4">
                                 {aiSuggestions?.knowledge?.length > 0 && <div className="p-3 bg-gray-700/50 rounded-lg border border-yellow-500/50"><h4 className="text-sm font-semibold text-yellow-300 mb-3 flex items-center"><Icons.BrainCircuitIcon />AIからのナレッジ提案</h4><div className="space-y-2 max-h-32 overflow-y-auto pr-2">{aiSuggestions.knowledge.map((suggestion, index) => { const isThisLoading = loadingKnowledge === suggestion; return <div key={index} className="flex justify-between items-center bg-gray-800 p-2 rounded-md text-xs"><p className="text-gray-300 mr-2">{suggestion}</p><div className="flex-shrink-0">
                                     <Tooltip helpId="apply_ai" placement="top">
-                                        <button onClick={() => !isThisLoading && handleApproveKnowledgeSuggestion({ content: suggestion })} disabled={isThisLoading} className="px-2 py-1 rounded-md mr-2 font-semibold w-16 disabled:bg-gray-500 flex justify-center items-center btn-pressable btn-invert-green">{isThisLoading ? <Icons.LoaderIcon className="h-4 w-4" /> : '承認'}</button>
+                                        <button onClick={() => !isThisLoading && handleApproveKnowledgeSuggestion({ content: suggestion })} disabled={!canUseAi || isThisLoading} title={!canUseAi ? aiBlockedReason : undefined} className="px-2 py-1 rounded-md mr-2 font-semibold w-16 disabled:bg-gray-500 disabled:cursor-not-allowed flex justify-center items-center btn-pressable btn-invert-green">{isThisLoading ? <Icons.LoaderIcon className="h-4 w-4" /> : '承認'}</button>
                                     </Tooltip>
                                     <button onClick={() => handleRejectSuggestion(suggestion, 'knowledge')} disabled={isThisLoading} className="px-2 py-1 rounded-md font-semibold w-16 disabled:bg-gray-500 btn-pressable btn-invert-red">却下</button></div></div>; })}</div></div>}
                                 {aiSuggestions?.plot?.length > 0 && <div className="p-3 bg-gray-700/50 rounded-lg border border-cyan-500/50"><h4 className="text-sm font-semibold text-cyan-300 mb-3 flex items-center"><Icons.BrainCircuitIcon />AIからのプロット提案</h4><div className="space-y-2 max-h-32 overflow-y-auto pr-2">{aiSuggestions.plot.map((suggestion) => ( <div key={suggestion.id} className="bg-gray-800 p-2 rounded-md text-xs"><p className="font-bold text-cyan-400">{suggestion.title}</p><p className="text-gray-300 mt-1">{suggestion.summary}</p><div className="text-right mt-2">
@@ -397,11 +402,12 @@ export const RightPanel: React.FC<RightPanelProps> = ({ userInputRef, isMobile =
                                                 </div>
                                             </div>
                                             <Tooltip helpId="send_ai" placement="left">
-                                                <button 
-                                                    onClick={() => submitMessage()} 
-                                                    type="button" 
-                                                    className="w-12 h-12 flex items-center justify-center text-white rounded-full flex-shrink-0 btn-pressable btn-invert-indigo shadow-lg mb-0.5" 
-                                                    disabled={isLoading || !userInput.trim() || !!continuationChoices}
+                                                <button
+                                                    onClick={() => submitMessage()}
+                                                    type="button"
+                                                    className="w-12 h-12 flex items-center justify-center text-white rounded-full flex-shrink-0 btn-pressable btn-invert-indigo shadow-lg mb-0.5 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                                                    disabled={!canUseAi || isLoading || !userInput.trim() || !!continuationChoices}
+                                                    title={!canUseAi ? aiBlockedReason : undefined}
                                                 >
                                                     <Icons.SendIcon className="h-6 w-6" />
                                                 </button>
@@ -429,13 +435,15 @@ export const RightPanel: React.FC<RightPanelProps> = ({ userInputRef, isMobile =
             </div>
             {userMode === 'pro' && (
                 <SuggestionHistoryModal 
-                    isOpen={isHistoryOpen} 
-                    onClose={() => setIsHistoryOpen(false)} 
-                    knowledgeSuggestions={archivedKnowledgeSuggestions} 
-                    onApproveKnowledge={handleApproveKnowledgeSuggestion} 
-                    plotSuggestions={archivedPlotSuggestions} 
-                    onApprovePlot={handleApproveSuggestion} 
-                    loadingKnowledge={loadingKnowledge} 
+                    isOpen={isHistoryOpen}
+                    onClose={() => setIsHistoryOpen(false)}
+                    knowledgeSuggestions={archivedKnowledgeSuggestions}
+                    onApproveKnowledge={handleApproveKnowledgeSuggestion}
+                    plotSuggestions={archivedPlotSuggestions}
+                    onApprovePlot={handleApproveSuggestion}
+                    loadingKnowledge={loadingKnowledge}
+                    canUseAi={canUseAi}
+                    aiBlockedReason={aiBlockedReason}
                 />
             )}
         </div>

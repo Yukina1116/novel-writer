@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import * as Icons from '../icons';
 import { Project } from '../types';
+import { AuthButton } from './AuthButton';
 
 interface ProjectSelectionScreenProps {
     projects: Project[];
@@ -18,6 +19,9 @@ export function ProjectSelectionScreen({ projects, onCreateProject, onDeleteProj
     const handleCreate = (e) => { e.preventDefault(); if (!newProjectName.trim()) return; onCreateProject(newProjectName, newProjectMode); setNewProjectName(''); };
     return (
         <div className="min-h-screen bg-gray-900 text-gray-200 flex flex-col items-center justify-start p-4 sm:p-8 pt-16 sm:pt-24">
+            <div className="absolute top-4 right-4 sm:top-6 sm:right-6">
+                <AuthButton />
+            </div>
             <div className="w-full max-w-3xl">
                 <h1 className="text-4xl font-bold text-center text-indigo-400 mb-4">小説らいたー</h1>
                 
