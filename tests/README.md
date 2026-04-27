@@ -1,5 +1,15 @@
 # 「小説らいたー」品質保証(QA)テスト設計書
 
+> **テストの住み分け（M3 PR-D 以降）**
+>
+> | 種類 | 場所 | 実行 | 目的 |
+> |---|---|---|---|
+> | 自動テスト（vitest） | `server/**/*.test.ts` | `npm run test` | middleware / route の単体・契約テスト。admin SDK を vi.mock |
+> | 自動テスト（rules unit） | `scripts/test-firestore-rules.ts` | `npm run test:firestore-rules` | Firestore セキュリティルールを emulator で検証 |
+> | 手動テスト（QA 設計書） | `tests/*.md` | 人手 | 本ドキュメント群。E2E / UX / シナリオレベル |
+>
+> 自動テストは「コードに密着したリグレッション検出」、手動テストは「ユーザー視点の体験品質保証」を担う。
+
 ## 1. はじめに
 
 このドキュメント群は、小説執筆支援アプリケーション「小説らいたー」の品質を保証するための、包括的なブラックボックステストの設計仕様を定義するものです。

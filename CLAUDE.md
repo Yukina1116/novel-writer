@@ -5,14 +5,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev      # 開発サーバー起動（Express + Vite HMR, port 3000）
-npm run build    # FEビルド（dist/）+ サーバーコンパイル（dist-server/）
-npm run start    # 本番サーバー起動（dist-server/server/index.js）
-npm run lint     # 型チェック（tsc --noEmit）
-npm run preview  # Viteビルド後プレビュー
+npm run dev               # 開発サーバー起動（Express + Vite HMR, port 3000）
+npm run build             # FEビルド（dist/）+ サーバーコンパイル（dist-server/）
+npm run start             # 本番サーバー起動（dist-server/server/index.js）
+npm run lint              # 型チェック（tsc --noEmit）
+npm run preview           # Viteビルド後プレビュー
+npm run test              # vitest run（middleware / route の単体・契約テスト、M3 PR-D 導入）
+npm run test:watch        # vitest watch モード
+npm run test:firestore-rules  # firebase emulators:exec で firestore.rules unit test
 ```
 
-自動テストは未導入。`tests/` は手動テスト仕様書のみ。
+自動テストは M3 PR-D で vitest（`*.test.ts`）を導入。`server/middleware/*.test.ts` と `server/routes/*.test.ts` は admin SDK を vi.mock して contract assertion する方針。Firestore rules は emulator 実行（`test:firestore-rules`）。`tests/` 配下は引き続き手動テスト仕様書（QA 設計書）— 詳細は `tests/README.md`。
 
 ## Architecture
 

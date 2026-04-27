@@ -8,10 +8,22 @@ declare module 'express-serve-static-core' {
     }
 }
 
-const TRANSIENT_AUTH_CODES = new Set([
+export type AuthedRequest = Request & { user: NonNullable<Request['user']> };
+
+const TRANSIENT_AUTH_CODES = new Set<string>([
     'auth/internal-error',
     'auth/network-request-failed',
     'auth/service-unavailable',
+    // app/network-error は firebase-admin が下層 fetch エラーを wrap した際の文字列形式
+    'app/network-error',
+]);
+
+const TRANSIENT_NETWORK_CODES = new Set<string>([
+    'ETIMEDOUT',
+    'ECONNRESET',
+    'ENOTFOUND',
+    'ECONNREFUSED',
+    'EAI_AGAIN',
 ]);
 
 const isTransientAuthError = (error: unknown): boolean => {
@@ -21,7 +33,7 @@ const isTransientAuthError = (error: unknown): boolean => {
     const code = (error as { code?: unknown }).code;
     if (typeof code === 'string') {
         if (TRANSIENT_AUTH_CODES.has(code)) return true;
-        if (code === 'ETIMEDOUT' || code === 'ECONNRESET' || code === 'ENOTFOUND') return true;
+        if (TRANSIENT_NETWORK_CODES.has(code)) return true;
     }
     return false;
 };
@@ -55,3 +67,6 @@ export async function verifyIdToken(req: Request, res: Response, next: NextFunct
         res.status(401).json({ success: false, error: 'Invalid or expired token' });
     }
 }
+
+// 内部関数だが test から TRANSIENT 判定を直接検証するため export する
+export const __testing = { isTransientAuthError, TRANSIENT_AUTH_CODES, TRANSIENT_NETWORK_CODES };
