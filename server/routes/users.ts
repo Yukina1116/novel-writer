@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseFirestore } from '../firebaseAdmin';
-import { verifyIdToken } from '../middleware/verifyIdToken';
+import { verifyIdToken, type AuthedRequest } from '../middleware/verifyIdToken';
 import { sanitizeForUpdate } from '../utils/sanitize';
 
 const router = Router();
@@ -27,10 +27,10 @@ function formatFirestoreError(error: unknown): { status: number; message: string
 
 router.post('/init', verifyIdToken, async (req, res) => {
     try {
-        // verifyIdToken が成功すれば req.user は必ず注入されているが、
-        // TypeScript の declaration merging はランタイム保証ではないため
-        // 二重防御として弾く（rules/error-handling.md §2）。
-        const user = req.user;
+        // verifyIdToken が成功すれば req.user は必ず注入されている。AuthedRequest は
+        // 「middleware 通過済」の意図を型に表明するが、declaration merging はランタイム
+        // 保証ではないため、念のため二重防御として弾く（rules/error-handling.md §2）。
+        const { user } = req as AuthedRequest;
         if (!user) {
             res.status(401).json({ success: false, error: 'Unauthenticated' });
             return;

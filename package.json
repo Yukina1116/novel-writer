@@ -10,6 +10,8 @@
     "start": "tsx server/index.ts",
     "lint": "tsc --noEmit",
     "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:firebase-admin": "tsx scripts/test-firebase-admin.ts",
     "test:firestore-rules": "firebase emulators:exec --only firestore \"tsx scripts/test-firestore-rules.ts\""
   },
@@ -46,11 +48,14 @@
     "@types/dompurify": "^3.0.5",
     "@types/express": "^5.0.6",
     "@types/node": "^22.14.0",
+    "@types/supertest": "^7.2.0",
     "@vitejs/plugin-react": "^5.0.0",
     "concurrently": "^9.1.0",
     "firebase-tools": "^13.0.0",
+    "supertest": "^7.2.2",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "vitest": "^2.1.9"
   }
 }
