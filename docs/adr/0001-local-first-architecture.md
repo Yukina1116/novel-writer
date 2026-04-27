@@ -146,3 +146,4 @@
   2. **FE 側の users/init 失敗 retry signal**: ネットワーク失敗で users/init が落ちても `currentUser` は authenticated のまま。`needsUserInit` flag を保持して M3 の AI gating で再試行する仕組みを追加
   3. **`applicationDefault()` eager init**: ADC 未設定環境では `getFirebaseAdminApp()` が初回 request 時に同期 throw する。M3 で起動時 probe（`startServer()` 内で `getFirebaseAuth()` 呼出）を追加して fail-fast 化
   4. **型強化（`AuthedRequest` / `sanitizeForUpdate` undefined フリー戻り値）**: type-design-analyzer 指摘の改善案。M3 の AI 経路で `verifyIdToken` 通過後の handler が増えるタイミングで型を引き締める
+  5. **`verifyIdToken` の transient エラーコード拡張**: `/codex review` セカンドオピニオン指摘。現状の `TRANSIENT_AUTH_CODES` Set は `auth/internal-error` / `auth/network-request-failed` / `auth/service-unavailable` + `ETIMEDOUT` / `ECONNRESET` / `ENOTFOUND` をカバーするが、`ECONNREFUSED` / `EAI_AGAIN` / `app/network-error` 形式が permanent (401) に落ちる余地あり。M2 では実害トースト誤分類程度なので、M3 で AI 認証ゲート適用前に広げる
