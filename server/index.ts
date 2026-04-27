@@ -36,8 +36,20 @@ async function startServer() {
             : {
                 directives: {
                     defaultSrc: ["'self'"],
-                    scriptSrc: ["'self'", "'unsafe-inline'"],
-                    styleSrc: ["'self'", "'unsafe-inline'"],
+                    // cdn.tailwindcss.com: Tailwind runtime (index.html line 7).
+                    // aistudiocdn.com: ESM importmap targets (react/zustand/etc.).
+                    scriptSrc: [
+                        "'self'",
+                        "'unsafe-inline'",
+                        'https://cdn.tailwindcss.com',
+                        'https://aistudiocdn.com',
+                    ],
+                    // fonts.googleapis.com: webfont stylesheets referenced in index.html.
+                    styleSrc: [
+                        "'self'",
+                        "'unsafe-inline'",
+                        'https://fonts.googleapis.com',
+                    ],
                     // lh3.googleusercontent.com: Google profile avatars (Firebase Auth).
                     imgSrc: ["'self'", 'data:', 'https:', 'https://lh3.googleusercontent.com'],
                     // Firebase Auth REST endpoints (identitytoolkit/securetoken) +
@@ -49,7 +61,8 @@ async function startServer() {
                         'https://identitytoolkit.googleapis.com',
                         'https://securetoken.googleapis.com',
                     ],
-                    fontSrc: ["'self'", 'data:'],
+                    // fonts.gstatic.com: webfont binaries served by Google Fonts.
+                    fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
                     objectSrc: ["'none'"],
                     // Firebase Auth popup needs to load auth handler iframe + Google sign-in.
                     frameSrc: ['https://*.firebaseapp.com', 'https://accounts.google.com'],
@@ -59,13 +72,25 @@ async function startServer() {
         crossOriginEmbedderPolicy: false,
     }));
 
-    app.use(cors({
+    // Same-origin requests (Origin host === request host) are always allowed:
+    // browsers send an Origin header for modules/fonts/preconnect even when
+    // the loading page is on the same host, so a static asset fetch under
+    // `npm run build && NODE_ENV=production` would otherwise 403 itself.
+    // Cross-origin requests must be in `allowedOrigins`.
+    app.use((req, res, next) => cors({
         origin: (origin, callback) => {
             if (!origin) return callback(null, true);
+            try {
+                if (new URL(origin).host === req.headers.host) {
+                    return callback(null, true);
+                }
+            } catch {
+                // origin is not a valid URL — fall through to allowedOrigins
+            }
             if (allowedOrigins.includes(origin)) return callback(null, true);
             return callback(new CorsRejectError());
         },
-    }));
+    })(req, res, next));
 
     const aiLimiter = rateLimit({
         windowMs: 60 * 1000,
