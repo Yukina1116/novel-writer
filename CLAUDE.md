@@ -50,7 +50,7 @@ Browser → fetch(/api/ai/*) → server/routes/ → server/services/ → Vertex 
 
 ### 状態管理（Zustand slices pattern）
 
-`store/index.ts` で9スライスを結合（`persist` ミドルウェアは未使用、メモリのみ）。永続化は `syncSlice` 経由で Firestore へ書き込み（2秒 debounce + `beforeunload`/`visibilitychange` で flush、`hooks/useFirestoreSync.ts`）。
+`store/index.ts` で 10 スライス（M2 PR-B で `authSlice` 追加）を結合（`persist` ミドルウェアは未使用、メモリのみ）。永続化は `syncSlice` 経由で IndexedDB（Dexie.js）へ書き込み（2 秒 debounce + `beforeunload`/`visibilitychange` で flush、`hooks/useLocalSync.ts`）。
 
 | スライス | 責務 |
 |---------|------|
@@ -58,11 +58,12 @@ Browser → fetch(/api/ai/*) → server/routes/ → server/services/ → Vertex 
 | uiSlice | モーダル、サイドバー、タブ、トースト等のUI状態 |
 | dataSlice | 小説本文、設定、ナレッジ、プロット、タイムラインの変更 |
 | aiSlice | AI呼び出し、生成モード、複数候補管理 |
-| historySlice | ツリー構造の undo/redo（最大10ノード、メモリのみ・Firestore に書かない） |
-| syncSlice | Firestore 同期（2秒 debounce → `flushSave` → `PUT /api/projects/:id`） |
-| tutorialSlice | 5種チュートリアルの進捗 |
-| analysisHistorySlice | テキストインポート分析の履歴 |
+| historySlice | ツリー構造の undo/redo（最大10ノード、メモリのみ・IndexedDB にも書かない） |
+| syncSlice | IndexedDB 同期（2 秒 debounce → `flushSave` → `putProject` via `db/projectRepository.ts`、M2 PR-A で Firestore から移行） |
+| tutorialSlice | 5種チュートリアルの進捗（IndexedDB の `tutorialState` ストア） |
+| analysisHistorySlice | テキストインポート分析の履歴（IndexedDB の `analysisHistory` ストア） |
 | formSlice | フォーム状態 |
+| authSlice | Firebase Auth 状態（`currentUser` / `authStatus: 'initializing' \| 'unauthenticated' \| 'authenticated'` / `authError`、IndexedDB は uid に紐付けない設計、M2 PR-B で導入） |
 
 ### 型定義
 
