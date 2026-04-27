@@ -96,16 +96,23 @@ describe('verifyIdToken middleware', () => {
     });
 
     describe('permanent errors → 401', () => {
-        const permanentCases = [
+        // expected permanent (warn) は再ログインで復旧する正常運用ケース
+        const expectedCases = [
             { name: 'auth/argument-error', err: { code: 'auth/argument-error', message: 'invalid' } },
             { name: 'auth/id-token-expired', err: { code: 'auth/id-token-expired', message: 'expired' } },
             { name: 'auth/id-token-revoked', err: { code: 'auth/id-token-revoked', message: 'revoked' } },
-            { name: 'plain Error', err: new Error('not a firebase error') },
+            { name: 'auth/invalid-id-token', err: { code: 'auth/invalid-id-token', message: 'malformed' } },
+        ];
+        // unexpected permanent (error) は分類漏れ / SDK breaking / 設定ミスの可能性
+        const unexpectedCases = [
+            { name: 'plain Error (no code)', err: new Error('not a firebase error') },
             { name: 'unknown code', err: { code: 'something/else' } },
         ];
 
-        for (const { name, err } of permanentCases) {
-            it(`returns 401 for ${name}`, async () => {
+        for (const { name, err } of expectedCases) {
+            it(`returns 401 for expected permanent ${name} (warn-level log)`, async () => {
+                const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+                const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
                 verifyIdTokenMock.mockRejectedValueOnce(err);
                 const req = buildReq('Bearer t');
                 const res = buildRes();
@@ -113,6 +120,28 @@ describe('verifyIdToken middleware', () => {
                 expect(res.statusCode).toBe(401);
                 expect(res.body).toMatchObject({ success: false, error: 'Invalid or expired token' });
                 expect(next).not.toHaveBeenCalled();
+                expect(warnSpy).toHaveBeenCalledWith('verifyIdToken rejected (expected):', expect.anything());
+                expect(errorSpy).not.toHaveBeenCalled();
+                warnSpy.mockRestore();
+                errorSpy.mockRestore();
+            });
+        }
+
+        for (const { name, err } of unexpectedCases) {
+            it(`returns 401 for unexpected permanent ${name} (error-level log)`, async () => {
+                const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+                const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+                verifyIdTokenMock.mockRejectedValueOnce(err);
+                const req = buildReq('Bearer t');
+                const res = buildRes();
+                await verifyIdToken(req, res, next);
+                expect(res.statusCode).toBe(401);
+                expect(res.body).toMatchObject({ success: false, error: 'Invalid or expired token' });
+                expect(next).not.toHaveBeenCalled();
+                expect(errorSpy).toHaveBeenCalledWith('verifyIdToken rejected (unexpected):', err);
+                expect(warnSpy).not.toHaveBeenCalled();
+                warnSpy.mockRestore();
+                errorSpy.mockRestore();
             });
         }
     });

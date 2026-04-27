@@ -26,6 +26,21 @@ const TRANSIENT_NETWORK_CODES = new Set<string>([
     'EAI_AGAIN',
 ]);
 
+// 期待された permanent エラー = ユーザー操作（再ログイン）で復旧する経路。
+// このリストにない permanent は分類漏れ / SDK breaking / 設定ミスの可能性があり、
+// console.error で観測性を確保する（M3 PR-D /review-pr silent-failure-hunter 指摘）。
+const EXPECTED_PERMANENT_AUTH_CODES = new Set<string>([
+    'auth/argument-error',
+    'auth/id-token-expired',
+    'auth/id-token-revoked',
+    'auth/invalid-id-token',
+]);
+
+const isExpectedPermanentAuthError = (error: unknown): boolean => {
+    const code = (error as { code?: unknown }).code;
+    return typeof code === 'string' && EXPECTED_PERMANENT_AUTH_CODES.has(code);
+};
+
 const isTransientAuthError = (error: unknown): boolean => {
     if (error instanceof FirebaseAuthError) {
         return TRANSIENT_AUTH_CODES.has(error.code);
@@ -62,8 +77,15 @@ export async function verifyIdToken(req: Request, res: Response, next: NextFunct
             res.status(503).json({ success: false, error: 'Auth service temporarily unavailable' });
             return;
         }
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn('verifyIdToken rejected:', message);
+        // 期待された permanent (期限切れ等) は warn 止まり、それ以外は error で
+        // 観測性を確保し、Sentry 等で `auth/quota-exceeded` 分類漏れや SDK breaking
+        // 等を検知できるようにする
+        if (isExpectedPermanentAuthError(error)) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.warn('verifyIdToken rejected (expected):', message);
+        } else {
+            console.error('verifyIdToken rejected (unexpected):', error);
+        }
         res.status(401).json({ success: false, error: 'Invalid or expired token' });
     }
 }
