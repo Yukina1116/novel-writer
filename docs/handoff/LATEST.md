@@ -1,38 +1,29 @@
-# Handoff: M3 マイルストーン完了 / M4 (Export/Import) 着手待機
+# Handoff: M4 マイルストーン完了 / 次フェーズ着手待機
 
-- Session Date: 2026-04-27 (PR-D/E/F/G を同日中に逐次マージ完了)
+- Session Date: 2026-04-28 (PR #48 M4 + 7件 review fix を同日中にマージ完了)
 - Owner: yasushi-honda
-- Status: ✅ 再開可能（M3 完了、M4 着手待機）
+- Status: ✅ 再開可能（M4 完了、Stripe 後送り戦略の P4 (M7-α 公開準備) または P5 (M6 E2EE) 着手待機）
 
 ## 今セッションの完了内容
 
 | 区分 | 完了事項 | PR / 成果物 |
 |---|---|---|
-| 設計 | M3 全体ロードマップ整理、Stripe (M5) を最後送りにする戦略合意 | (PM/PL 判断) |
-| 実装 | M3 PR-F: usage クォータ (transaction reserve + requestId 冪等 + コスト上限) | PR #45 squash → main `5749b58` |
-| 実装 | M3 PR-G: FE 統合 (apiCall Bearer + requestId 自動生成 + 共通分類器) + Cloud Run public 化 + Firestore rules 本番デプロイ | PR #46 squash → main `4538f01` |
-| 実装 | Issue #41 (P0): CI deploy.yml に test job 追加 (regression を CI で検知) | PR #44 squash → main `73d1d8e` |
-| Issue 解消 | #40 (P1, extractMessage 優先順位 silent failure) | PR #45 同梱で解消 |
-| Issue 解消 | #41 (P0, CI test job) | PR #44 で解消 |
-| 持越解消 | M2 持越 #2 (FE needsUserInit retry signal) | PR #46 |
-| 持越解消 | M2 持越 #3 (起動時 Firebase Auth probe) | PR-E (前セッション PR #39) |
-| 持越解消 | PR-D /review-pr 持越 #3 (AuthedRequest handler narrowing) | PR #45 |
-| 持越解消 | PR-E /review-pr 反映 3 件 (handleApiError context 明示化 / ErrorContext table 化 / mountAiRoutes 名前付き化) | PR #45 |
-| 品質ゲート | /simplify (3 並列) + evaluator (5+ファイル発動) + /review-pr (6 並列) + /codex review (大規模 PR セカンドオピニオン) を全 PR で実行、合計 25+ 件のレビュー指摘を反映 | PR #44/#45/#46 |
-| Cloud Run 公開 | `--allow-unauthenticated` 復活、curl で 401 確認 (DoD) | deploy 25021542690 + DoD 検証 |
-| 本番 Firestore | usage コレクション全拒否ルールを本番デプロイ | `firebase deploy --only firestore:rules -P novel-writer-dev` |
-| ドキュメント | ADR-0001 ロードマップ M3 ✅ + 振り返りセクション、CLAUDE.md AI API 層更新 | 同 PR 内 |
+| 設計 | M4 impl-plan (Phase 2.7 で AC-1〜AC-11 定義) + schema v1 を M5/M6 で再利用する前倒し決定 | (impl-plan + ADR-0001) |
+| 実装 | M4 全体: Export/Import 強化 + バックアップ警告 UI | PR #48 squash → main `d1b3e12` |
+| 品質ゲート | /simplify (3 並列 reuse/quality/efficiency) → 7 件吸収 → /review-pr (6 並列) + /codex review でセカンドオピニオン → 追加 7 件 (B1/B2/H1/H3/H7/H8/H9) を本 PR で反映 | PR #48 内で完結 |
+| 持越解消 | M3 申し送り「Export/Import + バックアップ警告 UI」を完了 | PR #48 |
+| 起票 | rating ≥ 7 + confidence ≥ 80 を満たす follow-up 5 件を umbrella Issue 化 | Issue #49 (open 維持) |
 
-**M3 マイルストーン完全完了**: BE 認証 (verifyIdToken middleware) + usage クォータ (withUsageQuota 高階関数 + transaction 予約 + requestId 冪等) + FE 統合 (Bearer 自動付与 + 共通エラー分類器 + needsUserInit retry) + Cloud Run public 化が成立し、Tier 1 (free) ユーザーが Vertex AI / Imagen の課金を踏み倒さない構造を BE 側で強制する状態を達成。
+**M4 マイルストーン完全完了**: backup schema v1 (`{ schemaVersion, exportedAt, appVersion, projects, tutorialState, analysisHistory }`) + Dexie transaction による atomic import + 衝突解決 UI (overwrite/duplicate/skip per-project) + 30 日 stale 警告バナー + IndexedDB の `backupMeta` ストア (DB v1→v2 migration) で永続化。ADR-0001 「端末紛失 = 小説喪失」リスクを Export/Import + 鮮度警告で構造的に緩和。
 
 ## 次セッション開始時の状態
 
-- ブランチ: `main` clean、origin/main と同期済み (HEAD `4538f01`)
-- Open Issue: 0 件（#40 #41 close、新規起票なし）
+- ブランチ: `main` clean、origin/main と同期済み (HEAD `d1b3e12`)
+- Open Issue: 1 件（#49 M4 follow-up umbrella、能動的作業不要・monitor 対象として open 維持）
 - Open PR: 0 件（本セッションで作る handoff PR を除き、全 PR merge 済）
 - グローバル `~/.claude/` への変更なし（プロジェクト CLAUDE.md §1 遵守）
 - main 直 push なし、feature ブランチ + PR 運用維持（プロジェクト CLAUDE.md §2 遵守）
-- 自動テスト: vitest 176/176 PASS + 5 skipped (integration) / firestore-rules 20/20 PASS
+- 自動テスト: vitest 204/204 PASS / firestore-rules 20/20 PASS (前 M3 セッション時点)
 - 本番 Cloud Run: HTTP/2 401 確認済（無認証 access が BE で拒否される、課金保護機能）
 
 ## 次のアクション（推奨順）
@@ -41,50 +32,51 @@
 - `gh pr view <number>` で内容確認
 - ユーザー明示認可後 `gh pr merge <number> --squash --delete-branch`
 
-### 2. M4: Export/Import 強化 + バックアップ警告 UI 着手
-- ADR-0001 ロードマップ M4: 「Export/Import + バックアップ警告 UI」
-- Stripe (M5) を最後送りにする方針なので、M4 → M6 (E2EE は Tier 2 前提のため Stripe 後送り検討) → M7-α (公開準備、Stripe 不要範囲) → M5 (Stripe) → M7-β (公開最終) の順
-- 着手時に `/impl-plan` で詳細計画を立てる
+### 2. 次マイルストーン着手前の cleanup PR (任意)
+- Issue #49 (M4 follow-up 5 件) を 1 PR or 1 ファイル 1 PR の小粒で進めるか判断
+- triage 基準上は close 必須ではない（rating 7-8 だが UX 改善・テスト充実中心、機能ブロッカーなし）
 
-### 3. (任意) M3 完了直後の細かいクリーンアップ Issue 起票
-持越事項のうち triage 基準 (rating ≥ 7 + confidence ≥ 80) を満たすものを Issue 化候補として再評価。現状は持越 5 件すべて rating 5-6 で起票見送りとした（PR コメント / TODO で扱う）。
+### 3. 次マイルストーン: P4 (M7-α 公開準備) または P5 (M6 E2EE)
+- Stripe 後送り戦略 (PM/PL 合意) の通り、Stripe (M5) は最後に回す
+- P4 (M7-α 公開準備、Stripe 不要範囲) は利用規約 Tier 0/1 / 特商法 stub / プライバシーポリシー / 観測性 / エラー報告で 4〜6h 想定
+- P5 (M6 E2EE バックアップ) は ADR-0001 で Tier 2 前提と明記、Stripe 後送り推奨。本 PR (M4) で確定した backup schema v1 を AES-GCM 暗号化対象として再利用予定
+- 着手時に `/impl-plan` で詳細計画を立てる
 
 ## 申し送り事項（重要）
 
-### M3 累積実績
+### M4 累積実績
 
 | PR | 内容 | merge 日 | 行数 |
 |---|---|---|---|
-| #37 PR-D | テスト基盤 (vitest + supertest) + 持越 #1/#4/#5 | 2026-04-27 | (前セッション) |
-| #39 PR-E | BE 認証ゲート + 起動 probe + handleApiError 共通化 + 持越 #3 | 2026-04-27 | (前セッション) |
-| #43 ADR | M3 PR-E 完了をロードマップに反映 | 2026-04-27 | (前セッション) |
-| #44 CI | Issue #41: deploy.yml に test job 追加 | 2026-04-27 | +22 |
-| #45 PR-F | usage クォータ + Issue #40 + 持越/PR-E 反映 | 2026-04-27 | +1513/-234 |
-| #46 PR-G | FE 統合 + Cloud Run public 化 + M3 完了 | 2026-04-27 | +800/-55 |
+| #48 | M4 全体 + 品質ゲート 7 件 review fix | 2026-04-28 | +1547/-98 |
 
-### M4 以降への申し送り (持越事項)
+### M5 以降への申し送り (Issue #49 経由)
 
-PR-F/G の review で発覚した rating 5-7 の改善案を以下に集約。triage 基準を満たさないため Issue 化せず、対応 PR 内で吸収する方針:
+#### Issue #49 (M4 follow-up umbrella) で集約管理する 5 件:
 
-1. **残量バー UI**: usage rules 緩和 (`usage/{uid}/months/{yyyymm}` path-segment 形式推奨、Codex review #45 指摘) + FE コンポーネント追加。M4 Export/Import UI と一緒に or M5 Stripe 連携時に枠拡張動線とセットで実装検討
-2. **observability 拡張 (actual metadata 精算)**: Vertex AI 応答の `usage_metadata` から token 数を取得して `commit` の actualCost を補正。PR-F は固定 estimatedCost で運用中
-3. **Sen branded type**: UsageDoc の単位安全性。`Sen = number & {__brand}` で sen と yen の混同を型レベルで排除 (type-design-analyzer #46 HIGH)
-4. **AiRouteKey ↔ Express path 単一レジストリ化**: drift 防止。`AI_ROUTES = { 'novel/generate': { path: '/api/ai/novel/generate', costSen: 200 } }` 形式 (type-design-analyzer #46 MEDIUM)
-5. **ReservationHandle Date 露出**: 内部 docId を直接保持する branded type 化、commit/cancel の handle? 撤廃 (type-design-analyzer #46 MEDIUM)
-6. **AuthedRequest assertion 関数化**: `assertAuthed(req): asserts req is AuthedRequest` で type 安全 boundary を強化 (type-design-analyzer #46)
-7. **processedIds sliding window drop 警告ログ**: 200 件超過で drop した requestId の再送 → わずかに二重課金される経路の観測性 (silent-failure-hunter #45)
-8. **AC F8 動的検証**: route ファイル全件 withUsageQuota ラップ確認の test (pr-test-analyzer #45)
-9. **401 自動 sign-out**: PR-G では文言誘導のみ。N 回連続 401 で自動 signOut + 再ログインダイアログ (silent-failure-hunter #46)
-10. **json parse 失敗時 console.error / Sentry 連携**: M5 Stripe 設定時に observability セットで導入 (silent-failure-hunter #46)
+1. **H2 prepareImport flushSave 失敗 UX**: 本 PR で flushSave 先行実装したが transient failure 時の UX 未確定。失敗を user-visible にするか / retry をかけるか要検討
+2. **H4 setImportResolution 通しテスト**: prepareImport → setImportResolution → executeImport の通しテスト未整備、純関数 resolveImportProjects の単体テストのみで AC-3 通し検証が不完全 (rating 8)
+3. **H5 TOCTOU 再 read テスト**: PR description の主要設計判断を実装したが回帰検知ゼロ。`readSnapshot.mockResolvedValueOnce` を 2 回切り替えるテストで担保 (rating 8)
+4. **H6 isBackupStale 境界値**: exact 30 日 0 ms の挙動が未テスト、CLAUDE.md「境界値必須」MUST 違反、`vi.setSystemTime` で時刻固定して assert (rating 7)
+5. **H10 Dexie v1→v2 BlockedError**: 複数タブ運用で v1 オープン中に v2 upgrade すると永続的に block。`getDb()` lazy init で `instance.on('blocked', ...)` ハンドラ追加 (rating 7)
 
-### Stripe 後送り戦略（PM/PL 合意）
+#### 持越事項 (rating 5-6, 本 PR スコープ外、M5 着手前 cleanup PR で吸収):
 
-Stripe (M5) を最後に回し、それ以外を作り切る方針:
+- **Cheap polish**: comment-analyzer の `readFileAsText.ts` ヘッダー削除、`sanitizeForImport` コメント整理
+- **Schema v2 への seam**: 現状 `parseBackup` は `schemaVersion === 1` strict equality。v2 リリース時は `PARSERS: Record<number, parser>` table に refactor
+- **AC ドキュメント不在**: `docs/spec/m4/acceptance-criteria.md` を起こさず、AC は impl-plan + PR description + test describe ラベルのみ。次セッションで M5/M6/M7 spec と一緒に
+- **個別 export の triggerDownload 5 重実装**: App.tsx / App.mobile.tsx / Header.tsx の `handleExportProject` / `handleExportTxt` が手書き blob ダウンロードを 4 重実装、`utils/download.ts` への集約は M4 スコープ外
+- **TutorialFlags 型統一**: `BackupV1.tutorialState` インライン型と `db/tutorialRepository.ts` の `TutorialFlags` を共通化
+- **ImportConflictResolution 4th union への対応**: `(['overwrite', 'duplicate', 'skip'] as const)` リテラル配列を `Object.keys(RESOLUTION_LABELS)` 化
+- **legacy compat の deprecation**: parseBackup の bare project / `{ project: {...} }` envelope 経路を pre-M4 ユーザー消滅後に削除候補化
+- **DB v1→v2 migration 自動テスト**: fake-indexeddb 等の導入が必要、Issue #49 H10 と同時対応
 
-| Phase | スコープ | Stripe 依存 | 推定工数 |
-|---|---|---|---|
-| **次**: P3 (M4) | Export/Import 強化 + バックアップ警告 UI | なし | 4〜6h |
-| P4 (M7-α) | 公開準備（利用規約 Tier 0/1、特商法 stub、プライバシーポリシー、観測性、エラー報告） | なし | 4〜6h |
+### Stripe 後送り戦略（PM/PL 合意、進捗反映）
+
+| Phase | スコープ | Stripe 依存 | 推定工数 | 状態 |
+|---|---|---|---|---|
+| ~~P3 (M4)~~ | Export/Import 強化 + バックアップ警告 UI | なし | 4〜6h | ✅ 完了 (PR #48) |
+| **次**: P4 (M7-α) | 公開準備（利用規約 Tier 0/1、特商法 stub、プライバシーポリシー、観測性、エラー報告） | なし | 4〜6h |
 | P5 (M6) | E2EE バックアップ（**判断ポイント**: ADR で Tier 2 前提のため Stripe 後送り推奨） | あり | 6〜10h |
 | P6 (M5) | Stripe Subscription + Webhook + 法務 Tier 2 | 本体 | 8〜12h |
 | P7 (M7-β) | 公開最終チェック（Tier 2 込み） | あり | 2〜3h |
@@ -95,6 +87,7 @@ Stripe (M5) を最後に回し、それ以外を作り切る方針:
 - `cd ~/Projects/学校/yamashita/novel-writer && claude` で起動すれば direnv 経由で正しいアカウントが有効化される
 - Cloud Run URL: `https://novel-writer-ramnh3ulya-an.a.run.app`
 - 本番 Firebase project: `novel-writer-dev`
+- IndexedDB schema: v2 (M4 で `backupMeta` ストア追加)
 
 ### 主要コマンド
 
@@ -102,41 +95,36 @@ Stripe (M5) を最後に回し、それ以外を作り切る方針:
 npm run dev                # 開発サーバー起動（Express + Vite HMR, port 3000）
 npm run dev:emu            # dev + Firebase Emulator 並列（auth:9099 / firestore:8080）
 npm run lint               # 型チェック（tsc --noEmit）
-npm run test               # vitest run（176 ケース、admin SDK は vi.mock、tests/integration 除外）
-npm run test:integration   # firebase emulators:exec で integration test (5 ケース)
+npm run test               # vitest run（204 ケース、admin SDK は vi.mock、tests/integration 除外）
+npm run test:integration   # firebase emulators:exec で integration test
 npm run test:firestore-rules  # firebase emulators:exec で rules unit test（20 ケース）
 npm run build              # FE ビルド（dist/）+ サーバーコンパイル（dist-server/）
 
-# 本番 Cloud Run の認証強制を確認 (DoD)
-curl -i -X POST 'https://novel-writer-ramnh3ulya-an.a.run.app/api/ai/utility/names' \
-  -H 'Content-Type: application/json' \
-  -d '{"requestId":"manual-check-...","category":"human","keywords":"test"}'
-# 期待: HTTP/2 401
+# 全データバックアップの動作確認 (DoD)
+# Settings → 全データバックアップ → 全データをエクスポート ボタン押下
+# → JSON ダウンロード、{ schemaVersion: 1, exportedAt, appVersion, projects, tutorialState, analysisHistory } 確認
+# → ファイル選択で再 import → ImportConflictModal で衝突解決 → 復元成功
 
-# 本番 Firestore rules デプロイ
-firebase deploy --only firestore:rules -P novel-writer-dev
+# Legacy single-project JSON (pre-M4) も import 可
+curl -X POST -d @legacy-export.json '...'  # ※開発時参考、UI は Settings 経由で
 ```
 
 ## Issue Net 変化
 
-- Close 数: 2 件 (#40 P1 bug / #41 P0 enhancement)
-- 起票数: 0 件
-- **Net: -2 件**（進捗あり、triage 基準を満たす新規 Critical 問題は本セッションで発生せず）
+- Close 数: 0 件
+- 起票数: 1 件 (#49 M4 follow-up umbrella、5 件集約)
+- **Net: +1 件**
 
-進捗の質: PR-F/G で /review-pr 11 件 + /codex review 5 件 + /simplify 9 件の指摘を反映したが、いずれも本 PR 内で吸収して新規 Issue 化は不要と判断（rating 5-7 の改善提案は M4 以降の対応 PR で吸収する申し送り事項として本ファイルに記録）。
+進捗の質: 起票した #49 は triage 基準 (rating ≥ 7 + confidence ≥ 80) を厳格に満たす follow-up を 1 つの umbrella で集約管理する形で、rating 5-6 の review agent 提案は機械的に Issue 化せず PR コメント / 持越事項として扱った。マイルストーン (M4) 完了 + 持越管理の質を保つため Net +1 は妥当な進捗と判断。
 
 ## ドキュメント整合性
 
 | 項目 | 状態 | 備考 |
 |---|---|---|
-| `docs/spec/m3/tasks.md` PR-G タスク全 [x] | ✅ | G.1〜G.6 全完了、AC G1〜G10 全 [x] |
-| `docs/spec/m3/tasks.md` 状態 | ✅ "完了 (2026-04-27)" | 行 3 |
-| `docs/spec/m3/tasks.md` M3 完了の定義 | ✅ | 8 項目すべて [x] |
-| ADR-0001 ロードマップ表 M3 | ✅ 完了 | M3 振り返りセクション追記済 |
-| ADR-0001 振り返り | ✅ M3 振り返り追加 | "うまくいった点" "課題・M4 以降への申し送り" 各 5 項目 |
-| `CLAUDE.md` "AI API 層" 表 | ✅ 更新 | withUsageQuota / sen 単位 / 認証・クォータ列追加 |
-| `CLAUDE.md` authSlice 行 | ✅ 更新 | needsUserInit / retryUserInit 反映 |
-| `docs/spec/m3/usage-cost-config.md` | ✅ 新規 | コスト設定の根拠記録 |
+| `docs/adr/0001-local-first-architecture.md` ロードマップ M4 | ✅ 完了 (PR #48 2026-04-28) | M4 振り返り追加済 |
+| `docs/adr/0001-local-first-architecture.md` 振り返り | ✅ M4 振り返り追加 | "うまくいった点" "課題・M5 以降への申し送り" 各 5 項目 |
+| `CLAUDE.md` Architecture | ✅ M4 機能 (backup schema, refreshFromIndexedDb, BackupWarningBanner) を反映 | (本 handoff PR で更新) |
+| `CLAUDE.md` Zustand スライス表 | ✅ backupSlice 行追加 | (本 handoff PR で更新) |
 
 ## 残留プロセス
 

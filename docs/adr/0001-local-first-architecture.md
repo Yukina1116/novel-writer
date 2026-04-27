@@ -87,7 +87,7 @@
 | M1 | 基盤整備（IaC 化、防御層、Firebase 準備） | ✅ 完了（2026-04-26） |
 | M2 | 認証 + IndexedDB 移行 | ✅ 完了（PR-A IndexedDB 移行 2026-04-26 PR #24 / PR-Bx useLocalSync hardening 2026-04-27 PR #31 / PR-B Auth FE 2026-04-27 PR #29 / PR-C 旧ルート退役 + verifyIdToken + users/init + firestore.rules 2026-04-27） |
 | M3 | AI 認証ゲート + クォータ | ✅ 完了（PR-D テスト基盤 + 持越 #1/#4/#5 PR #37 / PR-E BE 認証ゲート + 起動 probe + handleApiError 共通化 + 持越 #3 PR #39 / PR-F usage クォータ + 持越 + Issue #40 PR #45 / PR-G FE 統合 + Cloud Run public 化 + 持越 #2 2026-04-27） |
-| M4 | Export/Import + バックアップ警告 UI | ⏳ |
+| M4 | Export/Import + バックアップ警告 UI | ✅ 完了（PR #48 2026-04-28） |
 | M5 | Stripe Subscription + Webhook + 法務 | ⏳ |
 | M6 | E2EE 暗号化バックアップ（任意機能、後回し可） | ⏳ |
 | M7 | 公開準備 | ⏳ |
@@ -176,3 +176,30 @@
 - **actual metadata 精算**: Vertex AI 応答の usage_metadata から token 数を取得して `commit` の actualCost を補正する経路。observability 拡張として M3 完了後に検討。現状は固定 estimatedCost で運用
 - **本番 Firestore へのルールデプロイ**: PR-G merge 後に `firebase deploy --only firestore:rules -P novel-writer-dev` を手動実行が必要。usage コレクション全拒否を本番に反映する DoD
 - **Cloud Run public 化後の curl 検証**: PR-G の DoD として「401 (Authorization なし) を本番 URL で確認」を merge 後に手動実施。401 でなければ即座に `gcloud run services update --no-allow-unauthenticated` で rollback する手順を確立
+
+
+## M4 振り返り（2026-04-28）
+
+1 PR (#48) でマイルストーン完了。同日中の 1 セッション内に impl-plan → 実装 → 品質ゲート (simplify 3 並列 + evaluator + /review-pr 6 並列 + /codex review) → 7 件 review 反映 → マージまで完走。Stripe (M5) を最後送りにする戦略の通り、ADR-0001「端末紛失 = 小説喪失」の構造的緩和を成立させた。
+
+| PR | 内容 | 状態 |
+|---|---|---|
+| #48 PR | M4 全体 (Export/Import + バックアップ警告 UI) + 7 件 review fix | ✅ |
+
+**うまくいった点:**
+
+- M3 で導入した「AC は impl-plan の Phase 2.7 で先に定義」フローがそのまま再利用でき、AC-1〜AC-11 を vitest と実機 E2E に機械的に紐付けできた。AC ラベルを describe に刻む慣習も継続採用
+- backup schema v1 を「M5 (Stripe Tier 2 backup) / M6 (E2EE) で再利用する前提」で前倒し確定。`schemaVersion: 1` リテラル + `BACKUP_SCHEMA_VERSION` 定数のペアで型と runtime check が両輪に
+- 既存資産の活用が効いた: `validateAndSanitizeProjectData` (utils.ts) / `pickPersistableFields` + `stripInternalKeys` (projectRepository.ts) / `useLocalSync` の init ロジック を refresh 関数として外出し → import 経路でも同じ sanitize chain と rehydrate を再利用
+- review 反映の順序判断: `/simplify` 3 並列 → 7 件吸収後に `/review-pr` 6 並列 + `/codex review` でセカンドオピニオン → 新規 P0 級 (legacy compat の旧バックアップ全 reject、in-memory state の silent overwrite) を merge 前に検出。**self-review では見逃したであろう「旧 export ファイルが import で全 reject される」を codex の diff レビューが拾った**
+- TOCTOU 対策 (executeImport で existingIds 再 read + flushSave 先行) を実装段階で組み込んでおいたが、テストカバレッジが甘いことを pr-test-analyzer が rating 8 で検出。follow-up Issue #49 として umbrella 管理に振り分け
+
+**課題・M5 以降への申し送り:**
+
+- **Follow-up Issue #49 (5 件 umbrella)**: H2 (prepareImport flushSave 失敗 UX), H4 (setImportResolution 通しテスト), H5 (TOCTOU 再 read テスト), H6 (isBackupStale 境界値 30 日), H10 (Dexie v1→v2 BlockedError ハンドラ)。M5 着手前の cleanup PR で 1 ファイル 1 PR の小粒で進める想定
+- **Cheap polish (rating 5-6)**: comment-analyzer の `readFileAsText.ts` ヘッダー削除、`sanitizeForImport` コメント整理、type-design-analyzer の TutorialFlags 型統一、ImportConflictModal の 4th resolution 対応の `Object.keys` 化。次の cleanup PR で吸収候補
+- **Schema v2 への seam**: 現状 `parseBackup` は `schemaVersion === 1` を strict equality でチェック。v2 リリース時は `PARSERS: Record<number, parser>` table 形式に refactor して migrator を挿せる構造にする (M5/M6 着手時の TODO)
+- **AC ドキュメント不在**: `docs/spec/m4/acceptance-criteria.md` を起こさず、AC は impl-plan + PR description + test describe ラベルのみに存在。次セッションで M5/M6/M7 の spec 起こしと一緒に M4 spec も埋める
+- **legacy compat の長期方針**: parseBackup の legacy fallback (bare project / `{ project: {...} }` envelope) は M4 の延命措置。pre-M4 export を持つユーザーが居なくなった頃に削除候補。CI で legacy 形式のテストファイルを残しつつ deprecation コメント追加が次の整理対象
+- **個別 export 動線の triggerDownload 5 重実装**: App.tsx / App.mobile.tsx / Header.tsx の `handleExportProject` / `handleExportTxt` が手書き blob ダウンロードを 4 重実装。`utils/download.ts` への集約は本 PR スコープ外として持越 (rating 5-6、全箇所動作上は問題なし)
+- **DB v1→v2 migration の自動テスト**: fake-indexeddb 等の導入が必要、Issue #49 の H10 とまとめて対応想定
