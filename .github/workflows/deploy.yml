@@ -45,8 +45,6 @@ jobs:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE }}:${{ github.sha }}
-          # v3 で wait のデフォルトが false に変更されたため、Output URL step が steps.deploy.outputs.url を参照する都合上、明示的に true を指定
-          wait: true
           flags: >-
             --service-account=novel-writer-run@novel-writer-dev.iam.gserviceaccount.com
             --memory=512Mi
