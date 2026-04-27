@@ -19,6 +19,7 @@ import { SettingItem, KnowledgeItem, PlotItem } from '../types';
 import * as utilityApi from '../utilityApi';
 import { SyncDialog } from './SyncDialog';
 import { ImportTextModal } from './ImportTextModal';
+import { ImportConflictModal } from './modals/ImportConflictModal';
 
 interface ModalManagerProps {
     displayMenuButtonRef: React.RefObject<HTMLButtonElement>;
@@ -51,6 +52,13 @@ export const ModalManager: React.FC<ModalManagerProps> = ({ displayMenuButtonRef
     const exportHtml = useStore(state => state.exportHtml);
 
     const activeProjectData = activeProjectId ? allProjectsData[activeProjectId] : null;
+
+    // importConflict can fire from ProjectSelectionScreen (no active project),
+    // so handle it before the activeProjectData early-return that other modals
+    // depend on.
+    if (activeModal === 'importConflict') {
+        return <ImportConflictModal onComplete={closeModal} />;
+    }
 
     if (!activeProjectData) return null;
 

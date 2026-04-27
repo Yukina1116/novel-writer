@@ -22,23 +22,36 @@ export interface AnalysisHistoryRecord {
     history: AnalysisResult[];
 }
 
+export interface BackupMetaRecord {
+    key: string;
+    lastExportedAt: string | null;
+}
+
 export type AppDexieDb = Dexie & {
     projects: EntityTable<Project, 'id'>;
     tutorialState: EntityTable<TutorialStateRecord, 'version'>;
     analysisHistory: EntityTable<AnalysisHistoryRecord, 'key'>;
+    backupMeta: EntityTable<BackupMetaRecord, 'key'>;
 };
 
 export const DB_NAME = 'novelWriterDb';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 export const TUTORIAL_STATE_VERSION = 1;
 export const ANALYSIS_HISTORY_KEY = 'current';
+export const BACKUP_META_KEY = 'current';
 
 const createDb = (): AppDexieDb => {
     const instance = new Dexie(DB_NAME) as AppDexieDb;
+    instance.version(1).stores({
+        projects: 'id, lastModified',
+        tutorialState: 'version',
+        analysisHistory: 'key',
+    });
     instance.version(DB_VERSION).stores({
         projects: 'id, lastModified',
         tutorialState: 'version',
         analysisHistory: 'key',
+        backupMeta: 'key',
     });
     return instance;
 };

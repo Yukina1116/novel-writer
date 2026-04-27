@@ -5,6 +5,7 @@ import { ModalManager } from './components/ModalManager';
 import { CommandPalette } from './components/CommandPalette';
 import { Tutorial } from './components/Tutorial';
 import { TutorialModeSelectionModal } from './components/TutorialModeSelectionModal';
+import { BackupWarningBanner } from './components/BackupWarningBanner';
 import { useStore } from './store/index';
 import { LeftPanel } from './components/LeftPanel';
 import { RightPanel } from './components/RightPanel';
@@ -176,6 +177,7 @@ const AppMobile: React.FC = () => {
 
             {/* ヘッダーエリア */}
             <div className="w-full border-b border-gray-700 bg-gray-800 flex-shrink-0 z-30">
+                <BackupWarningBanner />
                 <Header displayMenuButtonRef={displayMenuButtonRef} isMobile={true} />
             </div>
 

@@ -4,7 +4,6 @@ import * as Icons from '../icons';
 import { useStore } from '../store/index';
 import { Tooltip } from './Tooltip';
 import { AuthButton } from './AuthButton';
-import { loadAnalysisHistory as loadAnalysisHistoryFromDb } from '../db/analysisHistoryRepository';
 
 interface HeaderProps {
     displayMenuButtonRef: React.RefObject<HTMLButtonElement>;
@@ -101,32 +100,8 @@ export const Header: React.FC<HeaderProps> = ({ displayMenuButtonRef, isMobile =
         URL.revokeObjectURL(link.href);
     };
 
-    const handleExportAll = async () => {
-        const state = useStore.getState();
-        const allData = {
-            localStorage: {
-                allProjectsData: state.allProjectsData,
-                activeProjectId: state.activeProjectId,
-                isLeftSidebarOpen: state.isLeftSidebarOpen,
-                isRightSidebarOpen: state.isRightSidebarOpen,
-                leftSidebarWidth: state.leftSidebarWidth,
-                rightSidebarWidth: state.rightSidebarWidth,
-                isNewChunkInputOpen: state.isNewChunkInputOpen,
-                userMode: state.userMode,
-                undoScope: state.undoScope,
-                historyTree: state.historyTree,
-                pinnedSettingIds: state.pinnedSettingIds,
-            },
-            analysisHistory: { history: await loadAnalysisHistoryFromDb() }
-        };
-
-        const blob = new Blob([JSON.stringify(allData, null, 2)], { type: 'application/json' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `all_data_export_${new Date().toISOString()}.json`;
-        link.click();
-        URL.revokeObjectURL(link.href);
-    };
+    const exportAllData = useStore(state => state.exportAllData);
+    const handleExportAll = () => void exportAllData();
 
     if (!activeProjectData) return null;
 
