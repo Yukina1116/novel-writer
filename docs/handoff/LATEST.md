@@ -1,132 +1,134 @@
-# Handoff: M2 PR-B + PR-Bx merge 完了 / Issue #27 #28 自動 close / 残 PR-C のみ
+# Handoff: M2 マイルストーン完了 / PR-C merge + Cloud Run デプロイ成功 / M3 待機
 
 - Session Date: 2026-04-27
 - Owner: yasushi-honda
-- Status: ✅ 再開可能（M2 マイルストーン: PR-A ✅ / PR-Bx ✅ / PR-B ✅ / PR-C ⏳）
+- Status: ✅ 再開可能（M2 マイルストーン完了、M3 待機）
 
 ## 今セッションの完了内容
 
 | 区分 | 完了事項 | 成果物 |
 |---|---|---|
-| AC 検証 | PR #31 (PR-Bx useLocalSync hardening) を Playwright MCP で AC 検証完了 (TC-EX-IDB-001/002/003/004 PASS、005 は AC-X4 同様 UNTESTABLE 扱い) | PR #31 |
-| 追加修正 | PR #31 内に commit `941e187` (`App.tsx` 早期 return path に `<Toast />` マウント、AC-X2 真の充足) | commit 941e187 |
-| マージ | PR #31 squash merge → commit `c1e43a0` on main、Issue #27 / #28 自動クローズ | PR #31 → c1e43a0 |
-| Firebase 設定 | `firebase apps:create WEB` で `novel-writer-dev-web` (App ID `1:446321146441:web:285a9e0bbd4146e15b1d98`) を CLI 登録、SDK config 取得、`.env.local` 作成、Google プロバイダ有効化（ユーザー操作） | Firebase Console |
-| AC 検証 | PR #29 (PR-B Firebase Auth FE) を Playwright MCP + Firebase Auth Emulator で AC 検証完了（Pre-flight + B1〜B8 + B3-err1/B3-err2、合計 11 項目 PASS） | PR #29 |
-| 追加修正 | PR #29 内に commit `83157f4` (server/index.ts CSP 拡張: `cdn.tailwindcss.com` `aistudiocdn.com` `fonts.googleapis.com` `fonts.gstatic.com` 追加 + `cors` の origin function を「同一ホスト自動許可」に拡張) | commit 83157f4 |
-| 主要設計判断 | `authStatus = 'initializing' → unauthenticated/authenticated` の遷移が Firebase の `onAuthStateChanged` で 200ms 以内に完了することを実機確認、 `useRequiresAuth` フック経由で 7 ファイル / 17 箇所の AI ボタンが Tier 0 disable + tooltip 化、IDB レコードが uid 切替で完全保持されることを実証 (`idbCountStableAcrossAccountSwitch=true` + `idbIdsIdenticalAcrossSwitch=true`) | 同上 |
-| マージ | PR #29 squash merge → commit `e68079a` on main、Cloud Run 自動デプロイ ✅ success (run 24972945015) | PR #29 → e68079a |
-| ドキュメント | `docs/spec/m2/tasks.md` PR-B AC を全 [x] 化、Pre-flight + B3-err1/B3-err2 を AC セクションに追加記録、検証中の追加修正（CSP 拡張、cors 同一ホスト自動許可）を tasks.md に記録 | tasks.md |
-| ドキュメント | 本 handoff PR で ADR-0001 ロードマップ表 M2 を「PR-A ✅ / PR-Bx ✅ / PR-B ✅ / PR-C ⏳」に更新、CLAUDE.md "状態管理" セクションを Firestore→IndexedDB 反映に修正 + `authSlice` 追記 | 本 PR |
+| 実装 | PR-C 実装（旧 server route 削除 + verifyIdToken + users/init + firestore.rules + rules-unit-testing 15 ケース） | PR #34 / commit `17c91f8` |
+| 品質ゲート | `/impl-plan`（ユーザー承認） → `/simplify`（MAJOR 1 + MINOR 2 対処）→ `/safe-refactor`（検出 0）→ `evaluator`（再評価で APPROVE）→ `/review-pr` 6 並列（HIGH 1 + Important 3 + LOW 5 全対応）→ `/codex review`（APPROVE、LOW 1 件 M3 持越） | 7 段階の評価レポート |
+| AC 検証 | C1〜C7 全 PASS（curl + Auth/Firestore Emulator + admin REST + docker build） | tasks.md PR-C AC 全 [x] |
+| 追加修正 | rules 強化（`updatedAt is timestamp` / `email.size() > 0` / `keys().hasAll`）、`handleApiError` 誤分類解消（route 内 `formatFirestoreError` で 503/500 分類）、authSlice の fetch エラー body 抽出、`isEmulatorMode` を Firestore emulator 単独利用に対応 | commit `17c91f8` |
+| マージ | PR #34 squash merge → commit `a56df5b` on main、Cloud Run 自動デプロイ ✅ success（run 24975219523、2m18s） | PR #34 → a56df5b |
+| ドキュメント | `docs/spec/m2/tasks.md` PR-C 全 [x] + M2 完了の定義 6 項目 [x]、ADR-0001 ロードマップ表 M2 を ✅ 完了に更新 + M2 振り返り追記、CLAUDE.md "AI API 層" 表更新 | 同 PR |
+| 追加 ADR 追記 | `/codex review` 指摘の transient エラーコード拡張（`ECONNREFUSED` / `EAI_AGAIN` / `app/network-error`）を M3 持越項目 #5 として追記 | commit `6294401` |
+
+**M2 マイルストーン完了**（ADR-0001 Local-first アーキテクチャ phase 1 達成）。
 
 ## 次セッション開始時の状態
 
-- ブランチ: `main` clean、origin/main と同期済み (commit e68079a)
-- 進行中の feature ブランチ: `docs/handoff-pr-b-bx-merged` — 本ハンドオフ用
+- ブランチ: `main` clean、origin/main と同期済み (commit a56df5b)
+- 進行中の feature ブランチ: `docs/handoff-m2-completed` — 本ハンドオフ用
 - Open Issue: 0 件
 - Open PR: 1 件（本セッションで作る handoff PR）
-- グローバル `~/.claude/` への変更なし (プロジェクト CLAUDE.md §1 遵守)
-- main 直 push なし、feature ブランチ + PR 運用維持 (プロジェクト CLAUDE.md §2 遵守)
+- グローバル `~/.claude/` への変更なし（プロジェクト CLAUDE.md §1 遵守）
+- main 直 push なし、feature ブランチ + PR 運用維持（プロジェクト CLAUDE.md §2 遵守）
 
-## 次のアクション (推奨順)
+## 次のアクション（推奨順）
 
 ### 1. 本ハンドオフ PR をレビュー → merge
 - `gh pr view <本 PR>` で内容確認
 - ユーザー明示認可後 `gh pr merge <PR#> --squash --delete-branch`
 
-### 2. PR-C 着手（M2 最終 PR、`/api/projects` `/api/data` 退役 + Firestore メタ縮小 + ID Token 検証ミドルウェア）
+### 2. 本番 Firestore rules デプロイ（M3 着手前に実施）
+- `firebase deploy --only firestore:rules -P novel-writer-dev`
+- rules/firebase.md の手動デプロイ手順を遵守
+- デプロイ後、`firestore.rules` 変更が反映されたことを Firebase Console > Firestore > ルール画面で確認
+- Cloud Run 経由のアプリは現状 IAM 非公開のため、ブラウザでの動作確認は M3 で `--allow-unauthenticated` 復活時に実施
+
+### 3. GitHub Actions Node 20 廃止対応（M3 着手前の独立 PR）
+- 公式 [GitHub blog (2025-09-19)](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/) を再確認
+- PR #34 の Cloud Run デプロイログでも Node 20 deprecation 警告が出ている（`actions/checkout@v4`、`google-github-actions/{auth,setup-gcloud,deploy-cloudrun}@v2` 等）
+- `actions/checkout@v5`、`google-github-actions/auth@v3`、`setup-gcloud@v3`、`deploy-cloudrun@v3` 等の major 追従を一括実施
+- `2026-06-02` 強制までに完了させる（暫定値、要再確認）
+
+### 4. M3 着手（AI 認証ゲート + クォータ）
 - `git checkout main && git fetch && git reset --hard origin/main`
-- `git checkout -b feature/m2-server-retirement`
-- `/impl-plan` 起動（中規模・クロスレイヤー変更のため必須）
-- ベース資料: `docs/spec/m2/tasks.md` PR-C C.1〜C.5 + AC C1〜C7 + リスク R12〜R15
-- 実装内容（spec 抜粋）:
-  - **C.1**: `server/routes/projects.ts` / `server/routes/data.ts` / `server/services/projectService.ts` / `server/firestoreClient.ts` / `projectApi.ts` (FE) 削除、`server/index.ts` の mount 行削除、firestore を `firebase-admin/firestore` の `getFirestore(getFirebaseAdminApp())` 経由に統合
-  - **C.2**: `server/middleware/verifyIdToken.ts` 新規作成（Bearer ID Token 検証）
-  - **C.3**: `server/routes/users.ts` 新規（`POST /api/users/init` で Firestore `users/{uid}` 初期化、`verifyIdToken` ミドルウェア適用）
-  - **C.4**: route 側 keys allowlist + enum 検証（admin SDK rules bypass の防御）
-  - **C.5**: CLAUDE.md "AI API層" 表更新（`/api/projects` 削除 + `/api/users/init` 追加）
-  - **firestore.rules 初版**（M3 で正式運用、本 PR では `users/{uid}` の uid 一致書込みのみ許可）
-- 同 PR で更新するドキュメント:
-  - `CLAUDE.md` "AI API層" 表（`/api/projects` 行削除 + `/api/users/init` 行追加）
-  - ADR-0001 ロードマップ表（M2 を ✅ 完了に更新、PR-C の merge 時点で）
-  - `docs/spec/m2/tasks.md` PR-C AC を順次 [x] 化、最後に M2 完了の定義 4 項目を [x] 化
+- `git checkout -b feature/m3-ai-auth-gate`（仮ブランチ名）
+- M2 PR-C で導入した `verifyIdToken` middleware を `/api/ai/*` に適用
+- FE から `Authorization: Bearer <ID Token>` 付与の仕組みを実装
+- `usage/{uid_yyyymm}` コレクションを Firestore に追加（クォータ管理）
+- `--allow-unauthenticated` 復活の再評価
+- `/impl-plan` 起動時、本ハンドオフの「M3 持越項目（5 件）」を実装計画に組み込むこと
 
-### 3. M2 完了振り返り（PR-C merge 後）
-- `docs/spec/m2/tasks.md` 末尾「M2 完了の定義」全 [x] 化
-- ADR-0001 末尾に M2 振り返り追記（M1 と同流儀）
-- ADR-0001 ロードマップ表 M2 を ✅ 完了に最終更新
+## 申し送り事項（重要）
 
-### 4. (Optional) M2 振り返り後の M3 計画前段
-- M3 = AI 認証ゲート + クォータ。PR-C で導入する `verifyIdToken` ミドルウェアを `/api/ai/*` に適用、FE から `Authorization: Bearer <ID Token>` 付与の仕組みを実装（spec B.5 注記参照）
-- `--allow-unauthenticated` 復活の再評価も M3 の対象
+### M3 持越項目（5 件、ADR-0001 M2 振り返りに明記済み）
 
-## 申し送り事項 (重要)
+PR-C で導入した認証 / Firestore 経路の堅牢化を M3 で完成させる必要がある。
 
-### PR #29 / PR #31 で確定した重要設計判断
+1. **CLAUDE.md MUST #5 route Partial Update assertion gap**:
+   - `/api/users/init` route が `tx.update` payload に `createdAt`/`plan` を含めないことを **route の挙動として直接 assert する自動テストが未整備**（現状の rules unit test は rules の許可判定であり、route の payload 構築は未検証）
+   - M3 で vitest + supertest 基盤を導入する際にこの gap を埋める
 
-**PR #31 (PR-Bx)**:
-- **`getProject` は read 側で validation を行う**: Dexie は schema 強制せず、corrupted record (id/name 欠落) は raw object として返る → `validateAndSanitizeProjectData` を read 経由でも適用
-- **`ProjectValidationError` を導入**: validation 失敗と infrastructure error を `instanceof` で区別、toast 文言を branch
-- **`db/dexie.ts` を lazy init に**: `let _db = null; getDb() => _db ??= createDb()` で module 評価時の同期 throw を call site に移動
-- **`activeProjectId` の stale 検証**: 既存値が `allProjectsData` に存在するかチェック、空 projectList 時も stale id をクリア
-- **`App.tsx` 早期 return path に `<Toast />` マウント**: AC-X2「activeProjectId null + toast」を真に充足するため。ProjectSelectionScreen 内では Toast コンポーネントが render されない構造を AC 検証中に発見、PR #31 内で追加修正
+2. **FE 側 users/init 失敗 retry signal**:
+   - ネットワーク失敗で users/init が落ちても `currentUser` は authenticated のまま、retry signal 無し
+   - `needsUserInit` flag を保持して M3 の AI gating で再試行する仕組みを追加
 
-**PR #29 (PR-B)**:
-- **検証中に発見した CSP / cors 修正**:
-  - CSP `scriptSrc` に `https://cdn.tailwindcss.com` `https://aistudiocdn.com` 追加（pre-existing index.html 依存）
-  - CSP `styleSrc` に `https://fonts.googleapis.com`、`fontSrc` に `https://fonts.gstatic.com` 追加
-  - `cors` の origin function を「同一ホストなら自動許可」に拡張: `new URL(origin).host === req.headers.host` のチェックを追加して、同一オリジン静的アセット fetch（`/assets/index-*.{js,css}`）の自己 403 を回避
-- **B6 caveat (記録済み)**: `signInWithPopup` の callback 自動完結は Playwright MCP の chromium 環境で popup auto-close + postMessage callback 経路が block される → 本 PR の AC 検証は `signInWithEmailAndPassword` で代替実証。本物 Chrome では問題ない
-- **B7 で IDB uid 非紐付けを実証**: account A → signOut → account B 切替で IDB レコード件数 + ID 完全一致（spec の重要設計判断「IndexedDB は uid に紐付けない（uid 切替で消えない）」を E2E で確認）
+3. **`applicationDefault()` eager init**:
+   - ADC 未設定環境では `getFirebaseAdminApp()` が初回 request 時に同期 throw する
+   - M3 で起動時 probe（`startServer()` 内で `getFirebaseAuth()` 呼出）を追加して fail-fast 化
 
-### Firebase 設定の現状（PR-C / M3 で参照）
+4. **型強化**:
+   - `AuthedRequest = Request & { user: { uid: string; email: string | null } }` を export し、verifyIdToken 通過後の handler 引数型に使う（type-design-analyzer 指摘）
+   - `sanitizeForUpdate` の戻り値型を `{ [K in keyof T]: Exclude<T[K], undefined> }` に変更し undefined フリーを型で表現
 
-- Web App ID: `1:446321146441:web:285a9e0bbd4146e15b1d98`（`novel-writer-dev-web`、`novel-writer-dev` プロジェクト）
-- SDK config 6 値は `.env.local`（gitignore）に投入済み、`.env.example` に項目テンプレート
-- Auth Emulator: `firebase emulators:start --only auth` で `127.0.0.1:9099`、`firebase.json` に設定済
-- `npm run dev:emu` で `VITE_USE_AUTH_EMULATOR=true` + vite + emulator 並列起動
+5. **`verifyIdToken` の transient エラーコード拡張**:
+   - 現状の `TRANSIENT_AUTH_CODES` Set は `auth/internal-error` / `auth/network-request-failed` / `auth/service-unavailable` + `ETIMEDOUT` / `ECONNRESET` / `ENOTFOUND` をカバー
+   - `ECONNREFUSED` / `EAI_AGAIN` / `app/network-error` 形式が permanent (401) に落ちる余地（`/codex review` 指摘）
+   - M2 では実害トースト誤分類程度なので、M3 で AI 認証ゲート適用前に広げる
 
-### CLAUDE.md / ADR-0001 の更新状況（本 PR で対応）
+### Firestore transient 分類の汎用化
 
-- ✅ ADR-0001 ロードマップ表 M2 を「PR-Bx ✅ / PR-B ✅」に更新
-- ✅ CLAUDE.md "状態管理" syncSlice 行を IndexedDB 経由に修正（PR-A merge 時点で嘘記載になっていたため遅延訂正）+ `authSlice` 追記（PR-B 由来）
-- ⏳ CLAUDE.md "AI API層" 表 — PR-C 着手時に更新（`/api/projects` 削除 + `/api/users/init` 追加）
+PR-C では users/init で inline に `formatFirestoreError`（503/500 分類）を実装したが、AI 経路でも同等の処理が必要。M3 で `verifyIdToken` を AI 経路に展開するタイミングで `handleApiError` を Firestore エラーコードに対応させ共通化する（rules/error-handling.md §3 準拠）。
+
+### PR-C で確定した重要設計判断
+
+- **firestore.rules の Admin SDK bypass + 二重防御**: Admin SDK 経由の `/api/users/init` は rules を bypass するため、route 側で `sanitizeForUpdate` + plan enum + email 型/長さ検証を二重化。同時に rules 側でも `keys().hasOnly + hasAll + is timestamp + size() > 0 + plan in [...]` を全網羅
+- **transaction による冪等性**: `runTransaction` 内で `tx.get(ref)` → `!snap.exists ? tx.set(...) : tx.update(...)` 分岐。`merge: true` 単独では `createdAt` が再ログインで上書きされるため transaction 必須
+- **`/api` 404 fallback**: 削除した旧 API への curl が SPA fallback で 200 HTML を返す問題を AC C1 検証中に発見、`app.use('/api', (_req, res) => res.status(404).json(...))` を追加。dev/prod とも未登録 API パスは確実に 404
+- **`isEmulatorMode` の OR 条件化**: `FIREBASE_AUTH_EMULATOR_HOST` または `FIRESTORE_EMULATOR_HOST` のいずれかで credential 省略。Firestore emulator 単独利用時の ADC 未設定クラッシュを予防
 
 ### Out of scope / フォローアップ候補（Issue 化は triage 基準を満たした時点で）
 
-PR #29 / PR #31 description の "Out of scope" に詳細記載済。CLAUDE.md triage 基準（rating ≥ 7 + confidence ≥ 80 / 実害あり / 再現バグ / CI 破壊 / ユーザー明示指示）を満たさないため現時点で Issue 化せず:
+CLAUDE.md triage 基準（rating ≥ 7 + confidence ≥ 80 / 実害あり / 再現バグ / CI 破壊 / ユーザー明示指示）を満たさないため現時点で Issue 化せず、ADR M2 振り返りに集約:
 
-- **silent-failure-hunter C-1**: `firebaseClient.ts` module-level throw は ErrorBoundary に届かず white screen（Issue #28 の Dexie 同型問題は PR #31 で `getDb()` lazy init 化により解決済、firebase 側は未対応）
-- **silent-failure-hunter H-1**: Firebase 503 outage で `unauthenticated` に demote → `authStatus='error'` + sticky banner が望ましい
-- **type-design-analyzer Important×3**: `createAuthSlice` の `(set, get)` パラメータ型付け / `RequiresAuthState` 判別共用体化 / `REQUIRED_KEYS` を `RequiredFirebaseEnv` 型から派生
-- **pr-test-analyzer S1〜S4**: Strict Mode 二重 subscribe / cross-tab sync / 連打 race / Auth Emulator フロー差分（M3 で vitest + Firebase Auth emulator 自動テスト基盤導入後に機械化）
-- **Pre-existing 課題**: `index.html` の `cdn.tailwindcss.com` runtime → 本来 PostCSS plugin 化、`aistudiocdn.com` の importmap → bundle 化推奨。Console warning が prod 起動時に出る（CSP allowlist で迂回中）
-- **PR #31 Out of scope 4 件**: `setActiveProjectId` 経由の `historyTree` 初期化欠落 / `listProjects` IO 失敗時のメッセージ誤誘導 / 自動テスト基盤 / `lastModified` を欠く record 不可視
+- 上記 M3 持越項目 5 件
+- pre-existing 課題: `index.html` の `cdn.tailwindcss.com` runtime → 本来 PostCSS plugin 化、`aistudiocdn.com` の importmap → bundle 化推奨（PR #29 / #31 / #34 共通の Out of scope）
+- silent-failure-hunter の earlier 指摘（C-1 / H-1）は authSlice / firebaseClient の white screen 系で M3 でカバー予定
+- type-design-analyzer の earlier 指摘 3 件（`createAuthSlice` (set, get) / `RequiresAuthState` / `REQUIRED_KEYS` 型）も M3 の型強化で一括対応
 
 ### 環境状況
 
-- `.envrc` 設定済 (GH_TOKEN 自動取得 + GCP `novel-writer-dev`)
+- `.envrc` 設定済（GH_TOKEN 自動取得 + GCP `novel-writer-dev`）
 - `cd ~/Projects/学校/yamashita/novel-writer && claude` で起動すれば direnv 経由で正しいアカウントが有効化される
+- Firebase Web App ID `1:446321146441:web:285a9e0bbd4146e15b1d98`（`novel-writer-dev-web`）— SDK config は `.env.local`（gitignore）
+- `npm run dev:emu` で Auth + Firestore Emulator（auth: 9099 / firestore: 8080）並列起動 + env 注入
 - 残留 Node プロセスなし
 
 ## Issue Net 変化
 
-- Close 数: 2 件 (#27, #28、PR #31 マージで `Closes` 自動クローズ)
+- Close 数: 0 件
 - 起票数: 0 件
-- Net: -2 件 ✅
-- **進捗の質**: Net = -2 で Issue 削減成功。両 issue とも PR-A の `/review-pr` で発見された未対処事項 (corrupted record swallow + Dexie module-level throw) を PR-Bx でバンドル修正、AC 検証で App.tsx Toast マウント漏れも併せて修正。本セッションの主要進捗は `[PR #31 (PR-Bx) merge + Issue #27/#28 close + PR #29 (PR-B) merge]` で M2 マイルストーン PR-A/PR-Bx/PR-B 全て完了、残 PR-C のみ。
+- Net: 0 件
+- **進捗の質**: Net = 0 だが「進捗ゼロ扱い」ではない。本セッションでは M2 マイルストーン最終 PR（#34）を merge し、ADR-0001 Local-first アーキテクチャ phase 1 を達成。M3 持越項目 5 件は ADR / 本ハンドオフに集約済みで、CLAUDE.md triage 基準（rating ≥ 7 + confidence ≥ 80 / 実害あり / 再現バグ）を満たさないため Issue 化していない（過剰起票防止、`feedback_issue_triage.md` 準拠）
 
 ## ドキュメント整合性
 
 | 項目 | 状態 | 備考 |
 |---|---|---|
-| `docs/spec/m2/tasks.md` PR-A セクション | AC `[x]` 全 9 項目 + 品質ゲート | PR #24 マージ前に更新済 |
-| `docs/spec/m2/tasks.md` PR-B セクション | AC `[x]` 全 8 項目 + Pre-flight + B3-err1/B3-err2 + 検証中追加修正記録 | PR #29 検証完了で本セッション更新 |
-| `docs/spec/m2/tasks.md` PR-C | `⏳` のまま | PR-C 着手時に進捗反映 |
-| ADR-0001 ロードマップ表 | M2 「進行中 (PR-A ✅ / PR-Bx ✅ / PR-B ✅ / PR-C ⏳)」 | 本 PR で更新 |
-| `CLAUDE.md` "AI API層" 表 | 未更新 | PR-C 着手時に更新（`/api/projects` 削除 + `/api/users/init` 追加） |
-| `CLAUDE.md` "状態管理" セクション | 更新済 | 本 PR で IndexedDB 反映 + `authSlice` 追記 |
-| `tests/例外系テスト.md` ローカル永続化セクション | TC-EX-IDB-001〜005 + AC-X4 検証制限事項 追記済 | PR #31 で追加 |
+| `docs/spec/m2/tasks.md` PR-A〜PR-C 全タスク | ✅ 全 [x] | PR-C で全章完了 |
+| `docs/spec/m2/tasks.md` M2 完了の定義 6 項目 | ✅ 全 [x] | PR-C merge で達成 |
+| `docs/spec/m2/tasks.md` Status / Completed | ✅ Completed / 2026-04-27 | PR-C で更新 |
+| ADR-0001 ロードマップ表 M2 | ✅ 完了 | PR-C で更新済 |
+| ADR-0001 M2 振り返り | ✅ 追記済 | M3 持越 5 項目 + 設計判断含む |
+| `CLAUDE.md` "API 層" 表 | ✅ 更新済 | `/api/projects` 削除 + `/api/users/init` 追加 + verifyIdToken middleware 言及 |
+| `CLAUDE.md` "状態管理" セクション | ✅ 更新済（前セッション PR #33） | IndexedDB 反映 + authSlice 追記 |
+| `firestore.rules` 本番デプロイ | ⏳ 未実行 | 次のアクション §2 で M3 着手前に手動デプロイ |
+| GitHub Actions Node 20 廃止対応 | ⏳ 未対応 | 次のアクション §3 で独立 PR |
 
 ## 残留プロセス
 
