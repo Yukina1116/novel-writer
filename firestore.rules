@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// users コレクション暫定運用。usage 等を追加する際は keys allowlist を再点検すること。
+// Admin SDK 経由の `/api/users/init` はこのルールを bypass するため、route 側でも
+// keys allowlist + 型/enum 検証を二重化している（rules/production-data-safety.md §3）。
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['email', 'plan', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasAll(['email', 'plan', 'createdAt', 'updatedAt'])
+        && request.resource.data.email is string
+        && request.resource.data.email.size() > 0
+        && request.resource.data.plan in ['free']
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['email', 'plan', 'createdAt', 'updatedAt'])
+        && request.resource.data.email is string
+        && request.resource.data.email.size() > 0
+        && request.resource.data.plan in ['free']
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
