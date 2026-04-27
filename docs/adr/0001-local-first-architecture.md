@@ -86,7 +86,7 @@
 | M0 | 緊急対応（Cloud Run 非公開化、max-instances 制限、予算アラート） | ✅ 完了（2026-04-25） |
 | M1 | 基盤整備（IaC 化、防御層、Firebase 準備） | ✅ 完了（2026-04-26） |
 | M2 | 認証 + IndexedDB 移行 | ✅ 完了（PR-A IndexedDB 移行 2026-04-26 PR #24 / PR-Bx useLocalSync hardening 2026-04-27 PR #31 / PR-B Auth FE 2026-04-27 PR #29 / PR-C 旧ルート退役 + verifyIdToken + users/init + firestore.rules 2026-04-27） |
-| M3 | AI 認証ゲート + クォータ | ⏳ |
+| M3 | AI 認証ゲート + クォータ | 🚧 進行中（PR-D テスト基盤 + 持越 #1/#4/#5 完了 2026-04-27 PR #37 / PR-E〜G 残） |
 | M4 | Export/Import + バックアップ警告 UI | ⏳ |
 | M5 | Stripe Subscription + Webhook + 法務 | ⏳ |
 | M6 | E2EE 暗号化バックアップ（任意機能、後回し可） | ⏳ |
