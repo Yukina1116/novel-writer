@@ -60,11 +60,11 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 
 ### 状態管理（Zustand slices pattern）
 
-`store/index.ts` で 10 スライス（M2 PR-B で `authSlice` 追加）を結合（`persist` ミドルウェアは未使用、メモリのみ）。永続化は `syncSlice` 経由で IndexedDB（Dexie.js）へ書き込み（2 秒 debounce + `beforeunload`/`visibilitychange` で flush、`hooks/useLocalSync.ts`）。
+`store/index.ts` で 11 スライス（M2 PR-B で `authSlice`、M4 で `backupSlice` 追加）を結合（`persist` ミドルウェアは未使用、メモリのみ）。永続化は `syncSlice` 経由で IndexedDB（Dexie.js）へ書き込み（2 秒 debounce + `beforeunload`/`visibilitychange` で flush、`hooks/useLocalSync.ts`）。
 
 | スライス | 責務 |
 |---------|------|
-| projectSlice | プロジェクトCRUD、インポート/エクスポート |
+| projectSlice | プロジェクトCRUD、import は M4 で `backupSlice.prepareImport` 経由に変更 (legacy bare-project JSON も同経路で処理) |
 | uiSlice | モーダル、サイドバー、タブ、トースト等のUI状態 |
 | dataSlice | 小説本文、設定、ナレッジ、プロット、タイムラインの変更 |
 | aiSlice | AI呼び出し、生成モード、複数候補管理 |
@@ -74,10 +74,19 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 | analysisHistorySlice | テキストインポート分析の履歴（IndexedDB の `analysisHistory` ストア） |
 | formSlice | フォーム状態 |
 | authSlice | Firebase Auth 状態（`currentUser` / `authStatus: 'initializing' \| 'unauthenticated' \| 'authenticated'` / `authError` / `needsUserInit` / `retryUserInit()`、IndexedDB は uid に紐付けない設計、M2 PR-B で導入、M3 PR-G で users/init transient retry signal 追加） |
+| backupSlice | 全データバックアップ (`exportAllData` / `prepareImport` / `executeImport` / `cancelImport` / `setImportResolution` / `isBackupStale`)、`lastExportedAt` + `backupMetaStatus: 'unknown' \| 'loaded'` sentinel、`importPlan: { backup: BackupV1, conflicts: ImportConflict[] }`、M4 で導入 |
+
+### バックアップ層 (M4)
+
+- **Schema**: `BackupV1 { schemaVersion: 1, exportedAt, appVersion, projects, tutorialState, analysisHistory }` (`utils/backupSchema.ts`)。`historyTree` は ADR-0001 の memory-only 方針で export 対象外。M5 (Stripe Tier 2 backup) / M6 (E2EE) で再利用予定。Legacy bare-project JSON / `{ project: {...} }` envelope は `parseBackup` 内で BackupV1 にラップして後方互換確保。
+- **永続化**: IndexedDB v2 で `backupMeta` ストア (`{ key: 'current', lastExportedAt: ISO | null }`) 追加 (`db/dexie.ts`、Dexie sequential upgrade で既存データ保持)。
+- **Import 経路**: `db/backupRepository.ts` の `writeImport` が単一 Dexie transaction で `projects` (sanitize chain `validateAndSanitizeProjectData → pickPersistableFields → stripInternalKeys` 適用) / `tutorialState` / `analysisHistory` を atomic 書き込み。完了後 `hooks/refreshFromIndexedDb.ts` で in-memory state を rehydrate (memory ↔ disk の silent overwrite を防止)。
+- **TOCTOU 対策**: `prepareImport` で `flushSave` 先行 + `executeImport` で `existingIds` を再 read (delete/insert の concurrent 変更を吸収)。
+- **UI**: `components/BackupWarningBanner.tsx` (30 日経過で表示、`backupMetaStatus === 'unknown'` 時は suppress) + `components/modals/ImportConflictModal.tsx` (per-project に `overwrite` / `duplicate` / `skip` 選択、`ModalManager` に統合)。
 
 ### 型定義
 
-`types.ts` に全型を集約。主要型: `Project`, `NovelChunk`, `SettingItem`, `KnowledgeItem`, `PlotItem`, `TimelineEvent`, `AiSettings`, `ChatMessage`
+`types.ts` に全型を集約。主要型: `Project`, `NovelChunk`, `SettingItem`, `KnowledgeItem`, `PlotItem`, `TimelineEvent`, `AiSettings`, `ChatMessage`, `BackupV1` (M4), `ImportConflict` / `ImportPlan` / `ImportConflictResolution` (M4)
 
 ### パスエイリアス
 
