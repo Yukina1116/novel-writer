@@ -12,8 +12,7 @@
 | インフラ | GitHub Actions actions を Node 24 対応版へ bump (`actions/checkout@v5`, `google-github-actions/{auth,setup-gcloud,deploy-cloudrun}@v3`) | PR #36 / commit `da69984` / deploy run 24975901271 success |
 | 設計 | M3 spec 新規作成 (`docs/spec/m3/tasks.md`)、M2 spec フォーマット踏襲、PR-D 詳細 + PR-E/F/G 骨子 + 持越事項 | PR #37 |
 | 実装 | M3 PR-D: vitest + supertest 導入、`verifyIdToken` transient コード拡張 (持越 #5)、`AuthedRequest` export + `sanitizeForUpdate` 型強化 (持越 #4)、`/api/users/init` Partial Update assertion テスト (持越 #1) | PR #37 / commit `592abf4` |
-| 品質ゲート | `/impl-plan` (ユーザー承認) → 実装 → `evaluator` (D7 FAIL → 訂正) → `/review-pr` 4 並列 (rating 8 silent failure 検出 → 再訂正 + 観測性向上) | 多段レビュー記録 |
-| 修正サイクル | sanitize 戻り値型を `Partial<X>` → `X` (evaluator 指摘) → `Partial<SanitizedForUpdate<T>>` (silent-failure-hunter / type-design-analyzer 一致指摘で revert) で確定 | 同 PR #37 (commit `02b3f6a` → `2609cfe`) |
+| 品質ゲート | `/impl-plan` → 実装 → `evaluator` → `/review-pr` 4 並列。途中で sanitize 戻り値型を `Partial<X>` → `X` → `Partial<SanitizedForUpdate<T>>` と修正サイクルで確定（commit `02b3f6a` → `2609cfe`） | PR #37 内で全対応 |
 | 観測性 | `verifyIdToken` permanent path を expected (warn) / unexpected (error) で分岐、`auth/quota-exceeded` 等の分類漏れが Sentry に届くよう改善 + spy アサート追加 | 同 PR #37 |
 | マージ | PR #36 / PR #37 ともに squash merge → Cloud Run デプロイ success (run 24975901271 / 24976846671) | 2 件マージ |
 | ドキュメント | ADR-0001 ロードマップ表 M3 を 🚧 進行中に更新、PR-D 完了情報を反映 | 本ハンドオフ PR |
@@ -39,31 +38,12 @@
 ### 2. M3 PR-E 着手（BE AI 認証ゲート + 起動 probe + handleApiError 共通化）
 - `git checkout main && git fetch && git reset --hard origin/main`
 - `git checkout -b feature/m3-pr-e-ai-auth-gate`
-- `docs/spec/m3/tasks.md` PR-E セクションを骨子から詳細タスクへ拡充
-- 主要実装:
-  - 全 `/api/ai/*` 経路に `verifyIdToken` middleware 適用（`server/index.ts` mount）
-  - `startServer()` 内で `getFirebaseAuth()` 呼出 → ADC 未設定で同期 fail-fast (持越 #3)
-  - `handleApiError` を Firestore code (`UNAVAILABLE`/`DEADLINE_EXCEEDED`) 対応に汎用化
-  - `users.ts` の inline `formatFirestoreError` 削除 + 共通化
-  - AI route ごとに supertest 契約テスト追加
-- **`/impl-plan` 起動時、本ハンドオフの「PR-D /review-pr 持越事項（3 件）」を計画に組み込むこと**:
-  1. `FirebaseAuthError instanceof` の本物テスト（emulator 経由の AI route 統合テストで検証）
-  2. `auth/quota-exceeded` の transient 分類検討（Firebase 公式仕様確認後 `TRANSIENT_AUTH_CODES` 追加）
-  3. `AuthedRequest` の handler 引数型化（`router.post('/init', verifyIdToken, (req: AuthedRequest, res) => ...)` でコードベース全体統一、type assertion 廃止）
+- 詳細タスク: `docs/spec/m3/tasks.md` PR-E セクション（骨子から詳細タスクへ拡充するのが最初の作業）
+- **`/impl-plan` 起動時、後述「PR-D /review-pr 持越事項（3 件）」を計画に組み込むこと**
 
-### 3. M3 PR-F 着手（usage クォータ実装）
-- ブランチ: `feature/m3-pr-f-usage-quota`
-- `server/services/usageService.ts` 新規（transaction 予約 + requestId 冪等）
-- `firestore.rules` に `usage/{uidYyyymm}` 追加（client read/write 全拒否）
-- rules unit test 追加
-- 月間コスト上限超過 → 429 with `{ code: 'QUOTA_EXCEEDED', usage, limit }`
-
-### 4. M3 PR-G 着手（FE 統合 + Cloud Run public）
-- ブランチ: `feature/m3-pr-g-fe-integration`
-- `apiCall` に Bearer 付与 + `needsUserInit` retry signal (持越 #2)
-- 401/429/503 トーストハンドリング
-- `--allow-unauthenticated` 復活（`.github/workflows/deploy.yml`）
-- ADR-0001 M3 ✅ 完了マーク + 振り返り追記
+### 3-4. M3 PR-F / PR-G 着手
+- 詳細は `docs/spec/m3/tasks.md` PR-F / PR-G セクション参照（PR-E マージ後に骨子を詳細化）
+- 大筋: PR-F = usage クォータ (transaction 予約 + 冪等)、PR-G = FE 統合 + Cloud Run public 化 + ADR-0001 M3 ✅ 完了マーク
 
 ## 申し送り事項（重要）
 
@@ -96,7 +76,19 @@ PR-D 内では対応せず PR-E でコードベース全体一貫の対応を行
 - `.envrc` 設定済（GH_TOKEN 自動取得 + GCP `novel-writer-dev`）
 - `cd ~/Projects/学校/yamashita/novel-writer && claude` で起動すれば direnv 経由で正しいアカウントが有効化される
 - 自動テスト基盤: vitest@^2.1.9 / supertest@^7.2.2 / @types/supertest@^7.2.0
-- `npm run test` で 31 ケース、`npm run test:firestore-rules` で rules unit 15 ケース
+
+### 主要コマンド
+
+```bash
+npm run dev               # 開発サーバー起動（Express + Vite HMR, port 3000）
+npm run dev:emu           # dev + Firebase Emulator 並列（auth:9099 / firestore:8080、env 注入済）
+npm run lint              # 型チェック（tsc --noEmit）
+npm run test              # vitest run（31 ケース: middleware 20 + route 11、admin SDK は vi.mock）
+npm run test:watch        # vitest watch モード
+npm run test:firestore-rules  # firebase emulators:exec で rules unit test（15 ケース）
+npm run build             # FE ビルド（dist/）+ サーバーコンパイル（dist-server/）
+```
+
 - 残留 Node プロセスなし（doc-split 別プロジェクトの firebase emulator が動作中だが本プロジェクトとは無関係）
 
 ## Issue Net 変化
