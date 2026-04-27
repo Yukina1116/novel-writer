@@ -184,6 +184,23 @@ describe('POST /api/users/init', () => {
             });
         }
 
+        it('logs uid context before generic handleApiError log (forensic trail)', async () => {
+            const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            verifyIdTokenMock.mockResolvedValueOnce({ uid: 'forensic-uid', email: 'a@example.com' });
+            docMock.mockReturnValueOnce({});
+            runTransactionMock.mockRejectedValueOnce(Object.assign(new Error('firestore down'), { code: 'UNAVAILABLE' }));
+
+            await request(buildApp())
+                .post('/api/users/init')
+                .set('Authorization', 'Bearer valid-token');
+
+            expect(errorSpy).toHaveBeenCalledWith(
+                'users/init failed',
+                expect.objectContaining({ uid: 'forensic-uid' }),
+            );
+            errorSpy.mockRestore();
+        });
+
         it('returns 500 for permanent Firestore error (unknown code)', async () => {
             verifyIdTokenMock.mockResolvedValueOnce({ uid: 'u', email: 'a@example.com' });
             docMock.mockReturnValueOnce({});

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseFirestore } from '../firebaseAdmin';
 import { verifyIdToken, type AuthedRequest } from '../middleware/verifyIdToken';
+import { handleApiError } from '../middleware/errorHandler';
 import { sanitizeForUpdate } from '../utils/sanitize';
 
 const router = Router();
@@ -9,32 +10,16 @@ const router = Router();
 const ALLOWED_PLANS = ['free'] as const;
 type AllowedPlan = typeof ALLOWED_PLANS[number];
 
-// Firestore gRPC エラーは数値 / 文字列 code の両方で来うる。errorHandler.ts の
-// `handleApiError` は AI 経路用の日本語文言を返すため users/init には流用せず、
-// transient (UNAVAILABLE / DEADLINE_EXCEEDED) → 503、それ以外 → 500 に分類する
-// (rules/error-handling.md §3)。Firestore 障害分類の汎用化は M3 で AI 経路と統合。
-const TRANSIENT_FIRESTORE_CODES = new Set<string | number>([
-    4, 14, 'DEADLINE_EXCEEDED', 'UNAVAILABLE',
-]);
-
-function formatFirestoreError(error: unknown): { status: number; message: string } {
-    const code = (error as { code?: unknown }).code;
-    if ((typeof code === 'string' || typeof code === 'number') && TRANSIENT_FIRESTORE_CODES.has(code)) {
-        return { status: 503, message: 'データベースが一時的に利用できません。少し待って再試行してください。' };
-    }
-    return { status: 500, message: 'ユーザー初期化に失敗しました。' };
-}
-
 router.post('/init', verifyIdToken, async (req, res) => {
+    // verifyIdToken が成功すれば req.user は必ず注入されている。AuthedRequest は
+    // middleware 通過済の意図を型に表明するが declaration merging はランタイム保証
+    // ではないため、念のため二重防御として弾く。
+    const { user } = req as AuthedRequest;
+    if (!user) {
+        res.status(401).json({ success: false, error: 'Unauthenticated' });
+        return;
+    }
     try {
-        // verifyIdToken が成功すれば req.user は必ず注入されている。AuthedRequest は
-        // 「middleware 通過済」の意図を型に表明するが、declaration merging はランタイム
-        // 保証ではないため、念のため二重防御として弾く（rules/error-handling.md §2）。
-        const { user } = req as AuthedRequest;
-        if (!user) {
-            res.status(401).json({ success: false, error: 'Unauthenticated' });
-            return;
-        }
         const email = user.email;
         if (typeof email !== 'string' || email.length === 0) {
             res.status(400).json({ success: false, error: 'ID token does not contain a valid email claim' });
@@ -64,8 +49,10 @@ router.post('/init', verifyIdToken, async (req, res) => {
 
         res.json({ success: true });
     } catch (error) {
-        console.error('users/init failed:', error);
-        const { status, message } = formatFirestoreError(error);
+        // 「特定 uid だけ users/init が落ちる」事象を本番ログから追跡できるよう、
+        // handleApiError 内部の汎用 console.error より前に context 付きで先行 log する。
+        console.error('users/init failed', { uid: user.uid, error });
+        const { status, message } = handleApiError(error, 'users/init', 'firestore');
         res.status(status).json({ success: false, error: message });
     }
 });
