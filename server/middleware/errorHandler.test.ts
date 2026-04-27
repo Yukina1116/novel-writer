@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { handleApiError, CorsRejectError } from './errorHandler';
+import { handleApiError, CorsRejectError, __testing } from './errorHandler';
+
+const { extractMessage } = __testing;
 
 describe('handleApiError', () => {
     let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
@@ -12,7 +14,7 @@ describe('handleApiError', () => {
         consoleErrorSpy.mockRestore();
     });
 
-    describe('gRPC transient errors → 503 (両 context で適用)', () => {
+    describe('gRPC transient errors → 503 (全 context で適用)', () => {
         const transientCases = [
             { name: 'UNAVAILABLE (string)', code: 'UNAVAILABLE' },
             { name: 'DEADLINE_EXCEEDED (string)', code: 'DEADLINE_EXCEEDED' },
@@ -34,12 +36,17 @@ describe('handleApiError', () => {
                 expect(result.status).toBe(503);
                 expect(result.message).toContain('データベースが一時的に利用できません');
             });
+
+            it(`returns 503 with Usage message for transient ${name} (context=usage)`, () => {
+                const error = Object.assign(new Error('boom'), { code });
+                const result = handleApiError(error, 'test-fn', 'usage');
+                expect(result.status).toBe(503);
+                expect(result.message).toContain('利用量の集計が一時的に失敗しました');
+            });
         }
     });
 
     describe('gRPC string code normalization (whitespace / case)', () => {
-        // SDK が稀に ' UNAVAILABLE'、'unavailable'、'UNAVAILABLE\n' 等を返した場合に
-        // permanent 経路に silent fallthrough しないことを保証する。
         const variants = [
             { name: 'leading space', code: ' UNAVAILABLE' },
             { name: 'trailing newline', code: 'UNAVAILABLE\n' },
@@ -56,8 +63,6 @@ describe('handleApiError', () => {
     });
 
     describe('Anomalous code values (boundary / coercion)', () => {
-        // gRPC code に boolean / object / null / undefined / 0 が来た場合の挙動を固定。
-        // どれも transient 判定にならず permanent 経路 (firestore: 500) へ落ちる。
         const anomalousCases = [
             { name: 'boolean true', code: true },
             { name: 'object', code: { nested: 'UNAVAILABLE' } },
@@ -75,11 +80,16 @@ describe('handleApiError', () => {
         }
     });
 
-    describe('CorsRejectError → 403 (AI context only)', () => {
-        it('returns 403 for CorsRejectError', () => {
+    describe('CorsRejectError → 403', () => {
+        it('returns 403 for CorsRejectError in ai context', () => {
             const result = handleApiError(new CorsRejectError(), 'cors', 'ai');
             expect(result.status).toBe(403);
             expect(result.message).toContain('オリジン');
+        });
+
+        it('returns 403 for CorsRejectError in firestore context', () => {
+            const result = handleApiError(new CorsRejectError(), 'cors', 'firestore');
+            expect(result.status).toBe(403);
         });
     });
 
@@ -103,8 +113,6 @@ describe('handleApiError', () => {
     });
 
     describe('Firestore context: skips AI message classification', () => {
-        // Firestore context では AI 経路の message ベース分類 (quota / API key / timeout) を
-        // 適用しない。誤って 429/401/504 を返すと FE の error UI が混乱するため。
         it('does not classify "quota" message as 429 in firestore context', () => {
             const result = handleApiError(new Error('quota check failed'), 'fs-call', 'firestore');
             expect(result.status).toBe(500);
@@ -124,20 +132,29 @@ describe('handleApiError', () => {
         });
     });
 
+    describe('Usage context: skips AI message classification', () => {
+        it('does not classify "quota" message as 429 in usage context (QUOTA_EXCEEDED は usageService 側で 429 を返す)', () => {
+            const result = handleApiError(new Error('quota lookup failed'), 'usage-call', 'usage');
+            expect(result.status).toBe(500);
+            expect(result.message).toBe('利用量の集計に失敗しました。');
+        });
+
+        it('returns 503 for transient gRPC error in usage context', () => {
+            const error = Object.assign(new Error('boom'), { code: 'UNAVAILABLE' });
+            const result = handleApiError(error, 'usage-call', 'usage');
+            expect(result.status).toBe(503);
+            expect(result.message).toContain('利用量の集計が一時的に失敗');
+        });
+    });
+
     describe('Fallback (no code, no message hit) → 500', () => {
         it('returns 500 with raw message in dev (context=ai, isDev fixed at module load)', () => {
-            // errorHandler.ts の `isDev` は module load 時に process.env.NODE_ENV から
-            // 評価される定数。テスト実行は NODE_ENV !== 'production' なので isDev=true。
-            // dev パスでは message がそのまま返る (cf. prod パスの GENERIC_PROD_MESSAGE_AI は
-            // module load 時に NODE_ENV=production で起動した本番環境でのみ発火)。
             const result = handleApiError(new Error('unknown error xyz'), 'fallback', 'ai');
             expect(result.status).toBe(500);
             expect(result.message).toBe('unknown error xyz');
         });
 
         it('returns 500 with generic Firestore message for unknown code (context=firestore)', () => {
-            // Firestore context は isDev に依存せず固定の汎用文言を返す (gRPC 分類されない
-            // permanent エラーは全て GENERIC_PROD_MESSAGE_FIRESTORE)。
             const error = Object.assign(new Error('boom'), { code: 'INVALID_ARGUMENT' });
             const result = handleApiError(error, 'fallback', 'firestore');
             expect(result.status).toBe(500);
@@ -151,13 +168,6 @@ describe('handleApiError', () => {
         });
     });
 
-    describe('Default context = ai', () => {
-        it('treats omitted context as ai (既存 AI route の 2 引数呼び出しを保護)', () => {
-            const result = handleApiError(new Error('quota exceeded'), 'legacy-call');
-            expect(result.status).toBe(429);
-        });
-    });
-
     describe('Logging', () => {
         it('logs error with functionName prefix', () => {
             handleApiError(new Error('test'), 'my-handler', 'ai');
@@ -166,5 +176,84 @@ describe('handleApiError', () => {
                 expect.anything(),
             );
         });
+    });
+});
+
+describe('extractMessage (Issue #40)', () => {
+    it('returns "不明" for null/undefined', () => {
+        expect(extractMessage(null)).toBe('不明なエラーが発生しました。');
+        expect(extractMessage(undefined)).toBe('不明なエラーが発生しました。');
+    });
+
+    it('returns string error as-is', () => {
+        expect(extractMessage('plain string error')).toBe('plain string error');
+    });
+
+    it('returns outer message when only outer is present', () => {
+        const error = new Error('outer message');
+        expect(extractMessage(error)).toBe('outer message');
+    });
+
+    it('returns inner message when only inner is present', () => {
+        const error = { error: { message: 'inner only' } };
+        expect(extractMessage(error)).toBe('inner only');
+    });
+
+    it('concatenates outer and inner when both differ (Vertex AI Issue #40 シナリオ)', () => {
+        // SDK が外側に gRPC code を、内側に generic を入れたケース。
+        // 連結することで `RESOURCE_EXHAUSTED` substring 判定が確実に発火する。
+        const error = Object.assign(new Error('RESOURCE_EXHAUSTED: quota exceeded'), {
+            error: { message: 'Internal' },
+        });
+        const result = extractMessage(error);
+        expect(result).toContain('RESOURCE_EXHAUSTED');
+        expect(result).toContain('Internal');
+    });
+
+    it('does not duplicate when outer and inner are identical', () => {
+        const error = Object.assign(new Error('same'), { error: { message: 'same' } });
+        expect(extractMessage(error)).toBe('same');
+    });
+
+    it('returns "不明" when neither outer nor inner are strings', () => {
+        const error = { foo: 'bar' };
+        expect(extractMessage(error)).toBe('不明なエラーが発生しました。');
+    });
+});
+
+describe('handleApiError integration with extractMessage (Issue #40)', () => {
+    let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        consoleErrorSpy.mockRestore();
+    });
+
+    it('classifies as 429 when outer message has RESOURCE_EXHAUSTED but inner message is generic (#40 silent failure)', () => {
+        // 旧実装: extractMessage が `error.error.message` 優先で 'Internal' を返し、
+        // RESOURCE_EXHAUSTED を見逃して 500 に落ちていた。修正後は連結で 429 になる。
+        const error = Object.assign(new Error('RESOURCE_EXHAUSTED: quota exceeded for project'), {
+            error: { message: 'Internal' },
+        });
+        const result = handleApiError(error, 'vertex-ai', 'ai');
+        expect(result.status).toBe(429);
+        expect(result.message).toContain('無料利用枠');
+    });
+
+    it('classifies as 401 when outer has UNAUTHENTICATED but inner is generic', () => {
+        const error = Object.assign(new Error('UNAUTHENTICATED: auth failed'), {
+            error: { message: 'Internal' },
+        });
+        const result = handleApiError(error, 'vertex-ai', 'ai');
+        expect(result.status).toBe(401);
+    });
+
+    it('still works when only inner message has RESOURCE_EXHAUSTED (legacy SDK shape)', () => {
+        const error = { error: { message: 'RESOURCE_EXHAUSTED on inner' } };
+        const result = handleApiError(error, 'vertex-ai', 'ai');
+        expect(result.status).toBe(429);
     });
 });

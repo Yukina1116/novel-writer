@@ -21,6 +21,7 @@ skipIfNoEmulator('/api/ai/* with real Firebase Auth Emulator', () => {
     beforeAll(async () => {
         await clearEmulatorUsers();
         await clearEmulatorCollection('users');
+        await clearEmulatorCollection('usage');
     });
 
     afterAll(async () => {
@@ -36,7 +37,10 @@ skipIfNoEmulator('/api/ai/* with real Firebase Auth Emulator', () => {
         return app;
     };
 
-    it('returns 200 with valid Emulator-issued ID Token', async () => {
+    let idCounter = 0;
+    const newReqId = () => `it-${Date.now()}-${idCounter++}`;
+
+    it('returns 200 with valid Emulator-issued ID Token (and consumes usage quota)', async () => {
         const { getFirebaseAuth } = await import('../../server/firebaseAdmin');
         const auth = getFirebaseAuth();
         const { idToken } = await getEmulatorIdToken(auth, { email: 'e4-success@example.com' });
@@ -46,11 +50,50 @@ skipIfNoEmulator('/api/ai/* with real Firebase Auth Emulator', () => {
         const res = await request(app)
             .post('/api/ai/utility/names')
             .set('Authorization', `Bearer ${idToken}`)
-            .send({ category: 'human', keywords: 'test' });
+            .send({ requestId: newReqId(), category: 'human', keywords: 'test' });
 
         expect(res.status).toBe(200);
         expect(res.body).toEqual({ success: true, data: ['mock-name-1'] });
         expect(generateNamesMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns 409 DUPLICATE_REQUEST when same requestId is reused', async () => {
+        const { getFirebaseAuth } = await import('../../server/firebaseAdmin');
+        const auth = getFirebaseAuth();
+        const { idToken } = await getEmulatorIdToken(auth, { email: 'e4-dup@example.com' });
+
+        const requestId = newReqId();
+        generateNamesMock.mockResolvedValueOnce(['mock-1']);
+        const app = await buildApp();
+
+        const first = await request(app)
+            .post('/api/ai/utility/names')
+            .set('Authorization', `Bearer ${idToken}`)
+            .send({ requestId, category: 'human', keywords: 'a' });
+        expect(first.status).toBe(200);
+
+        const second = await request(app)
+            .post('/api/ai/utility/names')
+            .set('Authorization', `Bearer ${idToken}`)
+            .send({ requestId, category: 'human', keywords: 'a' });
+        expect(second.status).toBe(409);
+        expect(second.body).toMatchObject({ code: 'DUPLICATE_REQUEST' });
+    });
+
+    it('returns 400 INVALID_REQUEST_ID when requestId is missing', async () => {
+        const { getFirebaseAuth } = await import('../../server/firebaseAdmin');
+        const auth = getFirebaseAuth();
+        const { idToken } = await getEmulatorIdToken(auth, { email: 'e4-noreqid@example.com' });
+
+        const app = await buildApp();
+        const res = await request(app)
+            .post('/api/ai/utility/names')
+            .set('Authorization', `Bearer ${idToken}`)
+            .send({ category: 'human', keywords: 'test' });
+
+        expect(res.status).toBe(400);
+        expect(res.body).toMatchObject({ code: 'INVALID_REQUEST_ID' });
+        expect(generateNamesMock).not.toHaveBeenCalled();
     });
 
     it('returns 401 with malformed bearer token (real FirebaseAuthError instanceof path)', async () => {
@@ -60,7 +103,7 @@ skipIfNoEmulator('/api/ai/* with real Firebase Auth Emulator', () => {
         const res = await request(app)
             .post('/api/ai/utility/names')
             .set('Authorization', 'Bearer invalid.token.here')
-            .send({ category: 'human', keywords: 'test' });
+            .send({ requestId: newReqId(), category: 'human', keywords: 'test' });
 
         expect(res.status).toBe(401);
         expect(res.body).toMatchObject({ success: false });
@@ -71,7 +114,7 @@ skipIfNoEmulator('/api/ai/* with real Firebase Auth Emulator', () => {
         const app = await buildApp();
         const res = await request(app)
             .post('/api/ai/utility/names')
-            .send({ category: 'human', keywords: 'test' });
+            .send({ requestId: newReqId(), category: 'human', keywords: 'test' });
         expect(res.status).toBe(401);
         expect(generateNamesMock).not.toHaveBeenCalled();
     });

@@ -168,6 +168,32 @@ async function main(): Promise<void> {
         await assertFails(setDoc(doc(ctx.firestore(), 'projects/p1'), { name: 'x' }));
     });
 
+    // usage/{uidYyyymm} client 全拒否（PR-F、Admin SDK 経由のみ書込み）
+    await run('未認証で usage/{x} read → DENIED', async () => {
+        const ctx = env.unauthenticatedContext();
+        await assertFails(getDoc(doc(ctx.firestore(), 'usage/alice_202604')));
+    });
+
+    await run('未認証で usage/{x} write → DENIED', async () => {
+        const ctx = env.unauthenticatedContext();
+        await assertFails(setDoc(doc(ctx.firestore(), 'usage/alice_202604'), { usedCost: 0 }));
+    });
+
+    await run('自 uid prefix の usage 自分のドキュメント read → DENIED (PR-F は全拒否)', async () => {
+        const ctx = env.authenticatedContext('alice');
+        await assertFails(getDoc(doc(ctx.firestore(), 'usage/alice_202604')));
+    });
+
+    await run('自 uid prefix の usage 自分のドキュメント write → DENIED', async () => {
+        const ctx = env.authenticatedContext('alice');
+        await assertFails(setDoc(doc(ctx.firestore(), 'usage/alice_202604'), { usedCost: 100 }));
+    });
+
+    await run('他 uid の usage read → DENIED', async () => {
+        const ctx = env.authenticatedContext('alice');
+        await assertFails(getDoc(doc(ctx.firestore(), 'usage/bob_202604')));
+    });
+
     await env.cleanup();
 
     if (failures > 0) {

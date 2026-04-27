@@ -41,6 +41,27 @@ vi.mock('../services/analysisService', () => ({
     analyzeTextForImport: (...args: unknown[]) => analyzeTextForImportMock(...args),
 }));
 
+// usageService を vi.mock で差し替え。reserve/commit/cancel の挙動はテスト個別で
+// 制御し、本テスト群では「middleware (verifyIdToken) と withUsageQuota の連携」を
+// 検証する。reserve 失敗 / commit 失敗 / cancel フローの単体検証は
+// usageService.test.ts / withUsageQuota の挙動テストに分離する。
+//
+// importOriginal で本物のエラークラスを引き継ぐ。test 内でクラスを再定義すると
+// withUsageQuota の `instanceof QuotaExceededError` が runtime で false になり
+// silent に 500 経路に落ちる事故を防ぐ。
+const reserveMock = vi.fn();
+const commitMock = vi.fn();
+const cancelMock = vi.fn();
+vi.mock('../services/usageService', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../services/usageService')>();
+    return {
+        ...actual,
+        reserve: (...args: unknown[]) => reserveMock(...args),
+        commit: (...args: unknown[]) => commitMock(...args),
+        cancel: (...args: unknown[]) => cancelMock(...args),
+    };
+});
+
 // firebaseAdmin の getFirebaseAuth は verifyIdToken middleware が import 時に解決する。
 // emulator 不要なテスト環境でも動くよう vi.mock で stub。
 const verifyIdTokenSdkMock = vi.fn();
@@ -75,23 +96,28 @@ const allServiceMocks = [
     analyzeTextForImportMock,
 ];
 
+const REQ_ID = 'test-request-id-0001';
+
 const aiEndpoints: ReadonlyArray<{ method: 'post'; path: string; body: Record<string, unknown> }> = [
-    { method: 'post', path: '/api/ai/novel/generate', body: {} },
-    { method: 'post', path: '/api/ai/character/update', body: { chatHistory: [], currentCharacterData: {}, intent: 'create' } },
-    { method: 'post', path: '/api/ai/character/reply', body: { updatedCharacterData: {} } },
-    { method: 'post', path: '/api/ai/character/image-prompt', body: { chatHistory: [] } },
-    { method: 'post', path: '/api/ai/world/update', body: { chatHistory: [], currentWorldData: {}, intent: 'create' } },
-    { method: 'post', path: '/api/ai/world/reply', body: { updatedWorldData: {} } },
-    { method: 'post', path: '/api/ai/image/generate', body: { prompt: 'test' } },
-    { method: 'post', path: '/api/ai/utility/names', body: { category: 'human', keywords: 'foo' } },
-    { method: 'post', path: '/api/ai/utility/knowledge-name', body: { sentence: 'foo' } },
-    { method: 'post', path: '/api/ai/utility/extract-character', body: { characterName: 'A', novelContent: 'x' } },
-    { method: 'post', path: '/api/ai/analysis/import', body: { importedText: 'x', existingCharacters: [], existingWorldSettings: [], existingKnowledge: [] } },
+    { method: 'post', path: '/api/ai/novel/generate', body: { requestId: REQ_ID } },
+    { method: 'post', path: '/api/ai/character/update', body: { requestId: REQ_ID, chatHistory: [], currentCharacterData: {}, intent: 'create' } },
+    { method: 'post', path: '/api/ai/character/reply', body: { requestId: REQ_ID, updatedCharacterData: {} } },
+    { method: 'post', path: '/api/ai/character/image-prompt', body: { requestId: REQ_ID, chatHistory: [] } },
+    { method: 'post', path: '/api/ai/world/update', body: { requestId: REQ_ID, chatHistory: [], currentWorldData: {}, intent: 'create' } },
+    { method: 'post', path: '/api/ai/world/reply', body: { requestId: REQ_ID, updatedWorldData: {} } },
+    { method: 'post', path: '/api/ai/image/generate', body: { requestId: REQ_ID, prompt: 'test' } },
+    { method: 'post', path: '/api/ai/utility/names', body: { requestId: REQ_ID, category: 'human', keywords: 'foo' } },
+    { method: 'post', path: '/api/ai/utility/knowledge-name', body: { requestId: REQ_ID, sentence: 'foo' } },
+    { method: 'post', path: '/api/ai/utility/extract-character', body: { requestId: REQ_ID, characterName: 'A', novelContent: 'x' } },
+    { method: 'post', path: '/api/ai/analysis/import', body: { requestId: REQ_ID, importedText: 'x', existingCharacters: [], existingWorldSettings: [], existingKnowledge: [] } },
 ];
 
 describe('/api/ai/* requires Authorization Bearer ID Token', () => {
     beforeEach(() => {
         verifyIdTokenSdkMock.mockReset();
+        reserveMock.mockReset();
+        commitMock.mockReset();
+        cancelMock.mockReset();
         for (const m of allServiceMocks) m.mockReset();
     });
 
@@ -102,7 +128,8 @@ describe('/api/ai/* requires Authorization Bearer ID Token', () => {
                 const res = await request(app)[method](path).send(body);
                 expect(res.status).toBe(401);
                 expect(res.body).toMatchObject({ success: false });
-                // middleware で reject されたので service は呼ばれない
+                // middleware で reject されたので usage / service は呼ばれない
+                expect(reserveMock).not.toHaveBeenCalled();
                 for (const m of allServiceMocks) {
                     expect(m).not.toHaveBeenCalled();
                 }
@@ -115,36 +142,110 @@ describe('/api/ai/* requires Authorization Bearer ID Token', () => {
             const res = await request(buildApp())
                 .post('/api/ai/utility/names')
                 .set('Authorization', 'Token foo')
-                .send({ category: 'human', keywords: 'x' });
+                .send({ requestId: REQ_ID, category: 'human', keywords: 'x' });
             expect(res.status).toBe(401);
             expect(generateNamesMock).not.toHaveBeenCalled();
+            expect(reserveMock).not.toHaveBeenCalled();
         });
 
         it('rejects empty bearer token', async () => {
             const res = await request(buildApp())
                 .post('/api/ai/utility/names')
                 .set('Authorization', 'Bearer    ')
-                .send({ category: 'human', keywords: 'x' });
+                .send({ requestId: REQ_ID, category: 'human', keywords: 'x' });
             expect(res.status).toBe(401);
             expect(generateNamesMock).not.toHaveBeenCalled();
+            expect(reserveMock).not.toHaveBeenCalled();
         });
     });
 
-    describe('Authorization present + valid token → service is invoked', () => {
-        // middleware 通過後の正常経路サンプル: /api/ai/utility/names で service が
-        // 呼ばれることだけ確認する (handler 個別の挙動は別テストで)。
-        it('passes through to service when Bearer token verifies', async () => {
+    describe('Authorization present + valid token → reserve → service → commit', () => {
+        it('passes through to service when Bearer token verifies and reserve succeeds', async () => {
             verifyIdTokenSdkMock.mockResolvedValueOnce({ uid: 'u1', email: 'a@example.com' });
+            const handle = { reservedAt: new Date('2026-04-15T10:00:00Z') };
+            reserveMock.mockResolvedValueOnce(handle);
+            commitMock.mockResolvedValueOnce(undefined);
             generateNamesMock.mockResolvedValueOnce(['name-1', 'name-2']);
 
             const res = await request(buildApp())
                 .post('/api/ai/utility/names')
                 .set('Authorization', 'Bearer valid-token')
-                .send({ category: 'human', keywords: 'foo' });
+                .send({ requestId: REQ_ID, category: 'human', keywords: 'foo' });
 
             expect(res.status).toBe(200);
             expect(res.body).toEqual({ success: true, data: ['name-1', 'name-2'] });
+            expect(reserveMock).toHaveBeenCalledWith('u1', REQ_ID, 50, 10000);
             expect(generateNamesMock).toHaveBeenCalledTimes(1);
+            // commit/cancel は reserve の返した handle を必ず渡す（月境界耐性の契約）
+            expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 50, handle);
+            expect(cancelMock).not.toHaveBeenCalled();
+        });
+
+        it('returns 400 when requestId is missing', async () => {
+            verifyIdTokenSdkMock.mockResolvedValueOnce({ uid: 'u1', email: 'a@example.com' });
+            const res = await request(buildApp())
+                .post('/api/ai/utility/names')
+                .set('Authorization', 'Bearer valid-token')
+                .send({ category: 'human', keywords: 'foo' });
+            expect(res.status).toBe(400);
+            expect(res.body).toMatchObject({ success: false, code: 'INVALID_REQUEST_ID' });
+            expect(reserveMock).not.toHaveBeenCalled();
+            expect(generateNamesMock).not.toHaveBeenCalled();
+        });
+
+        it('returns 429 with QUOTA_EXCEEDED when reserve throws QuotaExceededError', async () => {
+            verifyIdTokenSdkMock.mockResolvedValueOnce({ uid: 'u1', email: 'a@example.com' });
+            const { QuotaExceededError } = await import('../services/usageService');
+            reserveMock.mockRejectedValueOnce(new QuotaExceededError(9000, 500, 10000));
+
+            const res = await request(buildApp())
+                .post('/api/ai/utility/names')
+                .set('Authorization', 'Bearer valid-token')
+                .send({ requestId: REQ_ID, category: 'human', keywords: 'foo' });
+
+            expect(res.status).toBe(429);
+            expect(res.body).toMatchObject({
+                success: false,
+                code: 'QUOTA_EXCEEDED',
+                usage: { used: 9000, reserved: 500, limit: 10000 },
+            });
+            expect(generateNamesMock).not.toHaveBeenCalled();
+            expect(commitMock).not.toHaveBeenCalled();
+            expect(cancelMock).not.toHaveBeenCalled();
+        });
+
+        it('returns 409 with DUPLICATE_REQUEST when reserve throws DuplicateRequestError', async () => {
+            verifyIdTokenSdkMock.mockResolvedValueOnce({ uid: 'u1', email: 'a@example.com' });
+            const { DuplicateRequestError } = await import('../services/usageService');
+            reserveMock.mockRejectedValueOnce(new DuplicateRequestError(REQ_ID));
+
+            const res = await request(buildApp())
+                .post('/api/ai/utility/names')
+                .set('Authorization', 'Bearer valid-token')
+                .send({ requestId: REQ_ID, category: 'human', keywords: 'foo' });
+
+            expect(res.status).toBe(409);
+            expect(res.body).toMatchObject({ success: false, code: 'DUPLICATE_REQUEST' });
+            expect(generateNamesMock).not.toHaveBeenCalled();
+        });
+
+        it('cancels reservation when AI service throws (no double charge)', async () => {
+            verifyIdTokenSdkMock.mockResolvedValueOnce({ uid: 'u1', email: 'a@example.com' });
+            const handle = { reservedAt: new Date('2026-04-15T10:00:00Z') };
+            reserveMock.mockResolvedValueOnce(handle);
+            cancelMock.mockResolvedValueOnce(undefined);
+            generateNamesMock.mockRejectedValueOnce(new Error('AI service exploded'));
+
+            const res = await request(buildApp())
+                .post('/api/ai/utility/names')
+                .set('Authorization', 'Bearer valid-token')
+                .send({ requestId: REQ_ID, category: 'human', keywords: 'foo' });
+
+            expect(res.status).toBe(500);
+            expect(res.body).toMatchObject({ success: false });
+            // cancel も reserve の handle を渡す（月境界耐性の契約）
+            expect(cancelMock).toHaveBeenCalledWith('u1', REQ_ID, handle);
+            expect(commitMock).not.toHaveBeenCalled();
         });
     });
 
@@ -154,20 +255,21 @@ describe('/api/ai/* requires Authorization Bearer ID Token', () => {
             const res = await request(buildApp())
                 .post('/api/ai/utility/names')
                 .set('Authorization', 'Bearer t')
-                .send({ category: 'human', keywords: 'x' });
+                .send({ requestId: REQ_ID, category: 'human', keywords: 'x' });
             expect(res.status).toBe(503);
             expect(generateNamesMock).not.toHaveBeenCalled();
+            expect(reserveMock).not.toHaveBeenCalled();
         });
     });
 
-    describe('Middleware order contract (preMiddlewares → verifyIdToken → handler)', () => {
-        // brute-force 防御の仕様: rate limit 等の preMiddlewares は認証より先に走り、
-        // 認証エラー時にも消費される。順序が逆転すると未認証リクエストが rate limit を
-        // 浴びずに 401 を返せるため、attacker が認証 endpoint を無制限に叩ける。
-        it('invokes preMiddleware before verifyIdToken (order is preserved)', async () => {
+    describe('Middleware order contract (rateLimit → verifyIdToken → handler)', () => {
+        // brute-force 防御の仕様: rate limit は認証より先に走り、認証エラー時にも
+        // 消費される。順序が逆転すると未認証リクエストが rate limit を浴びずに
+        // 401 を返せるため、attacker が認証 endpoint を無制限に叩ける。
+        it('invokes rateLimit before verifyIdToken (order is preserved)', async () => {
             const callOrder: string[] = [];
-            const preMiddleware = (_req: unknown, _res: unknown, next: () => void) => {
-                callOrder.push('preMiddleware');
+            const rateLimit = (_req: unknown, _res: unknown, next: () => void) => {
+                callOrder.push('rateLimit');
                 next();
             };
             verifyIdTokenSdkMock.mockImplementationOnce((token: string) => {
@@ -177,13 +279,13 @@ describe('/api/ai/* requires Authorization Bearer ID Token', () => {
 
             const app = express();
             app.use(express.json());
-            mountAiRoutes(app, preMiddleware);
+            mountAiRoutes(app, { rateLimit });
             await request(app)
                 .post('/api/ai/utility/names')
                 .set('Authorization', 'Bearer t')
-                .send({ category: 'human', keywords: 'x' });
+                .send({ requestId: REQ_ID, category: 'human', keywords: 'x' });
 
-            expect(callOrder).toEqual(['preMiddleware', 'verifyIdToken']);
+            expect(callOrder).toEqual(['rateLimit', 'verifyIdToken']);
             expect(generateNamesMock).not.toHaveBeenCalled();
         });
     });

@@ -11,10 +11,36 @@ interface SafeError {
     cause?: unknown;
 }
 
-const GENERIC_PROD_MESSAGE_AI = 'AI処理でエラーが発生しました。時間を置いて再試行してください。';
-const GENERIC_PROD_MESSAGE_FIRESTORE = 'データベース処理に失敗しました。';
-const TRANSIENT_MESSAGE_AI = 'AIサービスが一時的に利用できません。少し待って再試行してください。';
-const TRANSIENT_MESSAGE_FIRESTORE = 'データベースが一時的に利用できません。少し待って再試行してください。';
+// context ごとの文言と分類戦略を一箇所で table-driven に管理する。
+// 新しい context を追加する場合は ErrorContext ユニオンを拡張し、
+// MESSAGES に対応エントリを追加すれば self-exhaustive に強制される。
+export type ErrorContext = 'ai' | 'firestore' | 'usage';
+
+interface ContextConfig {
+    transient: string;
+    generic: string;
+    // AI message ベース分類 (quota / API key / timeout) を適用するか。
+    // Firestore / usage では誤発火を防ぐため false にする。
+    useAiMessageClassification: boolean;
+}
+
+const MESSAGES = {
+    ai: {
+        transient: 'AIサービスが一時的に利用できません。少し待って再試行してください。',
+        generic: 'AI処理でエラーが発生しました。時間を置いて再試行してください。',
+        useAiMessageClassification: true,
+    },
+    firestore: {
+        transient: 'データベースが一時的に利用できません。少し待って再試行してください。',
+        generic: 'データベース処理に失敗しました。',
+        useAiMessageClassification: false,
+    },
+    usage: {
+        transient: '利用量の集計が一時的に失敗しました。少し待って再試行してください。',
+        generic: '利用量の集計に失敗しました。',
+        useAiMessageClassification: false,
+    },
+} as const satisfies Record<ErrorContext, ContextConfig>;
 
 // Firestore / Vertex AI などの gRPC ベースのエラー code を共通分類する。
 // 数値 (canonical gRPC code) と文字列 (英大文字 SNAKE_CASE) の両方が来うる。
@@ -46,10 +72,22 @@ function maskError(error: unknown): SafeError {
     };
 }
 
-function extractMessage(error: any): string {
-    if (error?.error?.message) return error.error.message;
-    if (error?.message) return error.message;
+// SDK が外側 (`error.message`) と内側 (`error.error.message`) の両方に文言を持つことがある。
+// Vertex AI は外側に gRPC code 文字列 (例: "RESOURCE_EXHAUSTED: ...")、内側に generic
+// fetch error を入れることがあり、内側だけ参照すると quota / UNAUTHENTICATED 分類が
+// silent fallthrough する。両方を連結対象として扱い、分類用 substring 判定を網羅する
+// (Issue #40)。
+function extractMessage(error: unknown): string {
+    if (error == null) return '不明なエラーが発生しました。';
     if (typeof error === 'string') return error;
+
+    const e = error as { error?: { message?: unknown }; message?: unknown };
+    const inner = typeof e.error?.message === 'string' ? e.error.message : '';
+    const outer = typeof e.message === 'string' ? e.message : '';
+
+    if (inner && outer && inner !== outer) return `${outer} / ${inner}`;
+    if (outer) return outer;
+    if (inner) return inner;
     return '不明なエラーが発生しました。';
 }
 
@@ -60,38 +98,30 @@ export class CorsRejectError extends Error {
     }
 }
 
-export type ErrorContext = 'ai' | 'firestore';
-
-// context: 'ai' は Vertex AI 等の外部 AI サービス、'firestore' は Firestore Admin SDK。
-// gRPC transient (UNAVAILABLE / DEADLINE_EXCEEDED) は両 context で 503 に統一し、
-// 文言だけ context-aware に切り替える。
-// IMPORTANT: Firestore / 他の gRPC backend を呼ぶ route は必ず context='firestore' を
-// 明示すること。default = 'ai' に依存すると AI 用 message ベース分類 (quota → 429,
-// UNAUTHENTICATED → 401) が誤発火し、データベース永続障害が一時的な 429 として
-// FE に出る silent failure になる。
+// IMPORTANT: context は必須引数。Firestore / 他の gRPC backend を呼ぶ route で
+// 'ai' を指定すると AI 用 message ベース分類 (quota → 429, UNAUTHENTICATED → 401)
+// が誤発火し、データベース永続障害が一時的な 429 として FE に出る silent failure
+// になる。default を撤廃して呼出元が必ず明示する設計に変更 (PR-F)。
 export const handleApiError = (
-    error: any,
+    error: unknown,
     functionName: string,
-    context: ErrorContext = 'ai',
+    context: ErrorContext,
 ): { status: number; message: string } => {
     console.error(`Error in ${functionName}:`, isDev ? error : maskError(error));
 
-    // gRPC transient は AI / Firestore 両 context で 503 透過 (FE が再試行を判断)
+    const config = MESSAGES[context];
+
+    // gRPC transient は全 context で 503 透過 (FE が再試行を判断)
     if (isTransientGrpcError(error)) {
-        return {
-            status: 503,
-            message: context === 'firestore' ? TRANSIENT_MESSAGE_FIRESTORE : TRANSIENT_MESSAGE_AI,
-        };
+        return { status: 503, message: config.transient };
     }
 
     if (error instanceof CorsRejectError) {
         return { status: 403, message: 'このオリジンからのアクセスは許可されていません。' };
     }
 
-    // Firestore context は message ベースの AI 分類 (quota / API key / timeout) を適用しない。
-    // gRPC code が transient セットにマッチしなかった場合は permanent として 500 に集約する。
-    if (context === 'firestore') {
-        return { status: 500, message: GENERIC_PROD_MESSAGE_FIRESTORE };
+    if (!config.useAiMessageClassification) {
+        return { status: 500, message: config.generic };
     }
 
     const message = extractMessage(error);
@@ -108,12 +138,15 @@ export const handleApiError = (
 
     return {
         status: 500,
-        message: isDev ? message : GENERIC_PROD_MESSAGE_AI,
+        message: isDev ? message : config.generic,
     };
 };
 
-export const errorHandlerMiddleware = (err: any, _req: Request, res: Response, _next: NextFunction) => {
+export const errorHandlerMiddleware = (err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (res.headersSent) return _next(err);
-    const { status, message } = handleApiError(err, 'unhandled');
+    const { status, message } = handleApiError(err, 'unhandled', 'ai');
     res.status(status).json({ error: message });
 };
+
+// テスト用: 内部関数の挙動を直接検証するため export
+export const __testing = { extractMessage, isTransientGrpcError };

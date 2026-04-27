@@ -1,18 +1,12 @@
 import { Router } from 'express';
 import { analyzeTextForImport } from '../services/analysisService';
-import { handleApiError } from '../middleware/errorHandler';
+import { withUsageQuota } from '../middleware/withUsageQuota';
 
 const router = Router();
 
-router.post('/import', async (req, res) => {
-    try {
-        const { importedText, existingCharacters, existingWorldSettings, existingKnowledge } = req.body;
-        const data = await analyzeTextForImport(importedText, existingCharacters, existingWorldSettings, existingKnowledge);
-        res.json({ success: true, data });
-    } catch (error) {
-        const { status, message } = handleApiError(error, 'analyzeTextForImport');
-        res.status(status).json({ success: false, error: message });
-    }
-});
+router.post('/import', withUsageQuota('analysis/import', async (req) => {
+    const { importedText, existingCharacters, existingWorldSettings, existingKnowledge } = req.body;
+    return await analyzeTextForImport(importedText, existingCharacters, existingWorldSettings, existingKnowledge);
+}));
 
 export default router;

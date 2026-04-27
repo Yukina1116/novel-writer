@@ -1,17 +1,11 @@
 import { Router } from 'express';
 import { generateNovelContinuation } from '../services/novelService';
-import { handleApiError } from '../middleware/errorHandler';
+import { withUsageQuota } from '../middleware/withUsageQuota';
 
 const router = Router();
 
-router.post('/generate', async (req, res) => {
-    try {
-        const data = await generateNovelContinuation(req.body);
-        res.json({ success: true, data });
-    } catch (error) {
-        const { status, message } = handleApiError(error, 'generateNovelContinuation');
-        res.status(status).json({ success: false, error: message });
-    }
-});
+router.post('/generate', withUsageQuota('novel/generate', async (req) => {
+    return await generateNovelContinuation(req.body);
+}));
 
 export default router;
