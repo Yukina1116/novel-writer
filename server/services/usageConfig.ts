@@ -1,13 +1,13 @@
-// AI 月間利用量クォータの設定値（PR-F）。
+// AI 月間利用量クォータの設定値。
 //
 // 単位は 1/100 円 = sen（整数）。Firestore に整数で保管し浮動小数点誤差を排除する。
-// 実コストは Vertex AI / Imagen の応答 metadata から計算するのが理想だが、PR-F では
+// 実コストは Vertex AI / Imagen の応答 metadata から計算するのが理想だが、現状は
 // route ごとに固定の estimatedCost を予約する簡略実装とする。actual metadata 取得は
 // observability として将来追加する。
 //
 // 根拠と Tier 構造の議論は `docs/spec/m3/usage-cost-config.md` を参照。
 
-// Tier。M3 では 'free' のみ実装。Tier 2 (paid) は M5 で追加。
+// Tier。現状 'free' のみ実装。Tier 2 (paid) は Stripe 連携時に追加予定。
 export type Tier = 'free';
 
 // 月間上限（sen 単位）。Tier 1 = 100 円。

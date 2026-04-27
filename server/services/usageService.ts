@@ -1,4 +1,4 @@
-// AI 月間利用量クォータの集計サービス（PR-F）。
+// AI 月間利用量クォータの集計サービス。
 //
 // 設計原則:
 // - reserve → AI 実行 → commit / cancel の 3 phase で二重課金を排除
@@ -66,14 +66,25 @@ const emptyDoc = (): UsageDoc => ({
 // snap → UsageDoc 正規化を transaction 経路と非 transaction 経路で共有する純関数。
 // raw データが Firestore で部分破損していても全フィールドが安全な default に
 // 落ちるよう型ガードで防御する（Vertex AI 障害時の partial write 等への耐性）。
+// reservations は値ごとに number 検証し、不正値（string, NaN, Infinity）を drop。
+// 検証なしで spread すると `reservedCost - reservedAmount` が NaN を返し、
+// 以降の reserve で `projected > limit` が常に false になる silent failure 経路ができる。
 const parseUsageDoc = (snap: { exists: boolean; data: () => unknown }): UsageDoc => {
     if (!snap.exists) return emptyDoc();
     const raw = snap.data() as Partial<UsageDoc> | undefined;
+    const sanitizedReservations: Record<string, number> = {};
+    if (raw?.reservations && typeof raw.reservations === 'object') {
+        for (const [key, value] of Object.entries(raw.reservations)) {
+            if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+                sanitizedReservations[key] = value;
+            }
+        }
+    }
     return {
-        usedCost: typeof raw?.usedCost === 'number' ? raw.usedCost : 0,
-        reservedCost: typeof raw?.reservedCost === 'number' ? raw.reservedCost : 0,
-        reservations: raw?.reservations && typeof raw.reservations === 'object' ? { ...raw.reservations } : {},
-        processedIds: Array.isArray(raw?.processedIds) ? [...raw.processedIds] : [],
+        usedCost: typeof raw?.usedCost === 'number' && Number.isFinite(raw.usedCost) ? raw.usedCost : 0,
+        reservedCost: typeof raw?.reservedCost === 'number' && Number.isFinite(raw.reservedCost) ? raw.reservedCost : 0,
+        reservations: sanitizedReservations,
+        processedIds: Array.isArray(raw?.processedIds) ? raw.processedIds.filter((id): id is string => typeof id === 'string') : [],
     };
 };
 
@@ -130,8 +141,8 @@ export async function reserve(
 }
 
 // commit: AI 実行成功後に actualCost を確定加算し、reservation を解除。
-// PR-F の制約: actualCost === reservedAmount (= estimatedCost at reserve time) を前提とする。
-// 将来 actual metadata 精算（actualCost ≠ reservedAmount）を導入する場合は、
+// 呼出元 (withUsageQuota) は actualCost === reservedAmount (= estimatedCost at reserve time)
+// で渡す。将来 actual metadata 精算（actualCost ≠ reservedAmount）を導入しても、
 // 「reservedCost からは reservedAmount を差し引き、usedCost には actualCost を加算する」
 // 現在の式が引き続き正しい（reservation 単位で予約解除、課金は実コスト）。
 //
@@ -194,7 +205,7 @@ export async function cancel(
     });
 }
 
-// テスト・PR-G で usage 残量を取得する read API（admin SDK 経由）。
+// usage 残量を取得する read API（admin SDK 経由）。FE 残量バー表示や test で使用。
 export async function getUsage(
     uid: string,
     db: Firestore = getFirebaseFirestore(),

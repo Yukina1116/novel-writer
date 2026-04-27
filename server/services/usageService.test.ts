@@ -49,8 +49,8 @@ const createMockFirestore = (initial?: Record<string, Record<string, unknown>>) 
             },
         }),
         runTransaction: async <T>(fn: (tx: Tx) => Promise<T>): Promise<T> => {
-            // テスト用の単純実装。並列 transaction の競合再現は別途 Firestore Emulator
-            // 統合テストで担保する想定（PR-F では mock で十分）。
+            // テスト用の単純実装。並列 transaction の競合再現は Firestore Emulator
+            // 統合テスト側で担保する想定（unit test は mock で十分）。
             const tx: Tx = {
                 get: async (ref) => ({
                     exists: store.has(ref._path),
@@ -362,5 +362,44 @@ describe('getUsage', () => {
             reservations: { 'r1': 100 },
             processedIds: ['done-1'],
         });
+    });
+
+    it('drops corrupt reservations entries (string / NaN / Infinity / negative)', async () => {
+        // Firestore の partial write 等で破損したデータが入っていても、parseUsageDoc が
+        // number 型かつ Number.isFinite かつ非負の値だけを残す。検証なしで spread すると
+        // `reservedCost - reservedAmount` が NaN を返し、以降の reserve で
+        // `projected > limit` が常に false になる silent failure 経路ができる。
+        const { db } = createMockFirestore({
+            'usage/alice_202604': {
+                usedCost: 500,
+                reservedCost: 100,
+                reservations: {
+                    'good': 100,
+                    'string-value': 'oops' as unknown as number,
+                    'nan-value': NaN,
+                    'infinity': Infinity,
+                    'negative': -50,
+                },
+                processedIds: ['done-1', 42 as unknown as string],
+            },
+        });
+        const usage = await getUsage('alice', db);
+        expect(usage.reservations).toEqual({ 'good': 100 });
+        // processedIds も string のみフィルタされる
+        expect(usage.processedIds).toEqual(['done-1']);
+    });
+
+    it('falls back to 0 for non-finite usedCost / reservedCost', async () => {
+        const { db } = createMockFirestore({
+            'usage/alice_202604': {
+                usedCost: NaN as number,
+                reservedCost: Infinity as number,
+                reservations: {},
+                processedIds: [],
+            },
+        });
+        const usage = await getUsage('alice', db);
+        expect(usage.usedCost).toBe(0);
+        expect(usage.reservedCost).toBe(0);
     });
 });

@@ -30,12 +30,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // usage/{uidYyyymm}: AI 月間利用量カウンタ（PR-F）。
+    // usage/{uidYyyymm}: AI 月間利用量カウンタ。
     // Admin SDK (server/services/usageService.ts) の transaction 経由のみ書込み、
     // client は read/write 共に全拒否。
-    // PR-G で client が自 uid の usedCost を残量バー表示に使う場合は、本ルールを
-    // `allow read: if request.auth != null && uidYyyymm.matches(request.auth.uid + '_.*')`
-    // に緩和予定（PR-F では FE 表示機能なしのため全拒否で出す）。
+    //
+    // 将来 client が自 uid の usedCost を残量バー表示に使う場合は、uid と yyyymm を
+    // path segment で分離した `usage/{uid}/months/{yyyymm}` 形に変更し
+    // `request.auth.uid == uid` で exact match することを推奨。
+    // 単一 docId に regex を直接かける `uidYyyymm.matches(...)` 形式は uid の文字種前提に
+    // 安全性が依存するため避ける（Codex review 指摘）。
     match /usage/{uidYyyymm} {
       allow read, write: if false;
     }

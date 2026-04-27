@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 
-const isDev = process.env.NODE_ENV !== 'production';
+// NODE_ENV 未設定時は production 扱い (raw message 漏洩を防ぐ)。
+// Cloud Run / 本番デプロイで `NODE_ENV=production` 設定漏れがあっても
+// stack trace 含む内部 error を FE に流さない安全側に倒す。
+const isDev = process.env.NODE_ENV === 'development';
 
 interface SafeError {
     name: string;
@@ -72,23 +75,30 @@ function maskError(error: unknown): SafeError {
     };
 }
 
-// SDK が外側 (`error.message`) と内側 (`error.error.message`) の両方に文言を持つことがある。
-// Vertex AI は外側に gRPC code 文字列 (例: "RESOURCE_EXHAUSTED: ...")、内側に generic
-// fetch error を入れることがあり、内側だけ参照すると quota / UNAUTHENTICATED 分類が
-// silent fallthrough する。両方を連結対象として扱い、分類用 substring 判定を網羅する
-// (Issue #40)。
-function extractMessage(error: unknown): string {
-    if (error == null) return '不明なエラーが発生しました。';
-    if (typeof error === 'string') return error;
-
+// SDK が外側 (`error.message`) と内側 (`error.error.message`) の両方に文言を持つ
+// ケース (Vertex AI: 外側に "RESOURCE_EXHAUSTED: ..." / 内側に generic fetch error 等)。
+// Issue #40: 内側だけ参照すると quota / UNAUTHENTICATED 分類が silent fallthrough する。
+// 各候補文字列を取り出し、分類器は候補集合に対して `some` で substring 判定する
+// （連結文字列での判定は境界に偶然マッチが出るリスクがあるため避ける）。
+function getMessageCandidates(error: unknown): string[] {
+    if (error == null) return [];
+    if (typeof error === 'string') return [error];
     const e = error as { error?: { message?: unknown }; message?: unknown };
-    const inner = typeof e.error?.message === 'string' ? e.error.message : '';
-    const outer = typeof e.message === 'string' ? e.message : '';
+    const candidates: string[] = [];
+    if (typeof e.message === 'string' && e.message) candidates.push(e.message);
+    if (typeof e.error?.message === 'string' && e.error.message && e.error.message !== e.message) {
+        candidates.push(e.error.message);
+    }
+    return candidates;
+}
 
-    if (inner && outer && inner !== outer) return `${outer} / ${inner}`;
-    if (outer) return outer;
-    if (inner) return inner;
-    return '不明なエラーが発生しました。';
+// dev mode の fallback 表示用に連結文字列で返す（分類は getMessageCandidates 経由）。
+function extractMessage(error: unknown): string {
+    const candidates = getMessageCandidates(error);
+    if (candidates.length === 0) {
+        return typeof error === 'string' ? error : '不明なエラーが発生しました。';
+    }
+    return candidates.join(' / ');
 }
 
 export class CorsRejectError extends Error {
@@ -101,7 +111,7 @@ export class CorsRejectError extends Error {
 // IMPORTANT: context は必須引数。Firestore / 他の gRPC backend を呼ぶ route で
 // 'ai' を指定すると AI 用 message ベース分類 (quota → 429, UNAUTHENTICATED → 401)
 // が誤発火し、データベース永続障害が一時的な 429 として FE に出る silent failure
-// になる。default を撤廃して呼出元が必ず明示する設計に変更 (PR-F)。
+// になる。呼出元が必ず明示する設計。
 export const handleApiError = (
     error: unknown,
     functionName: string,
@@ -124,21 +134,25 @@ export const handleApiError = (
         return { status: 500, message: config.generic };
     }
 
-    const message = extractMessage(error);
+    // 連結文字列ではなく候補配列に対して個別判定する。outer に "timeout"、
+    // inner に "RESOURCE_EXHAUSTED" のような混在ケースで、優先度の高い方
+    // (quota → 429) が確実に採用される。判定順 = 深刻度順 (429 > 401 > 504)。
+    const candidates = getMessageCandidates(error);
+    const matchesAny = (predicate: (msg: string) => boolean): boolean => candidates.some(predicate);
 
-    if (message.includes('quota') || message.includes('RESOURCE_EXHAUSTED')) {
+    if (matchesAny(m => m.includes('quota') || m.includes('RESOURCE_EXHAUSTED'))) {
         return { status: 429, message: 'AIの無料利用枠の上限に達してしまいました。APIは時間経過で回復しますが、しばらく待っても改善しない場合は、Google AI Studioでプランや支払い方法を確認してみてください。' };
     }
-    if (message.includes('API key not valid') || message.includes('UNAUTHENTICATED')) {
+    if (matchesAny(m => m.includes('API key not valid') || m.includes('UNAUTHENTICATED'))) {
         return { status: 401, message: 'AI認証エラーです。設定を確認してください。' };
     }
-    if (message.includes('timeout') || message.includes('DEADLINE_EXCEEDED')) {
+    if (matchesAny(m => m.includes('timeout') || m.includes('DEADLINE_EXCEEDED'))) {
         return { status: 504, message: 'AIの応答がタイムアウトしました。ネットワーク接続を確認するか、少し待ってからもう一度お試しください。' };
     }
 
     return {
         status: 500,
-        message: isDev ? message : config.generic,
+        message: isDev ? extractMessage(error) : config.generic,
     };
 };
 

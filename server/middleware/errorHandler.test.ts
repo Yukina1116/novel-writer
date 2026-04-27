@@ -148,10 +148,15 @@ describe('handleApiError', () => {
     });
 
     describe('Fallback (no code, no message hit) → 500', () => {
-        it('returns 500 with raw message in dev (context=ai, isDev fixed at module load)', () => {
+        it('returns generic AI message when NODE_ENV !== "development" (production-safe default)', () => {
+            // errorHandler.ts の isDev は module load 時に
+            // `NODE_ENV === 'development'` で評価される定数。test 実行時は通常
+            // NODE_ENV が未設定 or 'test' のため isDev=false で本番扱い。
+            // 本番 Cloud Run で NODE_ENV 設定漏れがあっても raw message
+            // (stack trace 含む内部 error) を FE に漏らさない安全側のフォールバック。
             const result = handleApiError(new Error('unknown error xyz'), 'fallback', 'ai');
             expect(result.status).toBe(500);
-            expect(result.message).toBe('unknown error xyz');
+            expect(result.message).toBe('AI処理でエラーが発生しました。時間を置いて再試行してください。');
         });
 
         it('returns 500 with generic Firestore message for unknown code (context=firestore)', () => {
@@ -255,5 +260,27 @@ describe('handleApiError integration with extractMessage (Issue #40)', () => {
         const error = { error: { message: 'RESOURCE_EXHAUSTED on inner' } };
         const result = handleApiError(error, 'vertex-ai', 'ai');
         expect(result.status).toBe(429);
+    });
+
+    it('prefers higher-severity classification when outer/inner match different categories', () => {
+        // outer に "timeout"、inner に "RESOURCE_EXHAUSTED" の混在ケース。
+        // 連結文字列の substring 判定だと判定順 (quota → ... → timeout) で
+        // どちらが先に hit するかが文字列の前後関係に依存するが、本実装は
+        // 候補配列を `some` で個別判定するため必ず深刻度の高い 429 が選ばれる。
+        const error = Object.assign(new Error('timeout connecting to upstream'), {
+            error: { message: 'RESOURCE_EXHAUSTED on quota service' },
+        });
+        const result = handleApiError(error, 'vertex-ai', 'ai');
+        expect(result.status).toBe(429);
+    });
+
+    it('avoids false positive from concatenation boundary (timeout in outer alone)', () => {
+        // outer 単独で timeout のみ → 504 になる。連結境界に偶然 quota 等の
+        // 文字列が出現するリスクを排除する個別判定の挙動。
+        const error = Object.assign(new Error('connection timeout'), {
+            error: { message: 'fetch failed' },
+        });
+        const result = handleApiError(error, 'vertex-ai', 'ai');
+        expect(result.status).toBe(504);
     });
 });

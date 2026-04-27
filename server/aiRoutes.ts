@@ -20,7 +20,7 @@ export interface MountAiRoutesOptions {
  *
  * 順序: rateLimit → verifyIdToken → 各 route handler。
  *
- * 名前付きオプション化（PR-F）の理由: 旧 API (`...preMiddlewares: RequestHandler[]`)
+ * 名前付きオプションの理由: 旧 rest 引数 `...preMiddlewares: RequestHandler[]`
  * では `verifyIdToken` を二重に渡せてしまう経路があり、認証 middleware の二重 mount
  * を type 段で禁止できなかった。`{ rateLimit?: RequestHandler }` に絞ることで
  * 用途を rate limit のみに限定する。

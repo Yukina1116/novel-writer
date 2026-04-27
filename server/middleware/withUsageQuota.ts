@@ -1,4 +1,4 @@
-// AI route を usage クォータでラップする高階関数（PR-F）。
+// AI route を usage クォータでラップする高階関数。
 //
 // route.post('/generate', withUsageQuota('novel/generate', async (req) => {
 //     return await generateNovelContinuation(req.body);
@@ -20,7 +20,7 @@ import {
 } from '../services/usageService';
 import { MONTHLY_LIMIT_SEN, ROUTE_COST_SEN, type AiRouteKey, type Tier } from '../services/usageConfig';
 
-// PR-F: Tier は固定で 'free'。PR-G で users.plan を Firestore から取得して切替予定。
+// 現状 Tier 取得経路がないため固定。将来 users.plan からの取得に切替予定。
 const DEFAULT_TIER: Tier = 'free';
 
 // requestId は client が UUID v4 (36 chars) を body.requestId に入れる前提。
@@ -97,13 +97,22 @@ export const withUsageQuota = <TData>(
             } catch (commitErr) {
                 // commit 失敗時も AI 結果は返す（ユーザーに損なし）。reservation が
                 // 残ると次回以降の上限判定に加算され続け、false positive 429 の経路に
-                // なるが、月跨ぎで自然解消される（次月新 doc 作成）。estimatedCost を
-                // ログに含め、観測（合計 reservedCost ≒ Σ commit 失敗額）の足掛かりに
-                // する。頻発時は reconciliation job を別途検討。
+                // なるため、best-effort で cancel を試行して reservedCost を解放する。
+                // actualCost は記録されないが、上限到達誤判定よりリスクが小さい。
+                // どちらも失敗した場合は観測ログのみ（同一月内の reservation 残存を
+                // Sentry 等で監視 → 必要に応じ reconciliation job 検討）。
                 console.error(
                     `usage:commit failed for ${routeKey} uid=${uid} requestId=${requestId} estimatedCost=${estimatedCost}`,
                     commitErr,
                 );
+                try {
+                    await cancel(uid, requestId, handle);
+                } catch (cancelErr) {
+                    console.error(
+                        `usage:cancel-after-commit-failure also failed for ${routeKey} uid=${uid} requestId=${requestId}`,
+                        cancelErr,
+                    );
+                }
             }
             res.json({ success: true, data });
         } catch (handlerErr) {

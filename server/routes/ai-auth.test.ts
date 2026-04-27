@@ -247,6 +247,52 @@ describe('/api/ai/* requires Authorization Bearer ID Token', () => {
             expect(cancelMock).toHaveBeenCalledWith('u1', REQ_ID, handle);
             expect(commitMock).not.toHaveBeenCalled();
         });
+
+        it('still returns 200 when commit fails AND attempts cancel for reservation cleanup', async () => {
+            // commit 失敗時に AI 結果を破棄しない契約 + reservedCost を best-effort
+            // で解放する契約を固定。観測ログのみ・修復なし設計の false positive 429
+            // リスクを軽減する経路。
+            const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            verifyIdTokenSdkMock.mockResolvedValueOnce({ uid: 'u1', email: 'a@example.com' });
+            const handle = { reservedAt: new Date('2026-04-15T10:00:00Z') };
+            reserveMock.mockResolvedValueOnce(handle);
+            generateNamesMock.mockResolvedValueOnce(['name-1']);
+            commitMock.mockRejectedValueOnce(new Error('firestore unavailable'));
+            cancelMock.mockResolvedValueOnce(undefined);
+
+            const res = await request(buildApp())
+                .post('/api/ai/utility/names')
+                .set('Authorization', 'Bearer valid-token')
+                .send({ requestId: REQ_ID, category: 'human', keywords: 'foo' });
+
+            expect(res.status).toBe(200);
+            expect(res.body).toEqual({ success: true, data: ['name-1'] });
+            expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 50, handle);
+            // best-effort cancel が試行される
+            expect(cancelMock).toHaveBeenCalledWith('u1', REQ_ID, handle);
+            consoleErrorSpy.mockRestore();
+        });
+
+        it('returns 5xx when handler throws AND cancel also throws (no silent 200)', async () => {
+            const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            verifyIdTokenSdkMock.mockResolvedValueOnce({ uid: 'u1', email: 'a@example.com' });
+            const handle = { reservedAt: new Date('2026-04-15T10:00:00Z') };
+            reserveMock.mockResolvedValueOnce(handle);
+            generateNamesMock.mockRejectedValueOnce(new Error('AI service exploded'));
+            cancelMock.mockRejectedValueOnce(new Error('firestore also broken'));
+
+            const res = await request(buildApp())
+                .post('/api/ai/utility/names')
+                .set('Authorization', 'Bearer valid-token')
+                .send({ requestId: REQ_ID, category: 'human', keywords: 'foo' });
+
+            // cancel が失敗しても、handler の error は handleApiError 経由で返る
+            expect(res.status).toBe(500);
+            expect(res.body).toMatchObject({ success: false });
+            expect(cancelMock).toHaveBeenCalledWith('u1', REQ_ID, handle);
+            expect(commitMock).not.toHaveBeenCalled();
+            consoleErrorSpy.mockRestore();
+        });
     });
 
     describe('Verify token transient error → 503 (middleware 経路保持)', () => {
