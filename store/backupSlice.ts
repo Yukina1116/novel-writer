@@ -20,6 +20,9 @@ import {
     writeImport,
 } from '../db/backupRepository';
 import { STALE_BACKUP_DAYS, daysSince } from '../utils/backupFormat';
+import { refreshFromIndexedDb } from '../hooks/refreshFromIndexedDb';
+import { loadTutorialState } from '../db/tutorialRepository';
+import { loadAnalysisHistory } from '../db/analysisHistoryRepository';
 
 // `__APP_VERSION__` is replaced at build time by vite (see vite.config.ts).
 // In tests / non-Vite contexts, fall back to a literal so this slice still
@@ -29,12 +32,17 @@ const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSI
 // Slice-local view of get(): showToast lives on UiSlice but the type union
 // is built only in store/index.ts; mirror authSlice's typed-cast pattern.
 type WithToast = { showToast?: (m: string, t?: 'info' | 'success' | 'error') => void };
+type WithFlushSave = { flushSave?: () => Promise<void> };
+type WithCloseModal = { closeModal?: () => void };
 
 const errorMessage = (e: unknown): string =>
     e instanceof Error ? e.message : String(e);
 
+export type BackupMetaStatus = 'unknown' | 'loaded';
+
 export interface BackupSlice {
     lastExportedAt: string | null;
+    backupMetaStatus: BackupMetaStatus;
     importPlan: ImportPlan | null;
     isExporting: boolean;
     isImporting: boolean;
@@ -82,6 +90,7 @@ const detectConflicts = (incoming: Project[], existing: Project[]): ImportConfli
 
 export const createBackupSlice = (set, get): BackupSlice => ({
     lastExportedAt: null,
+    backupMetaStatus: 'unknown',
     importPlan: null,
     isExporting: false,
     isImporting: false,
@@ -89,9 +98,17 @@ export const createBackupSlice = (set, get): BackupSlice => ({
     initBackupState: async () => {
         try {
             const iso = await loadLastExportedAt();
-            set({ lastExportedAt: iso });
+            set({ lastExportedAt: iso, backupMetaStatus: 'loaded' });
         } catch (e) {
+            // Don't promote unknown to "loaded": isBackupStale needs to know
+            // we couldn't read so it can suppress the warning banner instead
+            // of showing "未実施" indefinitely.
             console.error('Failed to load lastExportedAt:', e);
+            set({ lastExportedAt: null, backupMetaStatus: 'unknown' });
+            (get() as WithToast).showToast?.(
+                `バックアップ状態の読込に失敗しました: ${errorMessage(e)}`,
+                'error',
+            );
         }
     },
 
@@ -108,11 +125,29 @@ export const createBackupSlice = (set, get): BackupSlice => ({
             });
             const json = serializeBackup(backup);
             const filename = buildBackupFilename();
+
+            // 1. Trigger the download. If this fails (e.g. blob/anchor APIs
+            //    unavailable), nothing has been saved yet — propagate as a
+            //    plain export failure.
             triggerDownload(filename, json);
-            await saveLastExportedAt(backup.exportedAt);
-            set({ lastExportedAt: backup.exportedAt });
+
+            // 2. Persist lastExportedAt separately. The user already has the
+            //    file at this point, so a save failure here is recoverable
+            //    (banner stays "stale" but the data is on disk). Differentiate
+            //    the messaging so the user isn't told the export "failed"
+            //    when the JSON is actually in their downloads folder.
             const count = backup.projects.length;
-            (get() as WithToast).showToast?.(`${count} 件のプロジェクトをエクスポートしました`, 'success');
+            try {
+                await saveLastExportedAt(backup.exportedAt);
+                set({ lastExportedAt: backup.exportedAt, backupMetaStatus: 'loaded' });
+                (get() as WithToast).showToast?.(`${count} 件のプロジェクトをエクスポートしました`, 'success');
+            } catch (e: unknown) {
+                console.error('saveLastExportedAt failed (download succeeded):', e);
+                (get() as WithToast).showToast?.(
+                    `${count} 件のプロジェクトをエクスポートしました（最終バックアップ日時の記録に失敗: ${errorMessage(e)}）`,
+                    'error',
+                );
+            }
         } catch (e: unknown) {
             console.error('exportAllData failed:', e);
             (get() as WithToast).showToast?.(`エクスポートに失敗しました: ${errorMessage(e)}`, 'error');
@@ -122,6 +157,15 @@ export const createBackupSlice = (set, get): BackupSlice => ({
     },
 
     prepareImport: async (raw: string) => {
+        // Flush in-memory edits to IndexedDB first so that conflict detection
+        // sees the user's latest unsaved work and overwrite/skip choices apply
+        // to the actual on-disk state. Without this, a project that the user
+        // is currently editing would not appear in conflicts.
+        try {
+            await (get() as WithFlushSave).flushSave?.();
+        } catch (e) {
+            console.error('flushSave before prepareImport failed:', e);
+        }
         const backup = parseBackup(raw);
         const snapshot = await readSnapshot();
         const conflicts = detectConflicts(backup.projects, snapshot.projects);
@@ -142,7 +186,13 @@ export const createBackupSlice = (set, get): BackupSlice => ({
         set({ importPlan: next });
     },
 
-    cancelImport: () => set({ importPlan: null }),
+    cancelImport: () => {
+        // Also close the modal so we don't leak an `activeModal === 'importConflict'`
+        // state with no plan to back it (ModalManager would render an empty
+        // component and other modal/help routes would be silently blocked).
+        set({ importPlan: null });
+        (get() as WithCloseModal).closeModal?.();
+    },
 
     executeImport: async () => {
         const plan = get().importPlan;
@@ -170,8 +220,23 @@ export const createBackupSlice = (set, get): BackupSlice => ({
                 tutorialState: plan.backup.tutorialState,
                 analysisHistory: plan.backup.analysisHistory,
             });
+
+            // Re-hydrate in-memory state from IndexedDB. Without this,
+            // allProjectsData/tutorialState/analysisHistory keep their pre-import
+            // shape and the next markDirty/flushSave would silently overwrite
+            // the freshly imported rows.
+            await refreshFromIndexedDb({ keepActive: true });
+            try {
+                const flags = await loadTutorialState();
+                const history = await loadAnalysisHistory();
+                set({ ...flags, analysisHistory: history });
+            } catch (e) {
+                console.error('post-import side-store refresh failed:', e);
+            }
+
             const skipped = plan.conflicts.filter(c => c.resolution === 'skip').length;
             set({ importPlan: null });
+            (get() as WithCloseModal).closeModal?.();
             (get() as WithToast).showToast?.(
                 `${toUpsert.length + toCreate.length} 件のプロジェクトを復元しました（スキップ ${skipped} 件）`,
                 'success',
@@ -189,6 +254,10 @@ export const createBackupSlice = (set, get): BackupSlice => ({
     },
 
     isBackupStale: () => {
+        // If we couldn't read backupMeta we can't tell whether the user has a
+        // recent export — suppress the banner rather than mislead them with
+        // "未実施" while the underlying read keeps failing.
+        if (get().backupMetaStatus === 'unknown') return false;
         const days = daysSince(get().lastExportedAt);
         return days === null || days > STALE_BACKUP_DAYS;
     },

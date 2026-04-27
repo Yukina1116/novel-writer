@@ -8,12 +8,24 @@ const readSnapshot = vi.fn();
 const writeImport = vi.fn();
 const loadLastExportedAt = vi.fn();
 const saveLastExportedAt = vi.fn();
+const refreshFromIndexedDb = vi.fn();
+const loadTutorialState = vi.fn();
+const loadAnalysisHistory = vi.fn();
 
 vi.mock('../db/backupRepository', () => ({
     readSnapshot: (...args: unknown[]) => readSnapshot(...args),
     writeImport: (...args: unknown[]) => writeImport(...args),
     loadLastExportedAt: (...args: unknown[]) => loadLastExportedAt(...args),
     saveLastExportedAt: (...args: unknown[]) => saveLastExportedAt(...args),
+}));
+vi.mock('../hooks/refreshFromIndexedDb', () => ({
+    refreshFromIndexedDb: (...args: unknown[]) => refreshFromIndexedDb(...args),
+}));
+vi.mock('../db/tutorialRepository', () => ({
+    loadTutorialState: (...args: unknown[]) => loadTutorialState(...args),
+}));
+vi.mock('../db/analysisHistoryRepository', () => ({
+    loadAnalysisHistory: (...args: unknown[]) => loadAnalysisHistory(...args),
 }));
 
 const makeProject = (over: Partial<Project> = {}): Project => ({
@@ -63,6 +75,9 @@ beforeEach(() => {
     writeImport.mockReset();
     loadLastExportedAt.mockReset();
     saveLastExportedAt.mockReset();
+    refreshFromIndexedDb.mockReset().mockResolvedValue({ failureCount: 0, healthyCount: 0 });
+    loadTutorialState.mockReset().mockResolvedValue({});
+    loadAnalysisHistory.mockReset().mockResolvedValue([]);
 
     // jsdom is not loaded in node env; stub minimal browser bits used by exportAllData.
     (globalThis as any).URL ??= {} as any;
@@ -79,11 +94,12 @@ beforeEach(() => {
 });
 
 describe('initBackupState (AC-6)', () => {
-    it('loads lastExportedAt from db', async () => {
+    it('loads lastExportedAt from db and marks status loaded', async () => {
         loadLastExportedAt.mockResolvedValue('2026-04-01T00:00:00.000Z');
         const fake = createFakeStore();
         await fake.state.initBackupState();
         expect(fake.state.lastExportedAt).toBe('2026-04-01T00:00:00.000Z');
+        expect(fake.state.backupMetaStatus).toBe('loaded');
     });
 
     it('keeps null when nothing persisted', async () => {
@@ -91,6 +107,17 @@ describe('initBackupState (AC-6)', () => {
         const fake = createFakeStore();
         await fake.state.initBackupState();
         expect(fake.state.lastExportedAt).toBeNull();
+        expect(fake.state.backupMetaStatus).toBe('loaded');
+    });
+
+    it('H3: keeps backupMetaStatus=unknown on db error and toasts', async () => {
+        loadLastExportedAt.mockRejectedValue(new Error('IndexedDB closed'));
+        const fake = createFakeStore();
+        await fake.state.initBackupState();
+        expect(fake.state.backupMetaStatus).toBe('unknown');
+        expect((fake.state.showToast as any)).toHaveBeenCalled();
+        // Stale should be suppressed in unknown state to avoid lying to the user.
+        expect(fake.state.isBackupStale()).toBe(false);
     });
 });
 
@@ -187,26 +214,31 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
 });
 
 describe('isBackupStale (AC-7)', () => {
-    it('returns true when never exported', () => {
+    const setLoaded = (fake: ReturnType<typeof createFakeStore>, lastExportedAt: string | null) => {
+        fake.set({ lastExportedAt, backupMetaStatus: 'loaded' });
+    };
+
+    it('returns true when never exported (loaded + null)', () => {
         const fake = createFakeStore();
+        setLoaded(fake, null);
         expect(fake.state.isBackupStale()).toBe(true);
     });
 
     it('returns false when exported within 30 days', () => {
         const fake = createFakeStore();
-        fake.set({ lastExportedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString() });
+        setLoaded(fake, new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString());
         expect(fake.state.isBackupStale()).toBe(false);
     });
 
     it('returns true when exported >30 days ago', () => {
         const fake = createFakeStore();
-        fake.set({ lastExportedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString() });
+        setLoaded(fake, new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString());
         expect(fake.state.isBackupStale()).toBe(true);
     });
 
     it('returns true on malformed iso', () => {
         const fake = createFakeStore();
-        fake.set({ lastExportedAt: 'not-an-iso' });
+        setLoaded(fake, 'not-an-iso');
         expect(fake.state.isBackupStale()).toBe(true);
     });
 });

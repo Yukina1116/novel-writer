@@ -124,6 +124,67 @@ describe('parseBackup (AC-4, AC-5, AC-9, AC-10)', () => {
         expect(result.projects).toHaveLength(1);
         expect(result.projects[0].id).toBe('p-1');
     });
+
+    it('B1: legacy bare-project JSON (no schemaVersion) is wrapped into BackupV1', () => {
+        const legacy = JSON.stringify(makeProject({ id: 'legacy-p', name: '旧プロジェクト' }));
+        const result = parseBackup(legacy, { rawSize: legacy.length });
+        expect(result.schemaVersion).toBe(1);
+        expect(result.appVersion).toBe('legacy');
+        expect(result.projects).toHaveLength(1);
+        expect(result.projects[0].id).toBe('legacy-p');
+        expect(result.projects[0].name).toBe('旧プロジェクト');
+    });
+
+    it('B1: legacy { project: {...} } envelope is unwrapped and accepted', () => {
+        const legacy = JSON.stringify({ project: makeProject({ id: 'env-p' }) });
+        const result = parseBackup(legacy, { rawSize: legacy.length });
+        expect(result.projects).toHaveLength(1);
+        expect(result.projects[0].id).toBe('env-p');
+    });
+
+    it('H1: tutorialState non-boolean values are dropped (string "yes" → omitted)', () => {
+        const raw = JSON.stringify({
+            schemaVersion: 1,
+            exportedAt: '2026-04-28T00:00:00.000Z',
+            appVersion: '0.0.0',
+            projects: [],
+            tutorialState: {
+                hasCompletedGlobalTutorial: 'yes',
+                hasCompletedGlobalKnowledgeTutorial: true,
+                evil_key: 'should be dropped',
+            },
+            analysisHistory: [],
+        });
+        const result = parseBackup(raw, { rawSize: raw.length });
+        expect(result.tutorialState).not.toHaveProperty('hasCompletedGlobalTutorial');
+        expect(result.tutorialState.hasCompletedGlobalKnowledgeTutorial).toBe(true);
+        expect(result.tutorialState).not.toHaveProperty('evil_key');
+    });
+
+    it('H1: analysisHistory items missing required fields are filtered out', () => {
+        const validItem = {
+            characters: { match: [], similar: [], new: [], extractedDetails: [] },
+            worldContext: { worldKeywords: [], genre: '', tone: '' },
+            worldTerms: { match: [], similar: [], new: [] },
+            dialogues: [],
+            notes: [],
+        };
+        const raw = JSON.stringify({
+            schemaVersion: 1,
+            exportedAt: '2026-04-28T00:00:00.000Z',
+            appVersion: '0.0.0',
+            projects: [],
+            tutorialState: {},
+            analysisHistory: [
+                validItem,
+                { characters: 'not an object' },
+                null,
+                { dialogues: [], notes: [] },
+            ],
+        });
+        const result = parseBackup(raw, { rawSize: raw.length });
+        expect(result.analysisHistory).toHaveLength(1);
+    });
 });
 
 describe('resolveImportProjects (AC-3)', () => {
@@ -191,5 +252,12 @@ describe('resolveImportProjects (AC-3)', () => {
         expect(r.toUpsert.map(p => p.id).sort()).toEqual(['new', 'over']);
         expect(r.toCreate).toHaveLength(1);
         expect(r.toCreate[0].id).not.toBe('dup');
+    });
+
+    it('H7: missing resolution for a conflicting id throws BackupValidationError', () => {
+        const incoming = [makeProject({ id: 'p-1' })];
+        expect(() =>
+            resolveImportProjects(incoming, new Set(['p-1']), new Map()),
+        ).toThrow(BackupValidationError);
     });
 });
