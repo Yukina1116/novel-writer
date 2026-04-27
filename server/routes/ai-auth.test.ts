@@ -159,4 +159,32 @@ describe('/api/ai/* requires Authorization Bearer ID Token', () => {
             expect(generateNamesMock).not.toHaveBeenCalled();
         });
     });
+
+    describe('Middleware order contract (preMiddlewares → verifyIdToken → handler)', () => {
+        // brute-force 防御の仕様: rate limit 等の preMiddlewares は認証より先に走り、
+        // 認証エラー時にも消費される。順序が逆転すると未認証リクエストが rate limit を
+        // 浴びずに 401 を返せるため、attacker が認証 endpoint を無制限に叩ける。
+        it('invokes preMiddleware before verifyIdToken (order is preserved)', async () => {
+            const callOrder: string[] = [];
+            const preMiddleware = (_req: unknown, _res: unknown, next: () => void) => {
+                callOrder.push('preMiddleware');
+                next();
+            };
+            verifyIdTokenSdkMock.mockImplementationOnce((token: string) => {
+                callOrder.push('verifyIdToken');
+                return Promise.reject({ code: 'auth/argument-error', message: `bad ${token}` });
+            });
+
+            const app = express();
+            app.use(express.json());
+            mountAiRoutes(app, preMiddleware);
+            await request(app)
+                .post('/api/ai/utility/names')
+                .set('Authorization', 'Bearer t')
+                .send({ category: 'human', keywords: 'x' });
+
+            expect(callOrder).toEqual(['preMiddleware', 'verifyIdToken']);
+            expect(generateNamesMock).not.toHaveBeenCalled();
+        });
+    });
 });

@@ -37,6 +37,44 @@ describe('handleApiError', () => {
         }
     });
 
+    describe('gRPC string code normalization (whitespace / case)', () => {
+        // SDK が稀に ' UNAVAILABLE'、'unavailable'、'UNAVAILABLE\n' 等を返した場合に
+        // permanent 経路に silent fallthrough しないことを保証する。
+        const variants = [
+            { name: 'leading space', code: ' UNAVAILABLE' },
+            { name: 'trailing newline', code: 'UNAVAILABLE\n' },
+            { name: 'lowercase', code: 'unavailable' },
+            { name: 'mixed case + whitespace', code: '  Deadline_Exceeded ' },
+        ];
+        for (const { name, code } of variants) {
+            it(`recognizes "${name}" → 503`, () => {
+                const error = Object.assign(new Error('boom'), { code });
+                const result = handleApiError(error, 'fn', 'firestore');
+                expect(result.status).toBe(503);
+            });
+        }
+    });
+
+    describe('Anomalous code values (boundary / coercion)', () => {
+        // gRPC code に boolean / object / null / undefined / 0 が来た場合の挙動を固定。
+        // どれも transient 判定にならず permanent 経路 (firestore: 500) へ落ちる。
+        const anomalousCases = [
+            { name: 'boolean true', code: true },
+            { name: 'object', code: { nested: 'UNAVAILABLE' } },
+            { name: 'null', code: null },
+            { name: 'undefined', code: undefined },
+            { name: 'number 0 (gRPC OK)', code: 0 },
+            { name: 'number 99999', code: 99999 },
+        ];
+        for (const { name, code } of anomalousCases) {
+            it(`falls through to permanent for ${name} (firestore context → 500)`, () => {
+                const error = Object.assign(new Error('boom'), { code });
+                const result = handleApiError(error, 'fn', 'firestore');
+                expect(result.status).toBe(500);
+            });
+        }
+    });
+
     describe('CorsRejectError → 403 (AI context only)', () => {
         it('returns 403 for CorsRejectError', () => {
             const result = handleApiError(new CorsRejectError(), 'cors', 'ai');

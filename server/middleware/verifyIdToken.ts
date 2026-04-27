@@ -28,13 +28,15 @@ const TRANSIENT_NETWORK_CODES = new Set<string>([
 
 // 期待された permanent エラー = ユーザー操作（再ログイン）で復旧する経路。
 // このリストにない permanent は分類漏れ / SDK breaking / 設定ミスの可能性があり、
-// console.error で観測性を確保する。
+// catch ブロック末尾 (verifyIdToken rejected (unexpected)) の console.error で
+// 観測性を確保する。Sentry 等で異常な permanent code を拾って本リストに追加する運用。
 //
 // auth/quota-exceeded は意図的に追加していない: 公式ドキュメント
 // (https://firebase.google.com/docs/auth/admin/errors) では verifyIdToken() の
 // 文書化された throw は id-token-expired / id-token-revoked / invalid-id-token /
 // argument-error / internal-error のみ。auth/quota-exceeded は SMS 送信経路で
-// 発生するため verifyIdToken では出ない想定。万一観測したらこのコメントを更新する。
+// 発生するため verifyIdToken では出ない想定。万一観測した場合は上記 unexpected
+// ログ経由で検知される。
 const EXPECTED_PERMANENT_AUTH_CODES = new Set<string>([
     'auth/argument-error',
     'auth/id-token-expired',
@@ -76,8 +78,8 @@ export async function verifyIdToken(req: Request, res: Response, next: NextFunct
         req.user = { uid: decoded.uid, email: decoded.email ?? null };
         next();
     } catch (error: unknown) {
-        // transient: Firebase Auth サービス障害は 503 透過、FE が再試行を判断する
-        // permanent: invalid/expired token は 401（rules/error-handling.md §3）
+        // transient (Firebase Auth サービス障害) は 503 透過で FE が再試行を判断、
+        // permanent (invalid/expired token) は 401 で再ログイン誘導。
         if (isTransientAuthError(error)) {
             console.error('verifyIdToken transient error:', error);
             res.status(503).json({ success: false, error: 'Auth service temporarily unavailable' });

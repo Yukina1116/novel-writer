@@ -245,6 +245,11 @@ PR-E では実装変更を最小化するため、AI route 個別ファイルへ
 
 - **AuthedRequest handler 引数 narrowing**: PR-D /review-pr 持越事項 #3。PR-E では AI route 無変更のため handler 引数の narrowing は未実施。PR-F で usage 集計実装時に `req.user.uid` を使う必要が出るため、その時点で全 AI route handler を `(req: AuthedRequest, res) => ...` 形式 + `if (!req.user) return 500` 二重防御に統一する
 - **handleApiError context 明示化**: 既存 AI route 6 ファイルが context default = 'ai' に依存している。PR-F で AI route リファクタ時に明示 'ai' 指定 + default 撤廃を検討
+- **ErrorContext を table-driven に拡張**: `'ai' | 'firestore'` 2 値の string union は PR-F で `'usage'` 追加時に `MESSAGES[context]` lookup table へ移行（type-design-analyzer 指摘）。`Record<ErrorContext, { transient: string; generic: string; useAiRegex: boolean }>` の satisfies で typed exhaustiveness を強制
+- **mountAiRoutes 引数の名前付きオプション化**: 現状 `...preMiddlewares: RequestHandler[]` rest で `verifyIdToken` を二重渡せてしまう。PR-F で `mountAiRoutes(app, { rateLimit?: RequestHandler })` 形式に変更し、認証 middleware の二重 mount を type 段で禁止（type-design-analyzer 指摘）
+- **PR-E /review-pr で見送った既存ロジック改善 (Issue 化候補)**:
+  - `extractMessage` の `error?.error?.message` 優先順位が SDK update で容易に壊れる（silent-failure-hunter rating 8）— PR-D 由来既存ロジックのため本 PR スコープ外
+  - CI (`.github/workflows/deploy.yml`) に `npm run test` step が無い（pr-test-analyzer rating 9）— deploy 経路の変更のため本 PR スコープ外
 
 ### PR-E で確定した設計判断
 

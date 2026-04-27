@@ -139,4 +139,11 @@ async function startServer() {
     });
 }
 
-startServer();
+// probeFirebaseAuth() が同期 throw した場合、async startServer 内で reject に
+// なるが Node のバージョンや起動オプションによっては unhandledRejection 警告だけで
+// process が alive のまま残る経路がある。Cloud Run の rollback 判定を確実化するため
+// 明示的に exit 1 する（fail-fast の意義保全）。
+startServer().catch((err) => {
+    console.error('Fatal startup error:', err);
+    process.exit(1);
+});

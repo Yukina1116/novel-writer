@@ -11,15 +11,15 @@ const ALLOWED_PLANS = ['free'] as const;
 type AllowedPlan = typeof ALLOWED_PLANS[number];
 
 router.post('/init', verifyIdToken, async (req, res) => {
+    // verifyIdToken が成功すれば req.user は必ず注入されている。AuthedRequest は
+    // middleware 通過済の意図を型に表明するが declaration merging はランタイム保証
+    // ではないため、念のため二重防御として弾く。
+    const { user } = req as AuthedRequest;
+    if (!user) {
+        res.status(401).json({ success: false, error: 'Unauthenticated' });
+        return;
+    }
     try {
-        // verifyIdToken が成功すれば req.user は必ず注入されている。AuthedRequest は
-        // 「middleware 通過済」の意図を型に表明するが、declaration merging はランタイム
-        // 保証ではないため、念のため二重防御として弾く（rules/error-handling.md §2）。
-        const { user } = req as AuthedRequest;
-        if (!user) {
-            res.status(401).json({ success: false, error: 'Unauthenticated' });
-            return;
-        }
         const email = user.email;
         if (typeof email !== 'string' || email.length === 0) {
             res.status(400).json({ success: false, error: 'ID token does not contain a valid email claim' });
@@ -49,6 +49,9 @@ router.post('/init', verifyIdToken, async (req, res) => {
 
         res.json({ success: true });
     } catch (error) {
+        // 「特定 uid だけ users/init が落ちる」事象を本番ログから追跡できるよう、
+        // handleApiError 内部の汎用 console.error より前に context 付きで先行 log する。
+        console.error('users/init failed', { uid: user.uid, error });
         const { status, message } = handleApiError(error, 'users/init', 'firestore');
         res.status(status).json({ success: false, error: message });
     }

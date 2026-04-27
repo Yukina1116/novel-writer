@@ -53,12 +53,18 @@ export async function getEmulatorIdToken(
     return { idToken: body.idToken, uid, email };
 }
 
-/** Auth Emulator 上の全ユーザーを削除する。emulator 未起動時は no-op。 */
+/**
+ * Auth Emulator 上の全ユーザーを削除する。
+ * env var 未設定 (= emulator を使わない構成) は no-op。設定済みなら fetch error は throw:
+ * 残存 user が次テストで `auth/uid-already-exists` を許容して偽 PASS につながるため。
+ */
 export async function clearEmulatorUsers(): Promise<void> {
     const emulatorHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
     if (!emulatorHost) return;
     const url = `http://${emulatorHost}/emulator/v1/projects/${resolveEmulatorProjectId()}/accounts`;
-    await fetch(url, { method: 'DELETE' }).catch(() => {
-        // emulator 未起動時は無視
-    });
+    const response = await fetch(url, { method: 'DELETE' });
+    if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(`clearEmulatorUsers failed (${response.status}): ${text}`);
+    }
 }

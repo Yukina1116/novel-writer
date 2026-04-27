@@ -9,9 +9,18 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 
 const EMULATOR_HOST_PATTERN = /^[\w.-]+:\d+$/;
 
-export function hasEmulatorHost(envVar: string): boolean {
+// 既知の emulator host env var のみ許容し typo (FIRESBASE_... 等) を compile error にする。
+export type EmulatorEnvVar = 'FIREBASE_AUTH_EMULATOR_HOST' | 'FIRESTORE_EMULATOR_HOST';
+
+export function hasEmulatorHost(envVar: EmulatorEnvVar): boolean {
   const host = process.env[envVar]?.trim();
-  return Boolean(host) && EMULATOR_HOST_PATTERN.test(host!);
+  if (!host) return false;
+  if (EMULATOR_HOST_PATTERN.test(host)) return true;
+  // host が設定されているが pattern 不一致 (port 忘れ / typo) → 開発者は emulator
+  // 接続を意図しているはず。ここで本番 mode に silent fallback すると ADC 未設定で
+  // cryptic な applicationDefault() error になり原因究明が困難。明示的に warn する。
+  console.warn(`${envVar}="${host}" looks invalid (expected host:port format); treating as production mode`);
+  return false;
 }
 
 // emulator 用の admin SDK 初期化は credential を渡さない。Auth または
