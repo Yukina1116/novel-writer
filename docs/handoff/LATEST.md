@@ -1,168 +1,165 @@
-# Handoff: Issue #49 rating ≥ 7 全消化 / 次フェーズ着手待機
+# Handoff: P4 (M7-α 公開準備) PR-A/B/C/D-1 完了 / PR-D-2 (UI) 次セッション着手待機
 
-- Session Date: 2026-04-28（午後セッション、Issue #49 follow-up 集中対応）
+- Session Date: 2026-04-28（夜セッション、P4 着手）
 - Owner: yasushi-honda
-- Status: ✅ 再開可能（M4 完了 + Issue #49 rating ≥ 7 全消化、Stripe 後送り戦略の P4 (M7-α 公開準備) または P5 (M6 E2EE) 着手待機）
+- Status: ✅ 再開可能（PR-A/B/C/D-1 merge 済、PR-D-2 のみ持越し。法務 stub の本番公開前法務確認は MUST、AI セッション外作業）
 
 ## 今セッションの完了内容
 
 | PR | 内容 | merge | 行数 |
 |---|---|---|---|
-| #51 | H6 isBackupStale 境界値テスト + `vi.setSystemTime` 固定（CLAUDE.md MUST 違反解消） | ✅ | +57 |
-| #52 | H4 setImportResolution → executeImport 通しテスト + H5 TOCTOU 再 read 回帰テスト | ✅ | +288 |
-| #53 | H6-followup-1/2 isBackupStale 状態空間テスト（unknown × non-null + 空文字列）+ 文言修正 | ✅ | +60 |
-| #54 | H10 Dexie blocked-event ハンドラ + bootstrap-gap pending queue + 例外 swallow + 二度発火抑制 | ✅ | +267 |
-| #55 | H10-followup-1 `wireBlockedHandler` 契約テスト（Codex セカンドオピニオン取得済） | ✅ | +158 |
-| #56 | H10-followup-2/3 payload-bearing BlockedHandler + MockDexie 強化 + Readonly payload + 例外 wrapper | ✅ | +300 |
-| #57 | H2 旧設計（flushSave catch + retry）→ silent-failure-hunter Critical で **close**（root-cause 誤認） | ❌ closed | - |
-| #58 | H2 再設計（flushSaveBlocking 新 API + BackupPreflightError）+ Evaluator 分離 APPROVE | ✅ | +549 |
+| #60 | PR-A: docs(m7) M7-α 公開準備 spec + 法務 stub 3 文書 + ADR 更新 | ✅ | +841/-4 |
+| #61 | PR-B: feat(m7) BE structured logger 導入 + console 全置換 (logger.test.ts 16 ケース、console.error 残存 0 件) | ✅ | +429/-49 |
+| #62 | PR-C: feat(m7) FE AppErrorBoundary + useGlobalErrorHandlers (純粋ロジック 13 ケース、実 render は E2E manual) | ✅ | +483/-1 |
+| #63 | PR-D-1: feat(m7) BE accept-terms + Firestore + authSlice fields 拡張 (TermsConsentModal/Footer は PR-D-2 持越) | ✅ | +962/-35 |
 
-**Issue #49 rating ≥ 7 項目すべて消化完了**: H2 (#58) / H4 (#52) / H5 (#52) / H6 (#51) / H10 (#54) + follow-up 系 H6-followup-1/2 (#53) / H10-followup-1 (#55) / H10-followup-2/3 (#56)。
+**P4 進捗**: 4/5 PR (PR-A/B/C/D-1) merge 済。残 PR-D-2 (UI 統合) のみ。
 
-### PR #57 → #58 の設計やり直し（重要事例）
+### マルチ Reviewer 反映実績
 
-PR #57 で `prepareImport` の `flushSave` rejection を catch して abort する設計を採ったが、`/review-pr` の silent-failure-hunter が **致命的欠陥** を指摘:
+各 PR で `general-purpose` + `evaluator` 2 並列レビューを実施。両者の指摘を Critical/High 優先で反映:
 
-> 既存 `flushSave` は `saveStatus === 'saving'` 中の早期 return ブランチで、**`_pendingFlush=true` を set して throw せず即 resolve** する（symbolic ref: `syncSlice.flushSave` の `if (saveStatus === 'saving')` 分岐。PR #58 merge 後の行番号は変動しうるためシンボル参照で記述）。`prepareImport` の catch wrapper では in-flight failure を観測できず、silent edit-loss path 残存。
+- **PR #60 (docs)**: comment-analyzer 指摘の Critical (Tier 1+Imagen 記述が `usage-cost-config.md` と矛盾) を v2 で修正
+- **PR #61 (logger)**: 循環参照で logger 自体が throw する経路 + 予約キー (severity/timestamp/service) 上書きリスク + AC-3 dev curl 矛盾を v2 で修正
+- **PR #62 (FE error)**: showToast 失敗時の無限ループ + componentDidCatch onError throw silent failure + buildHandlers 暗黙ストア依存を v2 で修正
+- **PR #63 (BE accept-terms)**: acceptTerms race + USER_DOC_MISSING sentinel class 化 + signOut termsAccepting reset + rules termsVersion regex/半端状態防止 + post-commit re-read 失敗時 200 維持 を v2 で修正
 
-→ PR #57 を close、`syncSlice` 側に新 API `flushSaveBlocking` が必要と判明し、PR #58 で再設計。Codex GPT-5.2 + Evaluator subagent でセカンドオピニオン取得、APPROVE 判定後マージ。
-
-**教訓**: 既存実装の挙動（`flushSave` の silent resolve 設計）を見落として fix を組むと、表面的に解決した気になっても silent path が残存する。`silent-failure-hunter` の Critical 指摘は前提崩壊レベルとして扱い、設計ごとやり直す判断が必要。
+各 PR とも 2 ループ目で APPROVE 相当に到達してから merge。
 
 ## 次セッション開始時の状態
 
-- ブランチ: `main` clean、origin/main と同期済み（本 handoff PR merge 前 HEAD: `e7ce98f` = PR #58 merge commit。本 PR merge 後はそれを置き換え）
-- Open Issue: 1 件（#49 follow-up umbrella、能動的作業不要・monitor 対象として open 維持）
-- Open PR: 0 件（本セッションで作る handoff PR を除き、全 PR merge 済 + #57 close 済）
+- ブランチ: `main` clean、origin/main と同期済み（HEAD: `e820597` = PR #63 merge）
+- Open Issue: 1 件（#49 M4 follow-up umbrella、能動的作業不要・monitor 対象）
+- Open PR: 0 件（本セッションで作る handoff PR を除き全 merge 済）
 - グローバル `~/.claude/` への変更なし（プロジェクト CLAUDE.md §1 遵守）
 - main 直 push なし、feature ブランチ + PR 運用維持（プロジェクト CLAUDE.md §2 遵守）
-- 自動テスト: vitest 259/259 PASS（13 ファイル: 前 M4 終了時 204 → +55 ケース追加）
-- 型チェック: `tsc --noEmit` 0 errors / build OK
+- 自動テスト: vitest 315/315 PASS (前 259 → +56 ケース追加)
+  - logger.test.ts: 16 ケース (循環参照 / 予約キー保護 / BigInt/Symbol / write 失敗 swallow 含む)
+  - AppErrorBoundary.test.ts: 8 ケース (純粋ロジック)
+  - useGlobalErrorHandlers.test.ts: 11 ケース (registerGlobalErrorHandlers / buildHandlers showToast 引数注入版)
+  - users.test.ts: +10 ケース (accept-terms 8 ケース + post-commit re-read fallback 1 ケース 含む)
+  - authSlice.test.ts: +10 ケース (computeNeedsTermsAccept 5 ケース / acceptTerms 4 ケース / signOut reset 1 ケース)
+- firestore-rules: 26/26 PASS (前 16 → +10 ケース、形式 regex / 半端状態防止 / null 拒否含む)
+- 型チェック: `tsc --noEmit` 0 errors / build OK / Cloud Run deploy CI in_progress (push 由来、過去 PR の deploy は全 success)
 
 ## 次のアクション（推奨順）
 
-### 1. 本 handoff PR をレビュー → merge
+### 1. 本 handoff PR をレビュー → merge（必要なら）
 
-- `gh pr view <number>` で内容確認
-- ユーザー明示認可後 `gh pr merge <number> --squash --delete-branch`
+LATEST.md のみの更新であれば feature ブランチ + PR で commit する。
 
-### 2. P4 (M7-α 公開準備) または P5 (M6 E2EE) 着手
+### 2. PR-D-2 (TermsConsentModal + Footer + ModalManager 統合) 着手
 
-Stripe 後送り戦略（PM/PL 合意）の通り、Stripe (M5) は最後に回す。
+`docs/spec/m7/tasks.md` の D.4-D.6 に詳細記載済。要点:
 
-- **P4 (M7-α 公開準備、Stripe 不要範囲)** 推奨: 利用規約 Tier 0/1 / 特商法 stub / プライバシーポリシー / 観測性 / エラー報告で 4〜6h 想定
-- **P5 (M6 E2EE バックアップ)**: ADR-0001 で Tier 2 前提と明記、Stripe 後送り推奨。M4 で確定した backup schema v1 を AES-GCM 暗号化対象として再利用予定
+- **components/modals/TermsConsentModal.tsx 新規**:
+  - `needsTermsAccept` を watch、表示中は他モーダル / 主要操作をブロック (close ボタンなし、z-index 最上位)
+  - 3 文書 link (`docs/legal/*`) を新タブで表示 (`target="_blank" rel="noopener"`)
+  - 「同意して開始」ボタン → `acceptTerms()` action 呼出 (loading / error handling)
+  - dev bypass `?skip-terms=1` (NODE_ENV !== 'production' ガード)
+- **components/Footer.tsx 新規**:
+  - 利用規約 / プライバシーポリシー / 特商法 への link 常時表示
+  - link 先は **要決定**: `/legal/*.html` (vite-plugin-static-copy 経由) or GitHub repo md ファイル直 link
+  - App.tsx + App.mobile.tsx に配置
+- **components/ModalManager.tsx 拡張**: TermsConsentModal を組込み
 
-着手時に `/impl-plan` で詳細計画を立てる。
+### 3. testing 基盤の判断 (PR-D-2 着手時)
 
-### 3. Issue #49 follow-up（rating ≤ 6、能動的作業不要、monitor 対象）
+vitest は現状 `node` 環境。React Testing Library / jsdom 未導入のため、TermsConsentModal の実 render テストには testing 基盤拡張が必要。選択肢:
 
-`memory/feedback_issue_postpone_pattern.md` に従い、open 維持で監視。再開条件:
+| 案 | 内容 | 工数 |
+|---|---|---|
+| A. 純粋ロジックのみ vitest node + E2E manual | PR-C と同方針、testing 基盤拡張なし | 小 |
+| B. happy-dom + RTL を 1 PR で導入 | TermsConsentModal の render テストが書ける | 中 (+ 別 PR 推奨) |
 
-- 上記 follow-up のいずれかが本番障害として再現（ユーザー報告 / Sentry エラー）
-- M5 以降で同一コードパスを触る必要が生じた
-- review agent による rerating で `rating ≥ 7` への昇格
+PR-D-2 は P4 完了優先で **案 A** 推奨。testing 基盤拡張は別 PR (P5/P6 着手前のハイジン整理 PR) で扱う。
+
+### 4. P4 全完了 → 本番公開前法務確認 (AI セッション外、MUST)
+
+PR-D-2 merge 完了で P4 (M7-α 公開準備) コードベース実装は完了。**本番公開前にユーザー側で必須**:
+
+1. `docs/legal/{terms-of-service,privacy-policy,tokushou}.md` の全文確認
+2. 顧問弁護士または法務専門家による review (`<!-- LEGAL_REVIEW_REQUIRED -->` マーカー除去 + 全 TODO 埋め)
+3. 連絡先 (個人情報保護担当窓口、お問い合わせメール) の確定
+4. 未成年利用 / GDPR 対応方針の確定
+
+これらは AI ではなく事業主体の判断・契約事項。
+
+### 5. P5 (M6 E2EE) または P6 (M5 Stripe) 着手判断
+
+P4 完了後、Stripe 後送り戦略に従い P5 (M6 E2EE) を先に処理する想定。詳細は ADR-0001 Roadmap 参照。
 
 ## 申し送り事項（重要）
 
-### Issue #49 follow-up（open 維持、rating ≤ 6）
+### PR-D-1 で追加した API / 型 (PR-D-2 で参照)
 
-| ID | rating | 内容 |
-|---|---|---|
-| H10-followup-4 | 5-6 | `IDBVersionChangeEvent` の `oldVersion === undefined` polyfill 防衛 |
-| H10-followup-5 | 3 | 静的検査（`useLocalSync.test.ts`）の脆さ緩和 |
-| H10-followup-6 | 2-3 | observability（pendingBlockedCount / Sentry 連携） |
-| H2-followup-1 | 5 | `flushSaveBlocking` の `timeoutMs` domain 制約（負数/0 ガード） |
-| H2-followup-2 | 6 | 5 秒 retry timer の `_savingPromise` 連携 |
-| H2-followup-3 | 6 | `flushSaveBlocking` timeout 後の遅延 settle 整理 |
-| H2-followup-4 | 5 | 並行 flushSave / `_savingPromise` race のテスト |
-| H2-followup-5 | 5 | legacy fallback の rejection path テスト |
+- **server/services/termsConfig.ts**: `TERMS_VERSION = '2026-04-28'` を sole source として export。bump タイミング: 法務本確定 / 重要条項改定 (全ユーザー再同意要求)
+- **POST /api/users/accept-terms**: body `{ termsVersion: string }` 必須、不一致時 409 + `code: 'TERMS_VERSION_MISMATCH'`、users doc 不在時 409 + `code: 'USER_DOC_MISSING'`
+- **GET /api/users/init レスポンス拡張**: `user.termsAcceptedAt` (ISO) / `user.termsVersion` (string) / `currentTermsVersion` (string) を含む。旧形式 `{ success: true }` のみは legacy 互換として callUsersInit が null 返す
+- **authSlice 新 fields**: `termsAcceptedAt` / `termsVersion` / `currentTermsVersion` / `needsTermsAccept` (派生) / `termsAccepting` (UI disabled 用)
+- **acceptTerms() action**: in-flight Promise pattern (`inFlightAcceptTerms` module-scope) + `__testing.resetInFlightAcceptTerms()` test reset 用 export
+- **computeNeedsTermsAccept(termsAcceptedAt, termsVersion, currentTermsVersion)**: null/null/null → false、null/null/v → true (未同意)、ts/v1/v2 → true (版不一致)、ts/v/v → false (同意済)
+- **firestore.rules**: users update で termsAcceptedAt + termsVersion は「両方 null」or「両方設定 (timestamp + YYYY-MM-DD 形式 string)」のみ許可
 
-### M4 累積実績
+### PR-D-2 で必要な実装メモ (詳細は tasks.md 参照)
 
-| PR | 内容 | merge 日 | 行数 |
-|---|---|---|---|
-| #48 | M4 全体 + 品質ゲート 7 件 review fix | 2026-04-27 | +1547/-98 |
-| #50 | docs(handoff) M4 完了記録 | 2026-04-27 | - |
-| #51-#56, #58 | Issue #49 rating ≥ 7 follow-up 消化（7 PR） | 2026-04-28 | +1679 |
+- TermsConsentModal は `useStore(state => state.needsTermsAccept)` で表示制御
+- `acceptTerms()` 失敗時の TERMS_VERSION_MISMATCH (409) は modal 内で `users/init` 再 fetch → currentTermsVersion 更新 → 自動再表示する flow を追加 (現状は throw のみ)
+- footer の link 先パス確定 (vite-plugin-static-copy or GitHub repo link) → tasks.md AC-7 に反映
+- dev bypass `?skip-terms=1` は `import.meta.env.PROD === false` の二重ガード必須
+- `.env.example` / Vite 設定確認 (link 先決定後に publicDir / rollupOptions に追加要否判断)
 
-### 主要 API 拡張（今セッション）
+### 既存 production users docs への migration 計画
 
-- `db/dexie.ts`: `setBlockedHandler(BlockedHandler \| null)` + `BlockedEventPayload` (`Readonly<{ oldVersion, newVersion }>`) + bootstrap-gap pending queue（fireBlocked 内に handler 例外 catch、translation wrapper にも別途 catch）
-- `hooks/useLocalSync.ts`: `wireBlockedHandler(): () => void` 純粋関数 + `DB_BLOCKED_MESSAGE` export
-- `store/syncSlice.ts`: `_savingPromise: Promise<void> \| null` + `flushSaveBlocking(timeoutMs?: number)` 新 API + `SAVE_RETRY_DELAY_MS` / `FLUSH_SAVE_BLOCKING_DEFAULT_TIMEOUT_MS` 定数 export
-- `utils/backupSchema.ts`: `BackupPreflightError` 新エラー型（`BackupValidationError` と分離）
-- `store/backupSlice.ts`: `prepareImport` を `flushSaveBlocking` 経由 + retry/abort + `BackupPreflightError`
+既存 prod users コレクションには `termsAcceptedAt` / `termsVersion` フィールド不在。本 PR-D-1 デプロイ後の挙動:
 
-### Stripe 後送り戦略（PM/PL 合意、進捗反映）
+- **users/init 経路**: 既存 doc を update する payload は `email + updatedAt` のみ。`termsAcceptedAt` / `termsVersion` は既存 doc に書かれない (rules の hasOnly は merge 後 4-6 keys ですべて allowlist 内のため通る)
+- **accept-terms 経路**: 初回呼出時に `termsAcceptedAt + termsVersion + updatedAt` を update で書込み、Firestore は merge 処理で 6 keys に拡張
+- **monitor 対象**: 旧 client (PR #46 / M3 PR-G 時点) が新 BE を呼んだ場合、`callUsersInit` の null 返却経路を経由する。`acceptTerms` を呼ぶ機会がないため P4 完了までは旧 client は terms 無関係のまま動作する
 
-| Phase | スコープ | Stripe 依存 | 推定工数 | 状態 |
-|---|---|---|---|---|
-| ~~P3 (M4)~~ | Export/Import 強化 + バックアップ警告 UI | なし | 4〜6h | ✅ 完了 (PR #48) |
-| ~~Issue #49 rating ≥ 7~~ | follow-up 消化（H2/H4/H5/H6/H10 系） | なし | 5h | ✅ 完了 (PR #51-#56, #58) |
-| **次**: P4 (M7-α) | 公開準備（利用規約 Tier 0/1、特商法 stub、プライバシーポリシー、観測性、エラー報告） | なし | 4〜6h | 着手待機 |
-| P5 (M6) | E2EE バックアップ | あり | 6〜10h | 後送り |
-| P6 (M5) | Stripe Subscription + Webhook + 法務 Tier 2 | 本体 | 8〜12h | 後送り |
-| P7 (M7-β) | 公開最終チェック（Tier 2 込み） | あり | 2〜3h | 後送り |
+明示的な migration スクリプトは不要 (lazy migration)。M5 (Stripe) 着手時に「Tier 2 加入時は同意済み必須」とする場合、その時点で全ユーザー再同意要求 → 自然 backfill。
 
-### 環境状況
+### 法務 stub 3 文書 (PR #60、`docs/legal/`)
 
-- `.envrc` 設定済（GH_TOKEN 自動取得 + GCP `novel-writer-dev`）
-- `cd ~/Projects/学校/yamashita/novel-writer && claude` で起動すれば direnv 経由で正しいアカウントが有効化される
-- Cloud Run URL: `https://novel-writer-ramnh3ulya-an.a.run.app`
-- 本番 Firebase project: `novel-writer-dev`
-- IndexedDB schema: v2（M4 で `backupMeta` ストア追加）
+- 全文書冒頭に `<!-- LEGAL_REVIEW_REQUIRED -->` マーカー
+- TODO カテゴリ:
+  - `<!-- TODO(P6/M5): ... -->`: Stripe 課金確定後埋め (Tier 2 規約節 / 特商法本文)
+  - `<!-- TODO(P5/M6): ... -->`: E2EE 提供開始時追記
+  - `<!-- TODO: ... -->`: 法務確認 / 連絡先確定 / GDPR 対応等
+- **本番公開前 MUST**: 全 TODO 除去 + LEGAL_REVIEW_REQUIRED マーカー除去 + 弁護士 review 完了が公開条件
 
-### 主要コマンド
+### Cloud Run deploy CI
+
+PR #63 merge 直後 CI in_progress。過去の deploy は全 success のため大きな問題は想定しないが、次セッション開始時に最終結果を確認する:
 
 ```bash
-npm run dev                # 開発サーバー起動（Express + Vite HMR, port 3000）
-npm run dev:emu            # dev + Firebase Emulator 並列（auth:9099 / firestore:8080）
-npm run lint               # 型チェック（tsc --noEmit）
-npm run test               # vitest run（259 ケース、admin SDK は vi.mock、tests/integration 除外）
-npm run test:integration   # firebase emulators:exec で integration test
-npm run test:firestore-rules  # firebase emulators:exec で rules unit test（20 ケース）
-npm run build              # FE ビルド（dist/）+ サーバーコンパイル（dist-server/）
-
-# H2 マニュアル検証（マージ後ユーザー側で実施推奨）
-# 1. dev server 起動、editor で編集中（saveStatus='saving' を DevTools で確認）
-# 2. Settings → 全データバックアップ → Import 試行
-# 3. 期待: in-flight save 完了まで待機 → 完了後 import flow
-# 4. IDB を強制 locked（DevTools → Application → IndexedDB → Delete database 等）にして
-#    Import 試行 → toast「未保存の編集が...」+ 中止確認
-
-# H10 マニュアル検証
-# 1. 2 タブで dev server を開く
-# 2. 片方を v1 のままに保つ（DevTools → Application → IndexedDB → version 確認）
-# 3. もう一方で schema upgrade をトリガー
-# 4. 期待: blocked toast「他のタブで古いバージョン...」表示
+gh run list --workflow="Deploy to Cloud Run" --branch main --limit 3
 ```
-
-## Issue Net 変化
-
-GitHub Issue 数の変化（PR の close は別軸）:
-
-- Close 数（Issue）: 0 件（Issue #49 は umbrella で open 維持）
-- 起票数（Issue）: 0 件（rating ≤ 6 follow-up は #49 にコメント追記のみ、別 Issue 化せず）
-- **Net（Issue）: 0 件**
-
-PR の動き（参考）:
-
-- Merge 数（PR）: 7 件（#51-#56, #58）
-- Close 数（PR、設計やり直し）: 1 件（#57、root-cause 誤認のため #58 で再設計）
-
-進捗の質: **Issue #49 内の rating ≥ 7 項目（H2/H4/H5/H6/H10 系）すべて消化** + ADR-0001「端末紛失 = 小説喪失」リスクへの構造的対策（H2 silent edit-loss path の真の閉鎖）が最大の質的進捗。Issue 数の Net 変化はゼロだが、`memory/feedback_issue_postpone_pattern.md` に従い umbrella issue を open 維持して rating ≤ 6 follow-up の monitor 対象とする運用判断は妥当。次セッション以降で follow-up が rating ≥ 7 へ昇格 or 本番障害再現したら個別 Issue 化する。
 
 ## ドキュメント整合性
 
 | 項目 | 状態 | 備考 |
 |---|---|---|
-| `docs/adr/0001-local-first-architecture.md` | ✅ M4 振り返り反映済（前セッションで完了） | 変更なし |
-| `CLAUDE.md` Architecture | ✅ M4 機能反映済（前セッションで完了） | 今セッションで `flushSaveBlocking` / `BackupPreflightError` / `setBlockedHandler` API 追加分の記述なし → P4 着手時に併せて追記推奨 |
-| `CLAUDE.md` Zustand スライス表 | ✅ backupSlice 行追加済 | `syncSlice._savingPromise` / `flushSaveBlocking` の追記は P4 で OK |
-| `CLAUDE.md` 型定義 | ✅ M4 主要型反映済 | `BackupPreflightError` の追記は P4 で OK |
+| `docs/adr/0001-local-first-architecture.md` | ✅ M7-α/β 細分化 + Tier 1 仕様修正済 (PR #60) | M7-α PR-D-2 完了で M7-α 行を ✅ にする (次セッション) |
+| `CLAUDE.md` Architecture | ⏭️ M7-α 関連の API/型 (logger / accept-terms / authSlice 新 fields) 未反映 | PR-D-2 完了時に併せて追記推奨 (PR-D-2 内に含める) |
+| `CLAUDE.md` Zustand スライス表 | ⏭️ authSlice の terms* fields 未追記 | PR-D-2 で対応 |
+| `docs/spec/m7/tasks.md` | ✅ PR-A/B/C/D-1 を `[x]` に更新、D-2 持越項目明示 | PR-D-2 完了時に DoD 全項目を `[x]` に |
+| `docs/spec/m7/acceptance-criteria.md` | ✅ AC-1〜AC-8 確定、AC-3 dev/prod 出力 + AC-6 BE 検証 詳細記載 | UI 部分 (AC-5/7) は PR-D-2 で manual 確認 |
 
-**メモ**: `CLAUDE.md` への新 API 反映は次セッション (P4 着手時) で集約する方が PR 数を減らせるため、本 handoff PR では LATEST.md のみ更新。
+## Issue Net 変化
+
+GitHub Issue 数の変化:
+
+- Close 数（Issue）: 0 件
+- 起票数（Issue）: 0 件 (rating ≥ 7 + confidence ≥ 80 を満たす実害発見なし)
+- **Net（Issue）: 0 件**
+
+PR の動き (参考):
+
+- Merge 数（PR）: 4 件 (#60/#61/#62/#63)
+- Close 数（PR、設計やり直し）: 0 件
+
+進捗の質: **P4 (M7-α) 80% 完了 (4/5 PR merge 済)**。法務 stub + structured logging + FE error boundary + BE accept-terms スキーマと、後続実装 (PR-D-2 UI / 法務確認) のための基盤を全て整備済み。Issue Net=0 だが、各 PR で 2 並列レビュー (general-purpose + evaluator) を実施 + Critical/High を 2 ループ目で反映してマージしており、M3/M4 と同水準のレビューフロー継続。
 
 ## 残留プロセス
 
