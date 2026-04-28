@@ -65,6 +65,25 @@ describe('AppErrorBoundary.componentDidCatch (instance method)', () => {
         ).not.toThrow();
         consoleErrorSpy.mockRestore();
     });
+
+    it('does NOT re-throw when onError handler itself throws (rules/error-handling.md §1)', () => {
+        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const instance = new AppErrorBoundary({
+            children: null,
+            onError: () => {
+                throw new Error('handler-internal');
+            },
+        });
+        expect(() =>
+            instance.componentDidCatch(new Error('caught'), { componentStack: 'stack' }),
+        ).not.toThrow();
+        // handler 失敗自体も log に残る (forensic)
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+            '[AppErrorBoundary] onError handler threw',
+            expect.anything(),
+        );
+        consoleErrorSpy.mockRestore();
+    });
 });
 
 describe('AppErrorBoundary.handleReload', () => {

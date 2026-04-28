@@ -6,6 +6,8 @@ import { useStore } from '../store/index';
 export const GLOBAL_ERROR_MESSAGE = '予期しないエラーが発生しました。問題が続く場合はリロードしてください。';
 export const UNHANDLED_REJECTION_MESSAGE = '予期しないエラーが発生しました（非同期処理）。問題が続く場合はリロードしてください。';
 
+export type ShowToastFn = (message: string, type?: 'info' | 'success' | 'error' | 'warning') => void;
+
 // 純粋関数として export して単体テスト容易にする。`window` を持つ環境でのみ動作。
 // React Strict Mode の double-effect でも cleanup が確実に走るよう、registration / cleanup を
 // 1 関数で完結させる (副作用クロージャ版)。
@@ -28,29 +30,42 @@ export function registerGlobalErrorHandlers(opts: {
     };
 }
 
-export function buildHandlers(): {
+// rules/error-handling.md §1: ハンドラ自体のエラー耐性。`showToast` 呼出を独立 try/catch で
+// 囲み、toast 失敗が再び `error` / `unhandledrejection` を発火して無限ループになる経路を遮断する。
+// `showToast` を引数注入にすることで、テスト容易性 + 暗黙のグローバル依存解消。
+export function buildHandlers(showToast: ShowToastFn): {
     onError: (event: ErrorEvent) => void;
     onUnhandledRejection: (event: PromiseRejectionEvent) => void;
 } {
-    const showToast = useStore.getState().showToast;
+    const safeToast = (message: string): void => {
+        try {
+            showToast(message, 'error');
+        } catch (toastErr) {
+            // toast 自体の失敗はログのみ (再帰的 unhandledrejection 防止)。
+            // eslint-disable-next-line no-console
+            console.error('[useGlobalErrorHandlers] showToast failed', toastErr);
+        }
+    };
     const onError = (event: ErrorEvent): void => {
         // ResizeObserver loop 等の harmless error はノイズになる。最低限の出力に留めて
         // toast を出す。本格的な filter は将来の Sentry 連携時に整備。
         // eslint-disable-next-line no-console
         console.error('[useGlobalErrorHandlers] window error', event.error ?? event.message);
-        showToast(GLOBAL_ERROR_MESSAGE, 'error');
+        safeToast(GLOBAL_ERROR_MESSAGE);
     };
     const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
         // eslint-disable-next-line no-console
         console.error('[useGlobalErrorHandlers] unhandled rejection', event.reason);
-        showToast(UNHANDLED_REJECTION_MESSAGE, 'error');
+        safeToast(UNHANDLED_REJECTION_MESSAGE);
     };
     return { onError, onUnhandledRejection };
 }
 
 export function useGlobalErrorHandlers(): void {
     useEffect(() => {
-        const handlers = buildHandlers();
+        // store snapshot ではなく effect run 時点の参照を取得 (HMR / store reset への追従余地)。
+        const showToast = useStore.getState().showToast;
+        const handlers = buildHandlers(showToast);
         const unregister = registerGlobalErrorHandlers(handlers);
         return unregister;
     }, []);

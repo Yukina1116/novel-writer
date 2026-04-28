@@ -19,14 +19,9 @@ interface AppErrorBoundaryState {
     error: Error | null;
 }
 
-const isDev = (): boolean => {
-    // Vite の dev/prod 判定。`import.meta.env.PROD` が production build で `true`。
-    try {
-        return !import.meta.env.PROD;
-    } catch {
-        return false;
-    }
-};
+// Vite の dev/prod 判定。`import.meta.env.PROD` はバンドル時に静的置換される定数のため
+// runtime で throw しない (try/catch で逆方向に倒れる安全網は不要)。
+const IS_DEV = !import.meta.env.PROD;
 
 export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
     constructor(props: AppErrorBoundaryProps) {
@@ -48,7 +43,14 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
             stack: error.stack,
             componentStack: info.componentStack,
         });
-        this.props.onError?.(error, { componentStack: info.componentStack });
+        // rules/error-handling.md §1: onError ハンドラ自体の失敗が componentDidCatch を再 throw
+        // させない (React は ErrorBoundary を fail-safe な空 render に倒す可能性)。
+        try {
+            this.props.onError?.(error, { componentStack: info.componentStack });
+        } catch (handlerErr) {
+            // eslint-disable-next-line no-console
+            console.error('[AppErrorBoundary] onError handler threw', handlerErr);
+        }
     }
 
     handleReload(): void {
@@ -66,7 +68,7 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
         if (this.state.error === null) {
             return this.props.children;
         }
-        const dev = isDev();
+        const dev = IS_DEV;
         return (
             <div
                 role="alert"

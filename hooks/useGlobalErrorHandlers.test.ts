@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     GLOBAL_ERROR_MESSAGE,
     UNHANDLED_REJECTION_MESSAGE,
+    buildHandlers,
     registerGlobalErrorHandlers,
 } from './useGlobalErrorHandlers';
 
@@ -86,6 +87,71 @@ describe('registerGlobalErrorHandlers', () => {
                 (globalThis as { window?: Window }).window = originalWindow;
             }
         }
+    });
+});
+
+describe('buildHandlers (引数注入版)', () => {
+    let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        consoleErrorSpy.mockRestore();
+    });
+
+    it('onError calls showToast with GLOBAL_ERROR_MESSAGE and error type', () => {
+        const showToast = vi.fn();
+        const { onError } = buildHandlers(showToast);
+        const event = { error: new Error('synthetic'), message: 'synthetic' } as unknown as ErrorEvent;
+        onError(event);
+        expect(showToast).toHaveBeenCalledWith(GLOBAL_ERROR_MESSAGE, 'error');
+        expect(consoleErrorSpy).toHaveBeenCalled();
+    });
+
+    it('onUnhandledRejection calls showToast with UNHANDLED_REJECTION_MESSAGE', () => {
+        const showToast = vi.fn();
+        const { onUnhandledRejection } = buildHandlers(showToast);
+        const event = { reason: 'reject-reason' } as unknown as PromiseRejectionEvent;
+        onUnhandledRejection(event);
+        expect(showToast).toHaveBeenCalledWith(UNHANDLED_REJECTION_MESSAGE, 'error');
+        expect(consoleErrorSpy).toHaveBeenCalled();
+    });
+
+    it('onError does NOT throw when showToast itself throws (rules/error-handling.md §1)', () => {
+        const showToast = vi.fn(() => {
+            throw new Error('toast-internal');
+        });
+        const { onError } = buildHandlers(showToast);
+        const event = { error: new Error('x'), message: 'x' } as unknown as ErrorEvent;
+        expect(() => onError(event)).not.toThrow();
+        // toast 失敗自体も log に残る (forensic)
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+            '[useGlobalErrorHandlers] showToast failed',
+            expect.anything(),
+        );
+    });
+
+    it('onUnhandledRejection does NOT throw when showToast throws', () => {
+        const showToast = vi.fn(() => {
+            throw new Error('toast-internal');
+        });
+        const { onUnhandledRejection } = buildHandlers(showToast);
+        const event = { reason: 'r' } as unknown as PromiseRejectionEvent;
+        expect(() => onUnhandledRejection(event)).not.toThrow();
+    });
+
+    it('uses event.message when event.error is undefined', () => {
+        const showToast = vi.fn();
+        const { onError } = buildHandlers(showToast);
+        const event = { error: undefined, message: 'fallback' } as unknown as ErrorEvent;
+        onError(event);
+        expect(showToast).toHaveBeenCalledWith(GLOBAL_ERROR_MESSAGE, 'error');
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+            '[useGlobalErrorHandlers] window error',
+            'fallback',
+        );
     });
 });
 
