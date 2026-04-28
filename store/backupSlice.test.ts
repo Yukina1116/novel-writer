@@ -212,6 +212,207 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
         // importPlan retained so user can retry / inspect
         expect(fake.state.importPlan).not.toBeNull();
     });
+
+    // H4: full prepareImport → setImportResolution → executeImport flow.
+    // Existing tests cover the default-overwrite path; this block exercises
+    // resolution mutation (skip / duplicate / mixed) so the Map seeded from
+    // `plan.conflicts` reaches `resolveImportProjects` intact.
+    describe('H4 setImportResolution → executeImport flow', () => {
+        it('skip resolution drops conflicting incoming, keeps non-conflicting', async () => {
+            readSnapshot.mockResolvedValue({
+                projects: [makeProject({ id: 'p-existing', name: '既存' })],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+            writeImport.mockResolvedValue(undefined);
+            const fake = createFakeStore();
+            const raw = JSON.stringify({
+                schemaVersion: 1,
+                exportedAt: '2026-04-28T00:00:00.000Z',
+                appVersion: '0.0.0',
+                projects: [
+                    makeProject({ id: 'p-existing', name: 'インポート' }),
+                    makeProject({ id: 'p-new', name: '新規' }),
+                ],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+
+            await fake.state.prepareImport(raw);
+            fake.state.setImportResolution('p-existing', 'skip');
+            const result = await fake.state.executeImport();
+
+            expect(writeImport).toHaveBeenCalledOnce();
+            const payload = writeImport.mock.calls[0][0];
+            expect(payload.toUpsert.map((p: Project) => p.id)).toEqual(['p-new']);
+            expect(payload.toCreate).toEqual([]);
+            expect(result).toEqual({ upserted: 1, created: 0, skipped: 1 });
+        });
+
+        it('duplicate resolution issues fresh id + (インポート) suffix into toCreate', async () => {
+            readSnapshot.mockResolvedValue({
+                projects: [makeProject({ id: 'p-existing', name: '既存' })],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+            writeImport.mockResolvedValue(undefined);
+            const fake = createFakeStore();
+            const raw = JSON.stringify({
+                schemaVersion: 1,
+                exportedAt: '2026-04-28T00:00:00.000Z',
+                appVersion: '0.0.0',
+                projects: [makeProject({ id: 'p-existing', name: 'インポート版' })],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+
+            await fake.state.prepareImport(raw);
+            fake.state.setImportResolution('p-existing', 'duplicate');
+            const result = await fake.state.executeImport();
+
+            const payload = writeImport.mock.calls[0][0];
+            expect(payload.toUpsert).toEqual([]);
+            expect(payload.toCreate).toHaveLength(1);
+            expect(payload.toCreate[0].id).not.toBe('p-existing'); // freshly minted UUID
+            expect(payload.toCreate[0].name).toBe('インポート版 (インポート)');
+            expect(result).toEqual({ upserted: 0, created: 1, skipped: 0 });
+        });
+
+        it('mixed resolutions: overwrite + skip + duplicate produce a single consolidated writeImport', async () => {
+            readSnapshot.mockResolvedValue({
+                projects: [
+                    makeProject({ id: 'p-a', name: 'A既存' }),
+                    makeProject({ id: 'p-b', name: 'B既存' }),
+                    makeProject({ id: 'p-c', name: 'C既存' }),
+                ],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+            writeImport.mockResolvedValue(undefined);
+            const fake = createFakeStore();
+            const raw = JSON.stringify({
+                schemaVersion: 1,
+                exportedAt: '2026-04-28T00:00:00.000Z',
+                appVersion: '0.0.0',
+                projects: [
+                    makeProject({ id: 'p-a', name: 'A入力' }),
+                    makeProject({ id: 'p-b', name: 'B入力' }),
+                    makeProject({ id: 'p-c', name: 'C入力' }),
+                    makeProject({ id: 'p-d', name: 'D入力（新規）' }),
+                ],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+
+            await fake.state.prepareImport(raw);
+            fake.state.setImportResolution('p-a', 'overwrite');
+            fake.state.setImportResolution('p-b', 'skip');
+            fake.state.setImportResolution('p-c', 'duplicate');
+            const result = await fake.state.executeImport();
+
+            expect(writeImport).toHaveBeenCalledOnce();
+            const payload = writeImport.mock.calls[0][0];
+            // p-a (overwrite) + p-d (new) → toUpsert
+            expect(payload.toUpsert.map((p: Project) => p.id).sort()).toEqual(['p-a', 'p-d']);
+            // p-c (duplicate) → toCreate with fresh id
+            expect(payload.toCreate).toHaveLength(1);
+            expect(payload.toCreate[0].id).not.toBe('p-c');
+            // p-b (skip) → absent everywhere
+            const allOutgoingIds = [...payload.toUpsert, ...payload.toCreate].map((p: Project) => p.id);
+            expect(allOutgoingIds).not.toContain('p-b');
+            expect(result).toEqual({ upserted: 2, created: 1, skipped: 1 });
+        });
+
+        it('setImportResolution is a no-op when there is no active plan (defensive)', () => {
+            const fake = createFakeStore();
+            // Should not throw, should not flip importPlan from null.
+            fake.state.setImportResolution('does-not-matter', 'skip');
+            expect(fake.state.importPlan).toBeNull();
+        });
+    });
+
+    // H5: TOCTOU between prepareImport and executeImport. The slice re-reads
+    // existingIds at execute time so concurrent deletes/inserts don't lock the
+    // user into a stale conflict picture. Switch readSnapshot via
+    // `mockResolvedValueOnce` to simulate the two reads returning different
+    // states, and assert the second read drives the actual write.
+    describe('H5 TOCTOU re-read between prepareImport and executeImport', () => {
+        it('delete-after-prepare: skip resolution is overridden when target no longer exists at execute', async () => {
+            const fake = createFakeStore();
+            writeImport.mockResolvedValue(undefined);
+
+            // 1st read (prepareImport): p-existing is on disk → conflict detected.
+            readSnapshot.mockResolvedValueOnce({
+                projects: [makeProject({ id: 'p-existing', name: '既存' })],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+            // 2nd read (executeImport): p-existing was deleted in another tab → no longer conflicts.
+            readSnapshot.mockResolvedValueOnce({
+                projects: [],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+
+            const raw = JSON.stringify({
+                schemaVersion: 1,
+                exportedAt: '2026-04-28T00:00:00.000Z',
+                appVersion: '0.0.0',
+                projects: [makeProject({ id: 'p-existing', name: 'インポート' })],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+
+            await fake.state.prepareImport(raw);
+            // User picks "skip" because they thought it would clash. By execute
+            // time the row is gone, so resolveImportProjects sees no conflict
+            // and treats the incoming project as a fresh insert (toUpsert).
+            fake.state.setImportResolution('p-existing', 'skip');
+            const result = await fake.state.executeImport();
+
+            expect(readSnapshot).toHaveBeenCalledTimes(2);
+            const payload = writeImport.mock.calls[0][0];
+            expect(payload.toUpsert.map((p: Project) => p.id)).toEqual(['p-existing']);
+            expect(result.upserted).toBe(1);
+        });
+
+        it('insert-after-prepare: new conflict without resolution surfaces a BackupValidationError instead of silently overwriting', async () => {
+            const fake = createFakeStore();
+            writeImport.mockResolvedValue(undefined);
+
+            // 1st read: empty disk → no conflicts seeded.
+            readSnapshot.mockResolvedValueOnce({
+                projects: [],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+            // 2nd read: another tab inserted p-1 between prepare and execute.
+            readSnapshot.mockResolvedValueOnce({
+                projects: [makeProject({ id: 'p-1', name: '他タブで追加' })],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+
+            const raw = JSON.stringify({
+                schemaVersion: 1,
+                exportedAt: '2026-04-28T00:00:00.000Z',
+                appVersion: '0.0.0',
+                projects: [makeProject({ id: 'p-1', name: 'インポート' })],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+
+            await fake.state.prepareImport(raw);
+            // No setImportResolution call — plan.conflicts was empty. The TOCTOU
+            // re-read discovers a new collision, but resolutions Map has nothing
+            // to say, so resolveImportProjects refuses to silently overwrite and
+            // throws. Critical invariant: writeImport must NOT be called.
+            await expect(fake.state.executeImport()).rejects.toThrow(/衝突解決方針/);
+            expect(writeImport).not.toHaveBeenCalled();
+            // importPlan retained so the UI can re-prepare or surface the race.
+            expect(fake.state.importPlan).not.toBeNull();
+        });
+    });
 });
 
 describe('isBackupStale (AC-7)', () => {
