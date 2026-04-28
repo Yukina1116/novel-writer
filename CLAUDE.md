@@ -58,7 +58,7 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 - **usage クォータ**: `server/services/usageService.ts` (reserve/commit/cancel + transaction 予約 + requestId 冪等)、`server/middleware/withUsageQuota.ts` (高階関数ラップ)、`server/services/usageConfig.ts` (Tier 1=月 100 円 + route 別 sen)。詳細は `docs/spec/m3/usage-cost-config.md`
 - **エラー分類**: `server/middleware/errorHandler.ts` の `handleApiError(error, fn, context: 'ai' | 'firestore' | 'usage')` で文言と分類戦略を context 別に切替（M3 PR-F で table-driven 化、context 必須）
 - **フロントエンドAPI**: ルート直下の `*Api.ts` はfetchラッパー（`apiClient.ts`経由）。`apiClient.ts` が Bearer 自動付与 + `requestId` 自動生成 + 401/429/503/409 を `AuthGateErrorCode` 列挙でユーザー向け文言に分類（M3 PR-G）。Project の永続化 API（旧 `projectApi.ts`）は M2 PR-A で削除済み
-- **FE/BE 共有定数**: `shared/termsCodes.ts` — `TERMS_VERSION_MISMATCH_CODE = 'TERMS_VERSION_MISMATCH'` + `TermsVersionMismatchCode` 型を export（M7-α PR-D-2、`server/services/termsConfig.ts` は `shared/` から re-export）。FE/BE が直接 import することで stringly-typed リテラルの drift を排除し、同コードの双方向 pin テストで保証
+- **FE/BE 共有定数**: `shared/termsCodes.ts` — `TERMS_VERSION_MISMATCH_CODE = 'TERMS_VERSION_MISMATCH'` + `TermsVersionMismatchCode` 型を export（M7-α PR-D-2、`server/services/termsConfig.ts` は `shared/` から re-export）。FE/BE が直接 import することで stringly-typed リテラルの drift を排除し、`shared/termsCodes.test.ts` の literal-value pin テストで FE/BE 双方の参照先を保証
 - **同意 UI**: `components/modals/TermsConsentModal.tsx` — `role="alertdialog"` + ModalManager 先頭分岐 (`needsTermsAccept && !isTermsDevBypass()`) で他モーダルより優先 mount。`isTermsDevBypass()` は dev-only `?skip-terms=1` query 評価（PROD ガード + SSR-safe ガード）。M7-α PR-D-2 で導入。Footer 3 link (`legalDocs.ts` の LEGAL_DOCS) は Desktop / ProjectSelection / Mobile 全 view に配置
 
 ### 状態管理（Zustand slices pattern）
