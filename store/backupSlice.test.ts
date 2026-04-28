@@ -546,6 +546,66 @@ describe('isBackupStale (AC-7)', () => {
         expect(fake.state.isBackupStale()).toBe(true);
     });
 
+    it('returns true on empty string iso (falsy short-circuit in daysSince)', () => {
+        // H6-followup-2: empty strings have their own injection paths
+        // (IndexedDB migration default, accidental UI clear, persistence
+        // layer bug). The current implementation routes `''` through the
+        // `if (!iso) return null` branch in `daysSince` (NOT the
+        // `Number.isNaN` branch — `''` is falsy and is caught first).
+        // `daysSince` returns null, so `isBackupStale` reports stale via
+        // its `days === null` arm. This pin prevents a regression where
+        // someone tightens `if (!iso)` to `if (iso === null)` and lets
+        // `''` slip through into a NaN that then somehow flips to false.
+        const fake = createFakeStore();
+        setLoaded(fake, '');
+        expect(fake.state.isBackupStale()).toBe(true);
+    });
+
+    describe('H6-followup-1 backupMetaStatus="unknown" suppresses stale regardless of lastExportedAt', () => {
+        // `isBackupStale` early-returns false when status === 'unknown' so
+        // the banner can't claim a state we couldn't read. Existing H3
+        // only covers unknown × null; these cases lock the priority of the
+        // status check over `daysSince` for non-null timestamps too.
+        it('suppresses stale even when lastExportedAt is freshly within 30 days', () => {
+            const fake = createFakeStore();
+            fake.set({
+                lastExportedAt: isoFromNowMinus(5 * DAY_MS),
+                backupMetaStatus: 'unknown',
+            });
+            expect(fake.state.isBackupStale()).toBe(false);
+        });
+
+        it('suppresses stale even when lastExportedAt is way past STALE_BACKUP_DAYS', () => {
+            const fake = createFakeStore();
+            fake.set({
+                lastExportedAt: isoFromNowMinus((STALE_BACKUP_DAYS + 100) * DAY_MS),
+                backupMetaStatus: 'unknown',
+            });
+            expect(fake.state.isBackupStale()).toBe(false);
+        });
+
+        it('suppresses stale even when lastExportedAt is malformed (NaN path)', () => {
+            const fake = createFakeStore();
+            fake.set({
+                lastExportedAt: 'not-an-iso',
+                backupMetaStatus: 'unknown',
+            });
+            expect(fake.state.isBackupStale()).toBe(false);
+        });
+
+        it('suppresses stale even when lastExportedAt is empty string (falsy path)', () => {
+            // Cross H6-followup-2 with status priority: empty-string would
+            // normally trip the `daysSince === null → stale` arm, but the
+            // status check fires first.
+            const fake = createFakeStore();
+            fake.set({
+                lastExportedAt: '',
+                backupMetaStatus: 'unknown',
+            });
+            expect(fake.state.isBackupStale()).toBe(false);
+        });
+    });
+
     // H6: Boundary tests — `isBackupStale` flips on `days > STALE_BACKUP_DAYS`,
     // where `days = floor((now - exportedAt) / ms_per_day)`. Verify both sides
     // of the floor (just-under / just-over) and the exact-threshold mark to
