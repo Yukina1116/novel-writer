@@ -17,6 +17,7 @@ import { ProjectSelectionScreen } from './components/ProjectSelectionScreen';
 import { Toast } from './components/Toast';
 import { TutorialModeSelectionModal } from './components/TutorialModeSelectionModal';
 import { BackupWarningBanner } from './components/BackupWarningBanner';
+import { Footer } from './components/Footer';
 import AppMobile from './App.mobile';
 import { useLocalSync } from './hooks/useLocalSync';
 import { useGlobalErrorHandlers } from './hooks/useGlobalErrorHandlers';
@@ -206,18 +207,21 @@ export default function App() {
 
     if (!activeProjectId || !activeProjectData) {
         return (
-            <>
+            <div className="flex flex-col min-h-screen">
                 <Toast />
                 <ModalManager displayMenuButtonRef={displayMenuButtonRef} isMobile={isMobile} />
                 <BackupWarningBanner />
-                <ProjectSelectionScreen
-                    projects={Object.values(allProjectsData)}
-                    onCreateProject={createProject}
-                    onDeleteProject={deleteProject}
-                    onImportProject={importProject}
-                    onSelectProject={setActiveProjectId}
-                />
-            </>
+                <div className="flex-1">
+                    <ProjectSelectionScreen
+                        projects={Object.values(allProjectsData)}
+                        onCreateProject={createProject}
+                        onDeleteProject={deleteProject}
+                        onImportProject={importProject}
+                        onSelectProject={setActiveProjectId}
+                    />
+                </div>
+                <Footer />
+            </div>
         );
     }
 
@@ -249,6 +253,7 @@ export default function App() {
             <BackupWarningBanner />
             <Header displayMenuButtonRef={displayMenuButtonRef} />
             <NovelEditor />
+            <Footer />
         </div>
     );
 

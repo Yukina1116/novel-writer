@@ -6,6 +6,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { Tutorial } from './components/Tutorial';
 import { TutorialModeSelectionModal } from './components/TutorialModeSelectionModal';
 import { BackupWarningBanner } from './components/BackupWarningBanner';
+import { Footer } from './components/Footer';
 import { useStore } from './store/index';
 import { LeftPanel } from './components/LeftPanel';
 import { RightPanel } from './components/RightPanel';
@@ -185,6 +186,8 @@ const AppMobile: React.FC = () => {
             <div className="flex-1 overflow-hidden flex flex-col relative z-0 min-h-0">
                 <NovelEditor />
             </div>
+
+            <Footer />
 
             {/* オーバーレイパネル: 左 (設定・アウトライン) */}
             {isLeftSidebarOpen && (

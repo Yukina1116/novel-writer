@@ -5,7 +5,7 @@ import { verifyIdToken, type AuthedRequest } from '../middleware/verifyIdToken';
 import { handleApiError } from '../middleware/errorHandler';
 import { sanitizeForUpdate } from '../utils/sanitize';
 import { logger, serializeError } from '../utils/logger';
-import { TERMS_VERSION } from '../services/termsConfig';
+import { TERMS_VERSION, TERMS_VERSION_MISMATCH_CODE } from '../services/termsConfig';
 
 const router = Router();
 
@@ -142,7 +142,7 @@ router.post('/accept-terms', verifyIdToken, async (req, res) => {
             res.status(409).json({
                 success: false,
                 error: '規約バージョンが更新されています。最新版を確認のうえ再度同意してください。',
-                code: 'TERMS_VERSION_MISMATCH',
+                code: TERMS_VERSION_MISMATCH_CODE,
                 currentTermsVersion: TERMS_VERSION,
             });
             return;
