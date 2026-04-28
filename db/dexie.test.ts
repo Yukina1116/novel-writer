@@ -133,6 +133,55 @@ describe('db/dexie', () => {
             expect(handler).toHaveBeenCalledWith({ oldVersion: 1, newVersion: 2 });
         });
 
+        it('payload preserves newVersion=null (delete request) as-is', () => {
+            // W3C IndexedDB §3.6: `newVersion` is null when the version
+            // change is a delete request. Pin the null path so a future
+            // refactor that coerces "0 or undefined" doesn't silently
+            // mistype delete events as upgrades.
+            dexieModule.getDb();
+            const handler = vi.fn();
+            dexieModule.setBlockedHandler(handler);
+            const fire = mockInstances[0].blockedListeners[0];
+
+            fire(fakeEvent(2, null));
+
+            expect(handler).toHaveBeenCalledWith({ oldVersion: 2, newVersion: null });
+        });
+
+        it('payload preserves oldVersion=0 (uninitialised remote tab) as a legitimate value', () => {
+            // `oldVersion === 0` means the other connection had no schema
+            // yet — distinct from "missing". The handler must see 0 (not
+            // undefined / NaN) so consumers can format the toast correctly.
+            dexieModule.getDb();
+            const handler = vi.fn();
+            dexieModule.setBlockedHandler(handler);
+            const fire = mockInstances[0].blockedListeners[0];
+
+            fire(fakeEvent(0, 1));
+
+            expect(handler).toHaveBeenCalledWith({ oldVersion: 0, newVersion: 1 });
+        });
+
+        it('payload-construction wrapper catches malformed events instead of bubbling into the IDB pipeline', () => {
+            // If a polyfill (fake-indexeddb / older browsers) hands the
+            // listener a null/undefined event, reading `.oldVersion` would
+            // throw a TypeError. The translation try/catch must keep the
+            // failure local — Dexie's upgrade pipeline must not see it.
+            dexieModule.getDb();
+            const handler = vi.fn();
+            dexieModule.setBlockedHandler(handler);
+            const fire = mockInstances[0].blockedListeners[0];
+
+            const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            expect(() => fire(null as any)).not.toThrow();
+            expect(errSpy).toHaveBeenCalled();
+            // Handler must NOT have been called with garbage payload — the
+            // failure aborts before fireBlocked sees anything.
+            expect(handler).not.toHaveBeenCalled();
+            errSpy.mockRestore();
+        });
+
         it('setBlockedHandler(null) detaches the handler (idempotent re-fire safe)', () => {
             dexieModule.getDb();
             const handler = vi.fn();

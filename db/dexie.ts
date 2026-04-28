@@ -50,17 +50,30 @@ export const BACKUP_META_KEY = 'current';
 //
 // Bootstrap-gap policy: if `blocked` fires before the consumer has had a
 // chance to register a handler, queue the latest payload so the next
-// setBlockedHandler call can flush it. Dexie may also fire `blocked`
-// multiple times — we collapse repeated fires into one user-facing
+// setBlockedHandler call can flush it. We defensively assume `blocked` may
+// fire multiple times (Dexie can re-dispatch while another tab keeps the
+// older schema open) and collapse repeated fires into one user-facing
 // notification per setBlockedHandler installation to avoid spam.
 
-// Payload mirrors `IDBVersionChangeEvent` fields the consumer is most likely
-// to surface (e.g. for richer toasts). We don't pass the raw event so that
-// the handler signature is stable across Dexie/IDB API drift.
-export interface BlockedEventPayload {
+/**
+ * Payload mirrors `IDBVersionChangeEvent` fields the consumer is most likely
+ * to surface (e.g. for richer toasts). We don't pass the raw event so the
+ * handler signature stays stable across Dexie/IDB API drift.
+ *
+ * Field semantics (W3C IndexedDB §3.6):
+ * - `oldVersion`: the schema version the older connection is pinning. `0`
+ *   means the DB hadn't been initialised on the other side yet (legitimate
+ *   value, not "missing").
+ * - `newVersion`: the version this tab is trying to upgrade to, or `null`
+ *   when the request is a delete.
+ *
+ * Marked `Readonly` so a consumer mutating the object can't poison the
+ * pending-fire queue (which holds the same reference until flush).
+ */
+export type BlockedEventPayload = Readonly<{
     oldVersion: number;
     newVersion: number | null;
-}
+}>;
 
 export type BlockedHandler = (payload: BlockedEventPayload) => void;
 
@@ -115,10 +128,18 @@ const createDb = (): AppDexieDb => {
         backupMeta: 'key',
     });
     instance.on('blocked', (event: IDBVersionChangeEvent) => {
-        fireBlocked({
-            oldVersion: event.oldVersion,
-            newVersion: event.newVersion,
-        });
+        // Wrap the translation in its own try/catch so a missing/malformed
+        // event object can't bubble a TypeError into Dexie's IDB upgrade
+        // pipeline. fireBlocked itself catches handler exceptions, but
+        // payload construction happens *before* fireBlocked is reached.
+        try {
+            fireBlocked({
+                oldVersion: event.oldVersion,
+                newVersion: event.newVersion,
+            });
+        } catch (e) {
+            console.error('Dexie blocked-event wrapper threw:', e);
+        }
     });
     return instance;
 };
