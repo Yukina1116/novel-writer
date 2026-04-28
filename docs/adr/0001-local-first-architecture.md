@@ -47,8 +47,8 @@
 - **認証**: Firebase Auth（Google プロバイダのみ、Anonymous Auth は不採用）
 - **3 層プラン**:
   - Tier 0: 未ログイン（AI 不可、ローカル執筆のみ）
-  - Tier 1: Google ログイン（無料、AI 月 100 円コスト上限、テキストのみ、Imagen 不可。詳細は `docs/spec/m3/usage-cost-config.md` 参照）
-  - Tier 2: Stripe 有料（AI 増枠、Imagen 可、E2EE バックアップ opt-in 可）
+  - Tier 1: Google ログイン（無料、AI 月 100 円コスト上限。Imagen は 1 回 1000 sen の高コストにより上限内で最大約 10 回までの自然制限。明示的な Imagen 拒否は実装していない。詳細は `docs/spec/m3/usage-cost-config.md` 参照）
+  - Tier 2: Stripe 有料（AI 増枠、Imagen 増枠、E2EE バックアップ opt-in 可）
 - **複数端末同期は実装しない**（Export/Import で持ち歩く）
 
 ### 意思決定の経緯
