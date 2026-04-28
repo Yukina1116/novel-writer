@@ -211,12 +211,16 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
         await expect(fake.state.executeImport()).rejects.toThrow(/quota/);
         // importPlan retained so user can retry / inspect
         expect(fake.state.importPlan).not.toBeNull();
+        // Without the finally block resetting isImporting, the slice would
+        // refuse all subsequent imports with "既にインポート処理中です。" — guard
+        // against accidental removal of `backupSlice.ts` finally cleanup.
+        expect(fake.state.isImporting).toBe(false);
     });
 
     // H4: full prepareImport → setImportResolution → executeImport flow.
     // Existing tests cover the default-overwrite path; this block exercises
-    // resolution mutation (skip / duplicate / mixed) so the Map seeded from
-    // `plan.conflicts` reaches `resolveImportProjects` intact.
+    // resolution mutation (skip / duplicate / mixed) so per-conflict resolutions
+    // propagate to `resolveImportProjects` intact.
     describe('H4 setImportResolution → executeImport flow', () => {
         it('skip resolution drops conflicting incoming, keeps non-conflicting', async () => {
             readSnapshot.mockResolvedValue({
@@ -234,7 +238,7 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
                     makeProject({ id: 'p-existing', name: 'インポート' }),
                     makeProject({ id: 'p-new', name: '新規' }),
                 ],
-                tutorialState: {},
+                tutorialState: { hasCompletedGlobalTutorial: true },
                 analysisHistory: [],
             });
 
@@ -246,6 +250,10 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
             const payload = writeImport.mock.calls[0][0];
             expect(payload.toUpsert.map((p: Project) => p.id)).toEqual(['p-new']);
             expect(payload.toCreate).toEqual([]);
+            // Non-project sidecar fields must travel atomically with the
+            // project payload (writeImport is the single transaction).
+            expect(payload.tutorialState).toEqual({ hasCompletedGlobalTutorial: true });
+            expect(payload.analysisHistory).toEqual([]);
             expect(result).toEqual({ upserted: 1, created: 0, skipped: 1 });
         });
 
@@ -273,7 +281,7 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
             const payload = writeImport.mock.calls[0][0];
             expect(payload.toUpsert).toEqual([]);
             expect(payload.toCreate).toHaveLength(1);
-            expect(payload.toCreate[0].id).not.toBe('p-existing'); // freshly minted UUID
+            expect(payload.toCreate[0].id).not.toBe('p-existing');
             expect(payload.toCreate[0].name).toBe('インポート版 (インポート)');
             expect(result).toEqual({ upserted: 0, created: 1, skipped: 0 });
         });
@@ -290,6 +298,13 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
             });
             writeImport.mockResolvedValue(undefined);
             const fake = createFakeStore();
+            const minimalAnalysis = {
+                characters: {},
+                worldContext: {},
+                worldTerms: {},
+                dialogues: [],
+                notes: [],
+            };
             const raw = JSON.stringify({
                 schemaVersion: 1,
                 exportedAt: '2026-04-28T00:00:00.000Z',
@@ -301,7 +316,7 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
                     makeProject({ id: 'p-d', name: 'D入力（新規）' }),
                 ],
                 tutorialState: {},
-                analysisHistory: [],
+                analysisHistory: [minimalAnalysis],
             });
 
             await fake.state.prepareImport(raw);
@@ -312,22 +327,50 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
 
             expect(writeImport).toHaveBeenCalledOnce();
             const payload = writeImport.mock.calls[0][0];
-            // p-a (overwrite) + p-d (new) → toUpsert
             expect(payload.toUpsert.map((p: Project) => p.id).sort()).toEqual(['p-a', 'p-d']);
-            // p-c (duplicate) → toCreate with fresh id
             expect(payload.toCreate).toHaveLength(1);
             expect(payload.toCreate[0].id).not.toBe('p-c');
-            // p-b (skip) → absent everywhere
             const allOutgoingIds = [...payload.toUpsert, ...payload.toCreate].map((p: Project) => p.id);
             expect(allOutgoingIds).not.toContain('p-b');
+            // analysisHistory must travel through the same transaction so a
+            // future split (projects vs sidecars) doesn't silently drop it.
+            expect(payload.analysisHistory).toHaveLength(1);
             expect(result).toEqual({ upserted: 2, created: 1, skipped: 1 });
         });
 
         it('setImportResolution is a no-op when there is no active plan (defensive)', () => {
             const fake = createFakeStore();
-            // Should not throw, should not flip importPlan from null.
             fake.state.setImportResolution('does-not-matter', 'skip');
             expect(fake.state.importPlan).toBeNull();
+        });
+
+        it('subsequent setImportResolution overwrites the prior choice (last-write-wins)', async () => {
+            readSnapshot.mockResolvedValue({
+                projects: [makeProject({ id: 'p-existing', name: '既存' })],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+            writeImport.mockResolvedValue(undefined);
+            const fake = createFakeStore();
+            const raw = JSON.stringify({
+                schemaVersion: 1,
+                exportedAt: '2026-04-28T00:00:00.000Z',
+                appVersion: '0.0.0',
+                projects: [makeProject({ id: 'p-existing', name: 'インポート' })],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+
+            await fake.state.prepareImport(raw);
+            // User toggles in the modal: skip → overwrite. The last call wins;
+            // the conflict's resolution is mutated in place, not appended.
+            fake.state.setImportResolution('p-existing', 'skip');
+            fake.state.setImportResolution('p-existing', 'overwrite');
+            const result = await fake.state.executeImport();
+
+            const payload = writeImport.mock.calls[0][0];
+            expect(payload.toUpsert.map((p: Project) => p.id)).toEqual(['p-existing']);
+            expect(result).toEqual({ upserted: 1, created: 0, skipped: 0 });
         });
     });
 
@@ -365,8 +408,8 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
 
             await fake.state.prepareImport(raw);
             // User picks "skip" because they thought it would clash. By execute
-            // time the row is gone, so resolveImportProjects sees no conflict
-            // and treats the incoming project as a fresh insert (toUpsert).
+            // time the row is gone, so resolveImportProjects treats it as
+            // non-conflicting and routes it to toUpsert (no id remap).
             fake.state.setImportResolution('p-existing', 'skip');
             const result = await fake.state.executeImport();
 
@@ -410,6 +453,50 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
             await expect(fake.state.executeImport()).rejects.toThrow(/衝突解決方針/);
             expect(writeImport).not.toHaveBeenCalled();
             // importPlan retained so the UI can re-prepare or surface the race.
+            expect(fake.state.importPlan).not.toBeNull();
+            // Same isImporting-finally guard as AC-5 rejection: a future
+            // refactor that loses the finally would deadlock all imports.
+            expect(fake.state.isImporting).toBe(false);
+        });
+
+        it('double-shift: target deleted AND new id inserted between prepare and execute', async () => {
+            const fake = createFakeStore();
+            writeImport.mockResolvedValue(undefined);
+
+            // 1st read: p-old is on disk → conflict seeded for p-old.
+            readSnapshot.mockResolvedValueOnce({
+                projects: [makeProject({ id: 'p-old', name: '旧' })],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+            // 2nd read: p-old gone, p-new appeared. Both shifts at once.
+            readSnapshot.mockResolvedValueOnce({
+                projects: [makeProject({ id: 'p-new', name: '別タブが追加' })],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+
+            const raw = JSON.stringify({
+                schemaVersion: 1,
+                exportedAt: '2026-04-28T00:00:00.000Z',
+                appVersion: '0.0.0',
+                projects: [
+                    makeProject({ id: 'p-old', name: 'インポート旧' }),
+                    makeProject({ id: 'p-new', name: 'インポート新' }),
+                ],
+                tutorialState: {},
+                analysisHistory: [],
+            });
+
+            await fake.state.prepareImport(raw);
+            // User picked overwrite for p-old before the double shift. p-new
+            // wasn't in the original conflict list so it carries no resolution.
+            fake.state.setImportResolution('p-old', 'overwrite');
+            // The new collision (p-new) has no resolutions entry, so the
+            // execute-time re-read forces a BackupValidationError instead of
+            // silently overwriting whatever the other tab just wrote.
+            await expect(fake.state.executeImport()).rejects.toThrow(/衝突解決方針/);
+            expect(writeImport).not.toHaveBeenCalled();
             expect(fake.state.importPlan).not.toBeNull();
         });
     });
