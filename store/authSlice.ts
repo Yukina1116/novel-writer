@@ -6,7 +6,11 @@ import {
     type User,
 } from 'firebase/auth';
 import { auth } from '../firebaseClient';
-import { TERMS_VERSION_MISMATCH_CODE } from '../shared/termsCodes';
+import {
+    TERMS_VERSION_MISMATCH_CODE,
+    isKnownAcceptTerms409Code,
+    type KnownAcceptTerms409Code,
+} from '../shared/termsCodes';
 
 export type AuthStatus = 'initializing' | 'unauthenticated' | 'authenticated';
 
@@ -169,17 +173,49 @@ export const computeNeedsTermsAccept = (
     return termsVersion !== currentTermsVersion;
 };
 
-// accept-terms route が throw する 4xx/5xx の error 形状。BE レスポンスの `code` を
-// 保持して FE 側で 409 / TERMS_VERSION_MISMATCH を分岐できるようにする。
-export interface AcceptTermsError extends Error {
-    status: number;
-    code?: string;
+// accept-terms route 経路で観測しうる非 409 status の具体列挙:
+// - 0: fetch 自体の失敗 (network 断 / CORS 拒否)
+// - 400: bad request (FE が送る body の形が壊れた契約違反、通常起きない)
+// - 401: 認証失効 (verifyIdToken 失敗、再ログイン誘導)
+// - 500/502/503/504: サーバ側障害 (502 は本 module で「response malformed」契約違反固定)
+// 他 status (403, 422, 5xx 系新コード等) は本 module の narrowStatus で 502 にフォールバック。
+// `as const` 配列から型と Set を派生させ、追加時の二重管理を排除する。
+const NON_CONFLICT_STATUSES_LIST = [0, 400, 401, 500, 502, 503, 504] as const;
+export type NonConflictAcceptTermsStatus = typeof NON_CONFLICT_STATUSES_LIST[number];
+
+const NON_CONFLICT_STATUSES: ReadonlySet<number> = new Set(NON_CONFLICT_STATUSES_LIST);
+
+const narrowAcceptTermsStatus = (s: number): NonConflictAcceptTermsStatus =>
+    (NON_CONFLICT_STATUSES.has(s) ? s : 502) as NonConflictAcceptTermsStatus;
+
+// accept-terms route が throw する error の構造。Constructor の引数を discriminated
+// union にすることで「status === 409 のとき code 必須 / それ以外は code 不在」を
+// 型レベルで強制する。`status: number` の wide arm は意図的に避け、Issue spec の
+// 具体列挙に従うことでコンパイラが `{ status: 409 }` (code 欠落) を弾けるようにしている。
+export type AcceptTermsErrorInit =
+    | { status: 409; code: KnownAcceptTerms409Code }
+    | { status: NonConflictAcceptTermsStatus };
+
+export class AcceptTermsError extends Error {
+    public readonly status: 409 | NonConflictAcceptTermsStatus;
+    public readonly code?: KnownAcceptTerms409Code;
+    constructor(message: string, init: AcceptTermsErrorInit) {
+        super(message);
+        this.name = 'AcceptTermsError';
+        this.status = init.status;
+        if (init.status === 409) this.code = init.code;
+    }
 }
 
+// 注: AcceptTermsError class instance に絞らず、`status: number` + 任意 code を持つ
+// Error 全般を duck-typing で受ける。理由は (1) 既存テストが plain Error with mutation
+// pattern で書かれており互換性を維持する必要があること、(2) 将来 fetch ラッパー等が
+// 同形状の Error を throw した際に拾えること。AcceptTermsError instance である保証は
+// callAcceptTerms の throw 経路 (本 module) のみが負う。
 export const isTermsVersionMismatch = (error: unknown): boolean =>
-    hasNumericStatus<AcceptTermsError>(error)
+    hasNumericStatus<Error & { status: number; code?: string }>(error)
     && error.status === 409
-    && error.code === TERMS_VERSION_MISMATCH_CODE;
+    && (error as { code?: string }).code === TERMS_VERSION_MISMATCH_CODE;
 
 const callAcceptTerms = async (
     user: User,
@@ -199,18 +235,42 @@ const callAcceptTerms = async (
     } catch (fetchErr) {
         // network 断 / CORS 拒否は status=0 で AcceptTermsError 化。
         // status を持たせないと FE の transient 判定 / 文言マップが効かず raw error が露出する。
-        const err = new Error(
+        throw new AcceptTermsError(
             fetchErr instanceof Error ? fetchErr.message : 'network error',
-        ) as AcceptTermsError;
-        err.status = 0;
-        throw err;
+            { status: 0 },
+        );
     }
     if (!resp.ok) {
-        const body = await resp.json().catch(() => null) as { error?: string; code?: string } | null;
-        const err = new Error(body?.error ?? `accept-terms responded ${resp.status}`) as AcceptTermsError;
-        err.status = resp.status;
-        if (body?.code) err.code = body.code;
-        throw err;
+        // body parse 失敗 (BE が HTML エラーページや非 JSON を返した proxy/CDN 経路) は
+        // contentType と元 status を残して post-mortem 可能にする。null 化自体は意図的フォールバック。
+        const errBody = await resp.json().catch((parseErr) => {
+            console.warn('[accept-terms] response body parse failed', {
+                status: resp.status,
+                contentType: resp.headers.get('Content-Type'),
+                parseError: parseErr instanceof Error ? parseErr.message : String(parseErr),
+            });
+            return null;
+        }) as { error?: string; code?: string } | null;
+        const message = errBody?.error ?? `accept-terms responded ${resp.status}`;
+        // 409 + 既知 code (TERMS_VERSION_MISMATCH / USER_DOC_MISSING) のときのみ code を保持。
+        // 未知 code は BE 契約違反として 502 にフォールバック (status は narrowAcceptTermsStatus 経由)。
+        if (resp.status === 409 && isKnownAcceptTerms409Code(errBody?.code)) {
+            throw new AcceptTermsError(message, { status: 409, code: errBody.code });
+        }
+        // 409 で未知 code のケースを含む全フォールスルー: status を NonConflictAcceptTermsStatus に narrow。
+        // 想定外 status (例 403/422) は 502 (BE 契約違反扱い) に倒し、文言は status >= 500 の経路に乗せる。
+        // 元 status / code が消失するため、Sentry 等の post-mortem 用に warn しておく
+        // (BE rolling deploy / API 仕様 drift の早期検知)。
+        const narrowed = narrowAcceptTermsStatus(resp.status);
+        if (narrowed !== resp.status) {
+            console.warn('[accept-terms] unexpected status narrowed to NonConflictAcceptTermsStatus', {
+                originalStatus: resp.status,
+                originalCode: errBody?.code,
+                narrowedStatus: narrowed,
+                message,
+            });
+        }
+        throw new AcceptTermsError(message, { status: narrowed });
     }
     const body = await resp.json().catch(() => null) as {
         termsAcceptedAt?: string;
@@ -218,9 +278,12 @@ const callAcceptTerms = async (
     } | null;
     if (!body || typeof body.termsAcceptedAt !== 'string' || typeof body.termsVersion !== 'string') {
         // 200 だが body 形が不正 → BE 契約違反。502 として固定し transient 判定対象外に。
-        const err = new Error('accept-terms returned malformed response') as AcceptTermsError;
-        err.status = 502;
-        throw err;
+        // 元 body は keys のみログ (PII 漏れリスクを避けつつ shape の変化を検知できる粒度)。
+        console.warn('[accept-terms] 200 body malformed', {
+            keys: body && typeof body === 'object' ? Object.keys(body) : null,
+            body: body === null ? '<null/parse-failed>' : '<has-keys>',
+        });
+        throw new AcceptTermsError('accept-terms returned malformed response', { status: 502 });
     }
     return { termsAcceptedAt: body.termsAcceptedAt, termsVersion: body.termsVersion };
 };

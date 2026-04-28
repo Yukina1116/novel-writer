@@ -210,6 +210,162 @@ describe('isTermsVersionMismatch (M7-α PR-D-2 helper)', () => {
     });
 });
 
+describe('AcceptTermsError class (M7-α D2-followup-1)', () => {
+    it('sets status=0 and code=undefined for network init', async () => {
+        const { AcceptTermsError } = await import('./authSlice');
+        const err = new AcceptTermsError('network error', { status: 0 });
+        expect(err).toBeInstanceOf(Error);
+        expect(err).toBeInstanceOf(AcceptTermsError);
+        expect(err.status).toBe(0);
+        expect(err.code).toBeUndefined();
+        expect(err.name).toBe('AcceptTermsError');
+        expect(err.message).toBe('network error');
+    });
+
+    it('sets status=409 + code=TERMS_VERSION_MISMATCH for mismatch init', async () => {
+        const { AcceptTermsError } = await import('./authSlice');
+        const err = new AcceptTermsError('mismatch', { status: 409, code: 'TERMS_VERSION_MISMATCH' });
+        expect(err.status).toBe(409);
+        expect(err.code).toBe('TERMS_VERSION_MISMATCH');
+    });
+
+    it('sets status=409 + code=USER_DOC_MISSING for missing-doc init', async () => {
+        const { AcceptTermsError } = await import('./authSlice');
+        const err = new AcceptTermsError('missing', { status: 409, code: 'USER_DOC_MISSING' });
+        expect(err.status).toBe(409);
+        expect(err.code).toBe('USER_DOC_MISSING');
+    });
+
+    it('keeps code undefined for non-409 init even if numeric status', async () => {
+        const { AcceptTermsError } = await import('./authSlice');
+        const err = new AcceptTermsError('server', { status: 502 });
+        expect(err.status).toBe(502);
+        expect(err.code).toBeUndefined();
+    });
+
+    it('isTermsVersionMismatch picks up class instance with mismatch code', async () => {
+        const { AcceptTermsError, isTermsVersionMismatch } = await import('./authSlice');
+        expect(isTermsVersionMismatch(
+            new AcceptTermsError('m', { status: 409, code: 'TERMS_VERSION_MISMATCH' }),
+        )).toBe(true);
+        expect(isTermsVersionMismatch(
+            new AcceptTermsError('m', { status: 409, code: 'USER_DOC_MISSING' }),
+        )).toBe(false);
+        expect(isTermsVersionMismatch(
+            new AcceptTermsError('m', { status: 500 }),
+        )).toBe(false);
+    });
+
+    // AC-1 pin: discriminated union が「status === 409 のとき code 必須」を型として強制することを
+    // ts-expect-error で機械的に固定する。コンパイル時に検知される (vitest 実行時には何もしない)。
+    it('rejects status=409 without code at compile time (ts-expect-error pin)', async () => {
+        const { AcceptTermsError } = await import('./authSlice');
+        // @ts-expect-error - status=409 は code が必須 (KnownAcceptTerms409Code)
+        new AcceptTermsError('no code', { status: 409 });
+        // @ts-expect-error - status=409 は KnownAcceptTerms409Code 以外の code を許容しない
+        new AcceptTermsError('bad code', { status: 409, code: 'OTHER_CONFLICT' });
+        // @ts-expect-error - 非 409 arm では code を渡せない
+        new AcceptTermsError('mixed', { status: 500, code: 'TERMS_VERSION_MISMATCH' });
+        // @ts-expect-error - 非 409 arm の status は具体列挙のみ (422 は範囲外)
+        new AcceptTermsError('unknown status', { status: 422 });
+        // 正常系 (型エラーが出ないことを確認)
+        new AcceptTermsError('ok', { status: 409, code: 'TERMS_VERSION_MISMATCH' });
+        new AcceptTermsError('ok', { status: 409, code: 'USER_DOC_MISSING' });
+        new AcceptTermsError('ok', { status: 0 });
+        new AcceptTermsError('ok', { status: 502 });
+        expect(true).toBe(true); // 型エラーが出ないこと自体が assertion
+    });
+});
+
+describe('callAcceptTerms throw paths (M7-α D2-followup-1, AC-7 fallback pin)', () => {
+    let fetchMock: ReturnType<typeof vi.fn>;
+    beforeEach(() => {
+        fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+        getIdTokenMock.mockResolvedValue('token');
+        authMock.currentUser = { getIdToken: getIdTokenMock };
+        __testing.resetInFlightAcceptTerms();
+    });
+
+    const callAccept = async () => {
+        const { slice, state } = createTestSlice();
+        state.currentTermsVersion = '2026-04-28';
+        await slice.acceptTerms();
+    };
+
+    const expectAcceptTermsError = async (
+        expected: { status: number; code?: string },
+    ) => {
+        const { AcceptTermsError } = await import('./authSlice');
+        try {
+            await callAccept();
+            throw new Error('expected to throw');
+        } catch (e) {
+            expect(e).toBeInstanceOf(AcceptTermsError);
+            const err = e as InstanceType<typeof AcceptTermsError>;
+            expect(err.status).toBe(expected.status);
+            if (expected.code === undefined) {
+                expect(err.code).toBeUndefined();
+            } else {
+                expect(err.code).toBe(expected.code);
+            }
+        }
+    };
+
+    it('409 + known code (TERMS_VERSION_MISMATCH) preserves status=409 + code', async () => {
+        fetchMock.mockResolvedValueOnce(new Response(
+            JSON.stringify({ error: 'mismatch', code: 'TERMS_VERSION_MISMATCH' }),
+            { status: 409 },
+        ));
+        await expectAcceptTermsError({ status: 409, code: 'TERMS_VERSION_MISMATCH' });
+    });
+
+    it('409 + known code (USER_DOC_MISSING) preserves status=409 + code', async () => {
+        fetchMock.mockResolvedValueOnce(new Response(
+            JSON.stringify({ error: 'missing', code: 'USER_DOC_MISSING' }),
+            { status: 409 },
+        ));
+        await expectAcceptTermsError({ status: 409, code: 'USER_DOC_MISSING' });
+    });
+
+    it('409 + unknown code falls back to status=502 + code=undefined (BE contract violation)', async () => {
+        fetchMock.mockResolvedValueOnce(new Response(
+            JSON.stringify({ error: 'other', code: 'OTHER_CONFLICT' }),
+            { status: 409 },
+        ));
+        await expectAcceptTermsError({ status: 502, code: undefined });
+    });
+
+    it('unknown status (422) falls back to status=502 (narrow)', async () => {
+        fetchMock.mockResolvedValueOnce(new Response(
+            JSON.stringify({ error: 'unprocessable' }),
+            { status: 422 },
+        ));
+        await expectAcceptTermsError({ status: 502, code: undefined });
+    });
+
+    it('500 stays as 500 (within enumerated NonConflictAcceptTermsStatus)', async () => {
+        fetchMock.mockResolvedValueOnce(new Response(
+            JSON.stringify({ error: 'internal' }),
+            { status: 500 },
+        ));
+        await expectAcceptTermsError({ status: 500, code: undefined });
+    });
+
+    it('fetch reject (network failure) → status=0 + AcceptTermsError', async () => {
+        fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+        await expectAcceptTermsError({ status: 0, code: undefined });
+    });
+
+    it('200 malformed body (missing termsAcceptedAt) → status=502', async () => {
+        fetchMock.mockResolvedValueOnce(new Response(
+            JSON.stringify({ termsVersion: '2026-04-28' }), // termsAcceptedAt 欠落
+            { status: 200 },
+        ));
+        await expectAcceptTermsError({ status: 502, code: undefined });
+    });
+});
+
 describe('computeNeedsTermsAccept (M7-α 派生ロジック)', () => {
     // AC-6-3 / AC-6-4 の核心ロジック。境界条件を機械的に固定する。
 
