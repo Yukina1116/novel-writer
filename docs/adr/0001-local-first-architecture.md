@@ -47,7 +47,7 @@
 - **認証**: Firebase Auth（Google プロバイダのみ、Anonymous Auth は不採用）
 - **3 層プラン**:
   - Tier 0: 未ログイン（AI 不可、ローカル執筆のみ）
-  - Tier 1: Google ログイン（無料、AI 月 30 回テキストのみ、Imagen 不可）
+  - Tier 1: Google ログイン（無料、AI 月 100 円コスト上限、テキストのみ、Imagen 不可。詳細は `docs/spec/m3/usage-cost-config.md` 参照）
   - Tier 2: Stripe 有料（AI 増枠、Imagen 可、E2EE バックアップ opt-in 可）
 - **複数端末同期は実装しない**（Export/Import で持ち歩く）
 
@@ -76,6 +76,7 @@
 
 ### 開放する課題
 - Stripe 課金導入時の法務作業（利用規約、特商法、プライバシーポリシー）
+  - **2026-04-28 更新**: M7-α (P4) で Tier 0/1 範囲の stub 3 文書を `docs/legal/` に作成、本番公開前に法務確認 MUST。Tier 2 規約節 / 特商法本文の確定は M7-β（M5 Stripe 完了後）で対応
 - 将来「複数端末同期」要望が出た場合の対応（CRDT 検討、ただし当面は Export/Import で対応）
 - Firebase Auth Emulator と Cloud Run の本番認証フローの差異（M3 で対応）
 
@@ -88,9 +89,10 @@
 | M2 | 認証 + IndexedDB 移行 | ✅ 完了（PR-A IndexedDB 移行 2026-04-26 PR #24 / PR-Bx useLocalSync hardening 2026-04-27 PR #31 / PR-B Auth FE 2026-04-27 PR #29 / PR-C 旧ルート退役 + verifyIdToken + users/init + firestore.rules 2026-04-27） |
 | M3 | AI 認証ゲート + クォータ | ✅ 完了（PR-D テスト基盤 + 持越 #1/#4/#5 PR #37 / PR-E BE 認証ゲート + 起動 probe + handleApiError 共通化 + 持越 #3 PR #39 / PR-F usage クォータ + 持越 + Issue #40 PR #45 / PR-G FE 統合 + Cloud Run public 化 + 持越 #2 2026-04-27） |
 | M4 | Export/Import + バックアップ警告 UI | ✅ 完了（PR #48 2026-04-28） |
-| M5 | Stripe Subscription + Webhook + 法務 | ⏳ |
+| M5 | Stripe Subscription + Webhook + 法務 Tier 2 | ⏳ |
 | M6 | E2EE 暗号化バックアップ（任意機能、後回し可） | ⏳ |
-| M7 | 公開準備 | ⏳ |
+| M7-α | 公開準備 (Tier 0/1 法務 stub + 観測性 + エラー報告動線、Stripe 不要範囲) | 🚧 進行中 (2026-04-28 着手、`docs/spec/m7/tasks.md` 参照) |
+| M7-β | 公開最終チェック (Tier 2 規約節 + 特商法本文確定、M5 完了後) | ⏳ |
 
 詳細は `docs/spec/m1/tasks.md` 以降を参照。
 
