@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../store/index';
 import { isTermsVersionMismatch, type AcceptTermsError } from '../../store/authSlice';
-import { LEGAL_DOCS } from '../../legalDocs';
+import { LegalLinkList } from '../LegalLinkList';
 
 // dev bypass: prod では query を無視 (二重ガード)。SSR-safety: window 不在時は false。
 // 関数として export し ModalManager から render 時に評価することで test 環境の vi.stubEnv に追従する。
@@ -101,20 +101,10 @@ export const TermsConsentModal: React.FC = () => {
                     本サービスをご利用いただく前に、以下の文書をご確認のうえ同意してください。
                     各リンクは新しいタブで開きます。
                 </p>
-                <ul className="flex flex-col gap-2 text-sm">
-                    {LEGAL_DOCS.map(doc => (
-                        <li key={doc.url}>
-                            <a
-                                href={doc.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-indigo-600 dark:text-indigo-400 hover:underline"
-                            >
-                                {doc.label}
-                            </a>
-                        </li>
-                    ))}
-                </ul>
+                <LegalLinkList
+                    containerClassName="flex flex-col gap-2 text-sm"
+                    linkClassName="text-indigo-600 dark:text-indigo-400 hover:underline"
+                />
                 {error?.kind === 'mismatch' && (
                     <p className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-3 py-2 rounded">
                         規約が更新されました。最新版を確認のうえ、再度同意してください。
