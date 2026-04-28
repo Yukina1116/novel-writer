@@ -79,8 +79,10 @@ export interface UserInitError extends Error {
     status: number;
 }
 
-const isUserInitError = (e: unknown): e is UserInitError =>
+const hasNumericStatus = <T extends Error>(e: unknown): e is T & { status: number } =>
     e instanceof Error && typeof (e as { status?: unknown }).status === 'number';
+
+const isUserInitError = (e: unknown): e is UserInitError => hasNumericStatus<UserInitError>(e);
 
 const makeUserInitError = (message: string, status: number): UserInitError => {
     const err = new Error(message) as UserInitError;
@@ -174,11 +176,8 @@ export interface AcceptTermsError extends Error {
     code?: string;
 }
 
-const isAcceptTermsError = (e: unknown): e is AcceptTermsError =>
-    e instanceof Error && typeof (e as { status?: unknown }).status === 'number';
-
 export const isTermsVersionMismatch = (error: unknown): boolean =>
-    isAcceptTermsError(error)
+    hasNumericStatus<AcceptTermsError>(error)
     && error.status === 409
     && error.code === TERMS_VERSION_MISMATCH_CODE;
 
