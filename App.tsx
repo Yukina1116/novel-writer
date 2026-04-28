@@ -19,11 +19,13 @@ import { TutorialModeSelectionModal } from './components/TutorialModeSelectionMo
 import { BackupWarningBanner } from './components/BackupWarningBanner';
 import AppMobile from './App.mobile';
 import { useLocalSync } from './hooks/useLocalSync';
+import { useGlobalErrorHandlers } from './hooks/useGlobalErrorHandlers';
 
 import { useShallow } from 'zustand/react/shallow';
 import { EMPTY_ARRAY } from './constants';
 
 export default function App() {
+    useGlobalErrorHandlers();
     const { isInitializing } = useLocalSync();
     // --- Zustand Store Selectors ---
     const activeProjectId = useStore(state => state.activeProjectId);
