@@ -21,11 +21,22 @@ vi.mock('../firebaseAdmin', () => ({
 
 // firebase-admin/firestore の FieldValue.serverTimestamp() は本物を呼ぶと credential が
 // 必要になるため、固定 sentinel を返す stub に差し替える。
+// Timestamp は instanceof チェック用に最小限の class を提供する (toDate() を持つ shape)。
 const SERVER_TIMESTAMP_SENTINEL = Symbol('SERVER_TIMESTAMP');
+class FakeTimestamp {
+    constructor(private readonly date: Date) {}
+    toDate(): Date {
+        return this.date;
+    }
+    static fromDate(date: Date): FakeTimestamp {
+        return new FakeTimestamp(date);
+    }
+}
 vi.mock('firebase-admin/firestore', () => ({
     FieldValue: {
         serverTimestamp: () => SERVER_TIMESTAMP_SENTINEL,
     },
+    Timestamp: FakeTimestamp,
 }));
 
 const usersRouter = (await import('./users')).default;
@@ -50,14 +61,20 @@ type TxStub = {
     update: ReturnType<typeof vi.fn>;
 };
 
-const buildTxStub = (existingDoc: boolean): { tx: TxStub; captured: CapturedTxOps } => {
+const buildTxStub = (
+    existingDoc: boolean,
+    existingData: Record<string, unknown> = {},
+): { tx: TxStub; captured: CapturedTxOps } => {
     const captured: CapturedTxOps = {
         setCalls: [],
         updateCalls: [],
         getReturns: { exists: existingDoc },
     };
     const tx: TxStub = {
-        get: vi.fn(async () => ({ exists: existingDoc })),
+        get: vi.fn(async () => ({
+            exists: existingDoc,
+            data: () => (existingDoc ? existingData : undefined),
+        })),
         set: vi.fn((ref: unknown, data: Record<string, unknown>) => {
             captured.setCalls.push({ ref, data });
         }),
@@ -85,59 +102,106 @@ describe('POST /api/users/init', () => {
         });
     });
 
-    describe('D.4.1 — new uid creates full doc with 4 fields', () => {
-        it('calls tx.set with {email, plan, createdAt, updatedAt}', async () => {
+    describe('D.4.1 — new uid creates full doc with 6 fields (M7-α: termsAcceptedAt + termsVersion 追加)', () => {
+        it('calls tx.set with {email, plan, createdAt, updatedAt, termsAcceptedAt: null, termsVersion: null}', async () => {
             verifyIdTokenMock.mockResolvedValueOnce({ uid: 'new-user-1', email: 'new@example.com' });
             const refSentinel = { __ref: 'users/new-user-1' };
             docMock.mockReturnValueOnce(refSentinel);
             const { tx, captured } = buildTxStub(false);
-            runTransactionMock.mockImplementationOnce(async (fn: (tx: TxStub) => Promise<void>) => fn(tx));
+            runTransactionMock.mockImplementationOnce(async (fn: (tx: TxStub) => Promise<unknown>) => fn(tx));
 
             const res = await request(buildApp())
                 .post('/api/users/init')
                 .set('Authorization', 'Bearer valid-token');
 
             expect(res.status).toBe(200);
-            expect(res.body).toEqual({ success: true });
+            expect(res.body).toMatchObject({
+                success: true,
+                user: {
+                    plan: 'free',
+                    termsAcceptedAt: null,
+                    termsVersion: null,
+                },
+                currentTermsVersion: expect.any(String),
+            });
             expect(captured.setCalls).toHaveLength(1);
             expect(captured.updateCalls).toHaveLength(0);
 
             const [setCall] = captured.setCalls;
             expect(setCall.ref).toBe(refSentinel);
-            expect(Object.keys(setCall.data).sort()).toEqual(['createdAt', 'email', 'plan', 'updatedAt']);
+            expect(Object.keys(setCall.data).sort()).toEqual([
+                'createdAt',
+                'email',
+                'plan',
+                'termsAcceptedAt',
+                'termsVersion',
+                'updatedAt',
+            ]);
             expect(setCall.data.email).toBe('new@example.com');
             expect(setCall.data.plan).toBe('free');
             expect(setCall.data.createdAt).toBe(SERVER_TIMESTAMP_SENTINEL);
             expect(setCall.data.updatedAt).toBe(SERVER_TIMESTAMP_SENTINEL);
+            // M7-α: 新規ユーザーは未同意状態で作成
+            expect(setCall.data.termsAcceptedAt).toBeNull();
+            expect(setCall.data.termsVersion).toBeNull();
         });
     });
 
-    describe('D.4.2 + D.4.3 — existing uid: tx.update payload excludes createdAt and plan', () => {
-        it('calls tx.update with only {email, updatedAt} (no createdAt, no plan)', async () => {
+    describe('D.4.2 + D.4.3 — existing uid: tx.update payload excludes createdAt, plan, terms* (Partial Update assertion)', () => {
+        it('calls tx.update with only {email, updatedAt} (no createdAt/plan/terms*)', async () => {
             verifyIdTokenMock.mockResolvedValueOnce({ uid: 'existing-user', email: 'old@example.com' });
             const refSentinel = { __ref: 'users/existing-user' };
             docMock.mockReturnValueOnce(refSentinel);
-            const { tx, captured } = buildTxStub(true);
-            runTransactionMock.mockImplementationOnce(async (fn: (tx: TxStub) => Promise<void>) => fn(tx));
+            const acceptedAt = FakeTimestamp.fromDate(new Date('2026-04-28T00:00:00Z'));
+            const { tx, captured } = buildTxStub(true, {
+                termsAcceptedAt: acceptedAt,
+                termsVersion: '2026-04-28',
+            });
+            runTransactionMock.mockImplementationOnce(async (fn: (tx: TxStub) => Promise<unknown>) => fn(tx));
 
             const res = await request(buildApp())
                 .post('/api/users/init')
                 .set('Authorization', 'Bearer valid-token');
 
             expect(res.status).toBe(200);
-            expect(res.body).toEqual({ success: true });
+            expect(res.body).toMatchObject({
+                success: true,
+                user: {
+                    plan: 'free',
+                    termsAcceptedAt: '2026-04-28T00:00:00.000Z',
+                    termsVersion: '2026-04-28',
+                },
+            });
             expect(captured.updateCalls).toHaveLength(1);
             expect(captured.setCalls).toHaveLength(0);
 
             const [updateCall] = captured.updateCalls;
             expect(updateCall.ref).toBe(refSentinel);
-            // 直接 assert: createdAt / plan が payload に存在しないこと（hasOwnProperty で確認）
+            // CLAUDE.md MUST #5 Partial Update assertion: 既存値を上書きするフィールドが含まれないこと
             expect(Object.prototype.hasOwnProperty.call(updateCall.data, 'createdAt')).toBe(false);
             expect(Object.prototype.hasOwnProperty.call(updateCall.data, 'plan')).toBe(false);
-            // 期待されるフィールドのみ存在
+            expect(Object.prototype.hasOwnProperty.call(updateCall.data, 'termsAcceptedAt')).toBe(false);
+            expect(Object.prototype.hasOwnProperty.call(updateCall.data, 'termsVersion')).toBe(false);
             expect(Object.keys(updateCall.data).sort()).toEqual(['email', 'updatedAt']);
             expect(updateCall.data.email).toBe('old@example.com');
             expect(updateCall.data.updatedAt).toBe(SERVER_TIMESTAMP_SENTINEL);
+        });
+
+        it('returns null termsAcceptedAt/termsVersion when existing doc has neither (legacy 経路)', async () => {
+            verifyIdTokenMock.mockResolvedValueOnce({ uid: 'legacy-user', email: 'legacy@example.com' });
+            docMock.mockReturnValueOnce({});
+            const { tx } = buildTxStub(true, {});
+            runTransactionMock.mockImplementationOnce(async (fn: (tx: TxStub) => Promise<unknown>) => fn(tx));
+
+            const res = await request(buildApp())
+                .post('/api/users/init')
+                .set('Authorization', 'Bearer valid-token');
+
+            expect(res.status).toBe(200);
+            expect(res.body).toMatchObject({
+                success: true,
+                user: { termsAcceptedAt: null, termsVersion: null },
+            });
         });
     });
 
@@ -228,5 +292,174 @@ describe('POST /api/users/init', () => {
 
             expect(res.status).toBe(500);
         });
+    });
+});
+
+describe('POST /api/users/accept-terms (M7-α)', () => {
+    const TERMS_VERSION = '2026-04-28';
+
+    beforeEach(() => {
+        verifyIdTokenMock.mockReset();
+        runTransactionMock.mockReset();
+        docMock.mockReset();
+        collectionMock.mockClear();
+    });
+
+    it('returns 401 when no Authorization header is sent', async () => {
+        const app = buildApp();
+        const res = await request(app).post('/api/users/accept-terms').send({ termsVersion: TERMS_VERSION });
+        expect(res.status).toBe(401);
+    });
+
+    it('returns 400 when termsVersion is missing in body', async () => {
+        verifyIdTokenMock.mockResolvedValueOnce({ uid: 'u', email: 'a@example.com' });
+        const res = await request(buildApp())
+            .post('/api/users/accept-terms')
+            .set('Authorization', 'Bearer valid-token')
+            .send({});
+        expect(res.status).toBe(400);
+        expect(res.body).toMatchObject({ success: false });
+    });
+
+    it('returns 400 when termsVersion is empty string', async () => {
+        verifyIdTokenMock.mockResolvedValueOnce({ uid: 'u', email: 'a@example.com' });
+        const res = await request(buildApp())
+            .post('/api/users/accept-terms')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ termsVersion: '' });
+        expect(res.status).toBe(400);
+    });
+
+    it('returns 409 with code TERMS_VERSION_MISMATCH when client sends old version', async () => {
+        verifyIdTokenMock.mockResolvedValueOnce({ uid: 'u', email: 'a@example.com' });
+        const res = await request(buildApp())
+            .post('/api/users/accept-terms')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ termsVersion: '2025-01-01' });
+        expect(res.status).toBe(409);
+        expect(res.body).toMatchObject({
+            success: false,
+            code: 'TERMS_VERSION_MISMATCH',
+            currentTermsVersion: TERMS_VERSION,
+        });
+    });
+
+    it('returns 409 with code USER_DOC_MISSING when users doc not yet initialized', async () => {
+        verifyIdTokenMock.mockResolvedValueOnce({ uid: 'no-init-user', email: 'a@example.com' });
+        docMock.mockReturnValueOnce({});
+        const { tx } = buildTxStub(false);
+        runTransactionMock.mockImplementationOnce(async (fn: (tx: TxStub) => Promise<unknown>) => fn(tx));
+
+        const res = await request(buildApp())
+            .post('/api/users/accept-terms')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ termsVersion: TERMS_VERSION });
+
+        expect(res.status).toBe(409);
+        expect(res.body).toMatchObject({
+            success: false,
+            code: 'USER_DOC_MISSING',
+        });
+    });
+
+    it('updates termsAcceptedAt + termsVersion + updatedAt in transaction (Partial Update assertion: createdAt/plan/email 不在) and re-reads after commit', async () => {
+        verifyIdTokenMock.mockResolvedValueOnce({ uid: 'accept-user', email: 'a@example.com' });
+        const refSentinel = { __ref: 'users/accept-user' };
+        const refGetMock = vi.fn(async () => ({
+            data: () => ({
+                termsAcceptedAt: FakeTimestamp.fromDate(new Date('2026-04-28T12:00:00Z')),
+            }),
+        }));
+        docMock.mockReturnValueOnce(Object.assign(refSentinel, { get: refGetMock }));
+        const { tx, captured } = buildTxStub(true, {});
+        runTransactionMock.mockImplementationOnce(async (fn: (tx: TxStub) => Promise<unknown>) => fn(tx));
+
+        const res = await request(buildApp())
+            .post('/api/users/accept-terms')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ termsVersion: TERMS_VERSION });
+
+        expect(res.status).toBe(200);
+        expect(res.body).toMatchObject({
+            success: true,
+            termsAcceptedAt: '2026-04-28T12:00:00.000Z',
+            termsVersion: TERMS_VERSION,
+        });
+        expect(captured.updateCalls).toHaveLength(1);
+        const [updateCall] = captured.updateCalls;
+        // termsAcceptedAt / termsVersion / updatedAt のみ書込み (Partial Update assertion)
+        expect(Object.keys(updateCall.data).sort()).toEqual([
+            'termsAcceptedAt',
+            'termsVersion',
+            'updatedAt',
+        ]);
+        expect(Object.prototype.hasOwnProperty.call(updateCall.data, 'createdAt')).toBe(false);
+        expect(Object.prototype.hasOwnProperty.call(updateCall.data, 'plan')).toBe(false);
+        expect(Object.prototype.hasOwnProperty.call(updateCall.data, 'email')).toBe(false);
+        expect(updateCall.data.termsAcceptedAt).toBe(SERVER_TIMESTAMP_SENTINEL);
+        expect(updateCall.data.termsVersion).toBe(TERMS_VERSION);
+        expect(updateCall.data.updatedAt).toBe(SERVER_TIMESTAMP_SENTINEL);
+        // post-commit re-read が確実に呼ばれていることを assert (server timestamp 確定値取得経路の固定)
+        expect(refGetMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to in-tx ISO when post-commit re-read fails (silent re-read failure → 200 維持)', async () => {
+        verifyIdTokenMock.mockResolvedValueOnce({ uid: 'reread-fail-user', email: 'a@example.com' });
+        const refSentinel = { __ref: 'users/reread-fail-user' };
+        const refGetMock = vi.fn(async () => {
+            throw Object.assign(new Error('firestore transient'), { code: 'UNAVAILABLE' });
+        });
+        docMock.mockReturnValueOnce(Object.assign(refSentinel, { get: refGetMock }));
+        const { tx } = buildTxStub(true, {});
+        runTransactionMock.mockImplementationOnce(async (fn: (tx: TxStub) => Promise<unknown>) => fn(tx));
+
+        const res = await request(buildApp())
+            .post('/api/users/accept-terms')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ termsVersion: TERMS_VERSION });
+
+        // 書込みは成功しているので 200 を返す (ユーザー再試行不要、UX 維持)
+        expect(res.status).toBe(200);
+        expect(res.body).toMatchObject({
+            success: true,
+            termsVersion: TERMS_VERSION,
+        });
+        // termsAcceptedAt は ISO 8601 文字列 (tx 内 fallback)
+        expect(typeof res.body.termsAcceptedAt).toBe('string');
+        expect(res.body.termsAcceptedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+        expect(refGetMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns 503 for transient Firestore error (UNAVAILABLE)', async () => {
+        verifyIdTokenMock.mockResolvedValueOnce({ uid: 'u', email: 'a@example.com' });
+        docMock.mockReturnValueOnce({});
+        runTransactionMock.mockRejectedValueOnce(Object.assign(new Error('firestore down'), { code: 'UNAVAILABLE' }));
+
+        const res = await request(buildApp())
+            .post('/api/users/accept-terms')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ termsVersion: TERMS_VERSION });
+
+        expect(res.status).toBe(503);
+    });
+
+    it('logs uid context on failure (forensic trail)', async () => {
+        const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+        verifyIdTokenMock.mockResolvedValueOnce({ uid: 'forensic-accept', email: 'a@example.com' });
+        docMock.mockReturnValueOnce({});
+        runTransactionMock.mockRejectedValueOnce(Object.assign(new Error('boom'), { code: 'INTERNAL' }));
+
+        await request(buildApp())
+            .post('/api/users/accept-terms')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ termsVersion: TERMS_VERSION });
+
+        expect(errorSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                message: 'users/accept-terms failed',
+                uid: 'forensic-accept',
+            }),
+        );
+        errorSpy.mockRestore();
     });
 });

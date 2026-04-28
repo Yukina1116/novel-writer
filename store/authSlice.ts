@@ -23,12 +23,26 @@ export interface AuthSlice {
     // users/init が transient 失敗した場合に true。AI 呼出前の retry signal として
     // apiClient が確認し、再試行を 1 度だけ行う（permanent 失敗の無限ループ防止）。
     needsUserInit: boolean;
+    // M7-α (P4): 利用規約への同意状態。users/init レスポンスに基づき設定する。
+    // null = users/init 未完了 / `string` = 同意済バージョン / `''` = 未同意。
+    termsAcceptedAt: string | null;
+    termsVersion: string | null;
+    // サーバー側現行 TERMS_VERSION。FE は `termsVersion !== currentTermsVersion` で再同意要求。
+    currentTermsVersion: string | null;
+    // 派生: users/init 完了後、未同意 or バージョン不一致なら true。FE は TermsConsentModal を表示。
+    needsTermsAccept: boolean;
+    // accept-terms route 呼出中の loading flag。重複クリック / 多重発火防止。
+    termsAccepting: boolean;
     initAuth: () => () => void;
     signInWithGoogle: () => Promise<void>;
     signOut: () => Promise<void>;
     // 内部用: AI 呼出前に呼ぶ retry。成功で needsUserInit=false、失敗時は throw。
     // in-flight guard で同時多発の users/init 多重発火を防ぐ。
     retryUserInit: () => Promise<void>;
+    // M7-α (P4): 同意ボタン押下時に呼ぶ。POST /api/users/accept-terms 経由で
+    // termsAcceptedAt / termsVersion を更新、needsTermsAccept = false に倒す。
+    // 失敗時は throw (UI 側で toast)。
+    acceptTerms: () => Promise<void>;
 }
 
 const toCurrentUser = (user: User | null): CurrentUser | null =>
@@ -78,7 +92,14 @@ const makeUserInitError = (message: string, status: number): UserInitError => {
 const isTransientUserInitError = (status: number): boolean =>
     status === 503 || status === 504 || status === 0;
 
-const callUsersInit = async (user: User): Promise<void> => {
+// users/init レスポンスから取得する規約同意状態。サーバ実装と shape を合わせる。
+export interface UsersInitTermsState {
+    termsAcceptedAt: string | null;
+    termsVersion: string | null;
+    currentTermsVersion: string;
+}
+
+const callUsersInit = async (user: User): Promise<UsersInitTermsState | null> => {
     const idToken = await user.getIdToken();
     let resp: Response;
     try {
@@ -94,7 +115,22 @@ const callUsersInit = async (user: User): Promise<void> => {
             0,
         );
     }
-    if (resp.ok) return;
+    if (resp.ok) {
+        // M7-α: レスポンスに user.termsAcceptedAt / termsVersion + currentTermsVersion を含む。
+        // 旧形式 ({success: true} のみ) には null を返す (legacy / test 互換)。
+        const body = await resp.json().catch(() => null) as {
+            user?: { termsAcceptedAt?: string | null; termsVersion?: string | null };
+            currentTermsVersion?: string;
+        } | null;
+        if (body && typeof body.currentTermsVersion === 'string' && body.user) {
+            return {
+                termsAcceptedAt: body.user.termsAcceptedAt ?? null,
+                termsVersion: body.user.termsVersion ?? null,
+                currentTermsVersion: body.currentTermsVersion,
+            };
+        }
+        return null;
+    }
     const body = await resp.json().catch(() => null) as { error?: string } | null;
     throw makeUserInitError(
         body?.error ?? `users/init responded ${resp.status}`,
@@ -102,10 +138,68 @@ const callUsersInit = async (user: User): Promise<void> => {
     );
 };
 
+// M7-α: termsAcceptedAt + termsVersion から needsTermsAccept を導出。
+// - users/init 未完了 (currentTermsVersion === null) → false (モーダル抑止)
+// - termsAcceptedAt === null (未同意) → true
+// - termsVersion !== currentTermsVersion (古い版に同意) → true
+// - それ以外 → false
+export const computeNeedsTermsAccept = (
+    termsAcceptedAt: string | null,
+    termsVersion: string | null,
+    currentTermsVersion: string | null,
+): boolean => {
+    if (currentTermsVersion === null) return false;
+    if (termsAcceptedAt === null) return true;
+    return termsVersion !== currentTermsVersion;
+};
+
+const callAcceptTerms = async (
+    user: User,
+    termsVersion: string,
+): Promise<{ termsAcceptedAt: string; termsVersion: string }> => {
+    const idToken = await user.getIdToken();
+    let resp: Response;
+    try {
+        resp = await fetch('/api/users/accept-terms', {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${idToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ termsVersion }),
+        });
+    } catch (fetchErr) {
+        throw new Error(
+            fetchErr instanceof Error ? fetchErr.message : 'network error',
+        );
+    }
+    if (!resp.ok) {
+        const body = await resp.json().catch(() => null) as { error?: string; code?: string } | null;
+        const err = new Error(body?.error ?? `accept-terms responded ${resp.status}`) as Error & {
+            status: number;
+            code?: string;
+        };
+        err.status = resp.status;
+        if (body?.code) err.code = body.code;
+        throw err;
+    }
+    const body = await resp.json().catch(() => null) as {
+        termsAcceptedAt?: string;
+        termsVersion?: string;
+    } | null;
+    if (!body || typeof body.termsAcceptedAt !== 'string' || typeof body.termsVersion !== 'string') {
+        throw new Error('accept-terms returned malformed response');
+    }
+    return { termsAcceptedAt: body.termsAcceptedAt, termsVersion: body.termsVersion };
+};
+
 // 同時多発防止のための module-scope in-flight guard。同一 retry が複数 AI 呼出
 // から並列に走らないようにする（同 Promise を共有）。authSlice の state には
 // 入れず closure local で管理（Zustand の re-render を起こさないため）。
 let inFlightUserInitRetry: Promise<void> | null = null;
+// acceptTerms も同様 (multi-tab / 同時クリック)。state.termsAccepting は UI disabled 用、
+// in-flight guard は Promise 共有による真の二重実行防止。
+let inFlightAcceptTerms: Promise<void> | null = null;
 
 // test 間の module-scope state リーク防止のため、test 専用 reset を export する。
 // 本番コードからは参照しない。
@@ -113,6 +207,26 @@ export const __testing = {
     resetInFlightUserInitRetry: (): void => {
         inFlightUserInitRetry = null;
     },
+    resetInFlightAcceptTerms: (): void => {
+        inFlightAcceptTerms = null;
+    },
+};
+
+// 同意状態のセッターを共通化 (callUsersInit / acceptTerms から利用)。
+const applyTermsState = (
+    set: (partial: Partial<AuthSlice>) => void,
+    state: { termsAcceptedAt: string | null; termsVersion: string | null; currentTermsVersion: string | null },
+): void => {
+    set({
+        termsAcceptedAt: state.termsAcceptedAt,
+        termsVersion: state.termsVersion,
+        currentTermsVersion: state.currentTermsVersion,
+        needsTermsAccept: computeNeedsTermsAccept(
+            state.termsAcceptedAt,
+            state.termsVersion,
+            state.currentTermsVersion,
+        ),
+    });
 };
 
 export const createAuthSlice = (set, get): AuthSlice => ({
@@ -120,6 +234,11 @@ export const createAuthSlice = (set, get): AuthSlice => ({
     authStatus: 'initializing' as AuthStatus,
     authError: null,
     needsUserInit: false,
+    termsAcceptedAt: null,
+    termsVersion: null,
+    currentTermsVersion: null,
+    needsTermsAccept: false,
+    termsAccepting: false,
 
     initAuth: () => {
         const unsubscribe = onAuthStateChanged(
@@ -152,8 +271,11 @@ export const createAuthSlice = (set, get): AuthSlice => ({
             // needsUserInit=true で残し、AI 呼出時に retry させる。permanent
             // (4xx) はトーストのみで残す（再 init しても直らないため）。
             try {
-                await callUsersInit(result.user);
+                const termsState = await callUsersInit(result.user);
                 set({ needsUserInit: false });
+                if (termsState) {
+                    applyTermsState(set, termsState);
+                }
             } catch (initError: unknown) {
                 console.error('users/init failed:', initError);
                 reportAuthError(get, 'ユーザー初期化に失敗しました', initError);
@@ -185,7 +307,16 @@ export const createAuthSlice = (set, get): AuthSlice => ({
         try {
             set({ authError: null });
             await firebaseSignOut(auth);
-            set({ needsUserInit: false });
+            set({
+                needsUserInit: false,
+                termsAcceptedAt: null,
+                termsVersion: null,
+                currentTermsVersion: null,
+                needsTermsAccept: false,
+                // acceptTerms 実行中に signOut した場合、termsAccepting=true のまま残ると
+                // 次回ログインで silent failure (UI disabled のまま) になる。明示的に false へ。
+                termsAccepting: false,
+            });
             // currentUser update flows through onAuthStateChanged listener.
         } catch (error: unknown) {
             console.error('signOut failed:', error);
@@ -204,8 +335,11 @@ export const createAuthSlice = (set, get): AuthSlice => ({
 
         inFlightUserInitRetry = (async () => {
             try {
-                await callUsersInit(user);
+                const termsState = await callUsersInit(user);
                 set({ needsUserInit: false });
+                if (termsState) {
+                    applyTermsState(set, termsState);
+                }
             } catch (error) {
                 // permanent / 設定不能な失敗の場合 needsUserInit=true のままだと
                 // AI 呼出のたびに再 retry が走り続ける。一旦 false に戻し、AI 呼出側
@@ -218,5 +352,41 @@ export const createAuthSlice = (set, get): AuthSlice => ({
             }
         })();
         return inFlightUserInitRetry;
+    },
+
+    acceptTerms: async () => {
+        // Multi-tab / 同時クリック対策: in-flight Promise を共有して真の二重実行を防ぐ。
+        // state.termsAccepting (React state) は UI disabled 用で別レイヤー。
+        if (inFlightAcceptTerms) return inFlightAcceptTerms;
+
+        const user = auth.currentUser;
+        if (!user) throw new Error('acceptTerms called without authenticated user');
+        const currentVersion = (get() as { currentTermsVersion?: string | null }).currentTermsVersion;
+        if (!currentVersion) {
+            throw new Error('acceptTerms called before users/init completed');
+        }
+
+        inFlightAcceptTerms = (async () => {
+            set({ termsAccepting: true });
+            try {
+                const result = await callAcceptTerms(user, currentVersion);
+                applyTermsState(set, {
+                    termsAcceptedAt: result.termsAcceptedAt,
+                    termsVersion: result.termsVersion,
+                    currentTermsVersion: currentVersion,
+                });
+            } catch (error: unknown) {
+                console.error('acceptTerms failed:', error);
+                reportAuthError(get, '利用規約の同意に失敗しました', error);
+                // TERMS_VERSION_MISMATCH (409) の場合は users/init を再 fetch して
+                // currentTermsVersion を更新する経路を作るべきだが、PR-D-1 では throw のみ。
+                // PR-D-2 (UI 実装) で modal 内で再 fetch する flow を追加する。
+                throw error;
+            } finally {
+                set({ termsAccepting: false });
+                inFlightAcceptTerms = null;
+            }
+        })();
+        return inFlightAcceptTerms;
     },
 });
