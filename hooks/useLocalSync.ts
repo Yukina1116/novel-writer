@@ -17,9 +17,12 @@ export const useLocalSync = () => {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        // Wire the Dexie `blocked` event to a user-visible toast before the
-        // first DB call. Without this, a stale tab pinning the schema would
-        // silently stall import/upgrade with no UI feedback.
+        // Install the Dexie blocked-event handler before any getDb() call in
+        // this hook so a stale tab pinning the schema produces a toast
+        // instead of an indefinite stall. `useStore.getState()` (not
+        // `useStore(...)` subscription) is intentional: the handler reads
+        // showToast at call time, so swapping in a fresh store reference
+        // without re-registering still works.
         setBlockedHandler(() => {
             useStore.getState().showToast(DB_BLOCKED_MESSAGE, 'error');
         });
@@ -44,8 +47,9 @@ export const useLocalSync = () => {
         };
         init();
         return () => {
-            // Detach the handler on unmount so React Strict Mode double-mount
-            // (or a future hot-reload) doesn't leave stale closures registered.
+            // Strict Mode double-mount and hot-reload otherwise leave a stale
+            // closure registered on the singleton; null on unmount makes
+            // re-mount install the fresh handler cleanly.
             setBlockedHandler(null);
         };
     }, []);

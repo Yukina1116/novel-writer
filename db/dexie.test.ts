@@ -90,6 +90,9 @@ describe('db/dexie blocked-event handler wiring', () => {
         dexieModule.getDb();
         const handler = vi.fn();
         dexieModule.setBlockedHandler(handler);
+        // Reset because installing the handler can flush a pending event;
+        // we want this case to test detach behavior in isolation.
+        handler.mockReset();
         dexieModule.setBlockedHandler(null);
 
         const fire = mockInstances[0].blockedHandlers[0];
@@ -111,5 +114,88 @@ describe('db/dexie blocked-event handler wiring', () => {
 
         expect(first).not.toHaveBeenCalled();
         expect(second).toHaveBeenCalledOnce();
+    });
+
+    it('handler throwing does not bubble out of the event dispatcher', () => {
+        dexieModule.getDb();
+        const handler = vi.fn(() => {
+            throw new Error('showToast unavailable');
+        });
+        dexieModule.setBlockedHandler(handler);
+        const fire = mockInstances[0].blockedHandlers[0];
+
+        // Dexie would otherwise propagate the throw into the IDB upgrade
+        // pipeline. The wrapper must catch + log so the user can still use
+        // the app.
+        const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        expect(() => fire()).not.toThrow();
+        expect(errSpy).toHaveBeenCalled();
+        errSpy.mockRestore();
+    });
+
+    it('multiple fires per handler installation collapse to a single notification', () => {
+        dexieModule.getDb();
+        const handler = vi.fn();
+        dexieModule.setBlockedHandler(handler);
+        const fire = mockInstances[0].blockedHandlers[0];
+
+        fire();
+        fire();
+        fire();
+
+        // Dexie can fire `blocked` repeatedly while another tab keeps the
+        // older schema open; spamming the user with the same toast for
+        // every retick is not what we want.
+        expect(handler).toHaveBeenCalledOnce();
+    });
+
+    it('re-installing a handler resets the once-only gate so future events fire again', () => {
+        dexieModule.getDb();
+        const first = vi.fn();
+        dexieModule.setBlockedHandler(first);
+        const fire = mockInstances[0].blockedHandlers[0];
+        fire();
+        fire(); // collapsed
+        expect(first).toHaveBeenCalledOnce();
+
+        const second = vi.fn();
+        dexieModule.setBlockedHandler(second);
+        fire();
+        // After replacement the new handler is "fresh" — same blocked
+        // condition during a different session phase still notifies.
+        expect(second).toHaveBeenCalledOnce();
+    });
+
+    it('blocked fired before any handler is installed flushes once on first install', () => {
+        dexieModule.getDb();
+        const fire = mockInstances[0].blockedHandlers[0];
+        // Race: the IDB upgrade hits `blocked` before the consumer hook ran.
+        fire();
+        fire();
+
+        const handler = vi.fn();
+        dexieModule.setBlockedHandler(handler);
+
+        // The pending fire is flushed exactly once; subsequent `fire`s on
+        // the same handler are collapsed by the once-gate.
+        expect(handler).toHaveBeenCalledOnce();
+        fire();
+        expect(handler).toHaveBeenCalledOnce();
+    });
+
+    it('pending fire survives a transient null install — the next real handler still flushes', () => {
+        dexieModule.getDb();
+        const fire = mockInstances[0].blockedHandlers[0];
+        fire();
+
+        // null detach must not throw and must not flush an absent handler.
+        expect(() => dexieModule.setBlockedHandler(null)).not.toThrow();
+
+        // Hold the pending fire until a real handler arrives. Otherwise a
+        // hot-reload-induced unmount→remount cycle between IDB upgrade and
+        // hook init could silently lose the only `blocked` event.
+        const handler = vi.fn();
+        dexieModule.setBlockedHandler(handler);
+        expect(handler).toHaveBeenCalledOnce();
     });
 });
