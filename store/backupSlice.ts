@@ -6,6 +6,7 @@ import {
     Project,
 } from '../types';
 import {
+    BackupPreflightError,
     BackupValidationError,
     buildBackupFilename,
     buildBackupV1,
@@ -33,6 +34,7 @@ const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSI
 // is built only in store/index.ts; mirror authSlice's typed-cast pattern.
 type WithToast = { showToast?: (m: string, t?: 'info' | 'success' | 'error') => void };
 type WithFlushSave = { flushSave?: () => Promise<void> };
+type WithFlushSaveBlocking = { flushSaveBlocking?: (timeoutMs?: number) => Promise<void> };
 type WithCloseModal = { closeModal?: () => void };
 
 const errorMessage = (e: unknown): string =>
@@ -158,13 +160,56 @@ export const createBackupSlice = (set, get): BackupSlice => ({
 
     prepareImport: async (raw: string) => {
         // Flush in-memory edits to IndexedDB first so that conflict detection
-        // sees the user's latest unsaved work and overwrite/skip choices apply
-        // to the actual on-disk state. Without this, a project that the user
-        // is currently editing would not appear in conflicts.
-        try {
-            await (get() as WithFlushSave).flushSave?.();
-        } catch (e) {
-            console.error('flushSave before prepareImport failed:', e);
+        // sees the user's latest unsaved work and overwrite/skip choices
+        // apply to the actual on-disk state. Without this, a project that
+        // the user is currently editing would not appear in conflicts —
+        // and a subsequent overwrite resolution would silently drop the
+        // unsaved edit.
+        //
+        // H2 (Issue #49): we must use flushSaveBlocking, not flushSave.
+        // flushSave silently early-returns when saveStatus === 'saving',
+        // which would let a still-in-flight save go un-awaited and let
+        // prepareImport see a stale snapshot. flushSaveBlocking awaits the
+        // in-flight promise (propagating its rejection), then retriggers
+        // the flush if dirty/error, and throws on actual save failure so
+        // we abort instead of silently proceeding past a missed write.
+        //
+        // Retry once before giving up. flushSaveBlocking deliberately does
+        // NOT retry inside a single call — it surfaces in-flight failures
+        // so each layer can decide retry policy. We retry once here to
+        // catch fast-recovery cases (transient quota, brief Dexie open
+        // race); the sync slice's own SAVE_RETRY_DELAY_MS background timer
+        // handles slower recoveries on its own.
+        const flushSaveBlocking = (get() as WithFlushSaveBlocking).flushSaveBlocking;
+        if (flushSaveBlocking) {
+            try {
+                await flushSaveBlocking();
+            } catch (firstError) {
+                console.error('flushSaveBlocking before prepareImport failed (1st):', firstError);
+                try {
+                    await flushSaveBlocking();
+                } catch (secondError) {
+                    console.error('flushSaveBlocking before prepareImport failed (2nd, aborting):', secondError);
+                    const detail = errorMessage(secondError);
+                    (get() as WithToast).showToast?.(
+                        `未保存の編集が IndexedDB に書き込めませんでした（${detail}）。インポートを中止しました。数秒待ってからもう一度お試しください。`,
+                        'error',
+                    );
+                    throw new BackupPreflightError(
+                        `未保存の編集の保存に失敗したためインポートを中止しました: ${detail}`,
+                    );
+                }
+            }
+        } else {
+            // Legacy / test environments without the blocking API: keep
+            // the original best-effort flushSave so callers that haven't
+            // wired the new method (or unit tests stubbing only flushSave)
+            // continue to work.
+            try {
+                await (get() as WithFlushSave).flushSave?.();
+            } catch (e) {
+                console.error('flushSave before prepareImport failed (legacy path):', e);
+            }
         }
         const backup = parseBackup(raw);
         const snapshot = await readSnapshot();

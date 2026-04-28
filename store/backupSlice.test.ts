@@ -217,6 +217,121 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
         expect(fake.state.isImporting).toBe(false);
     });
 
+    // H2: prepareImport must not silently proceed when flushSaveBlocking
+    // fails — a stale on-disk snapshot would let the user's unsaved edits
+    // be silently overwritten by a subsequent overwrite resolution.
+    //
+    // The redesign uses flushSaveBlocking (not flushSave) because the
+    // legacy flushSave silently returns when saveStatus === 'saving',
+    // which would let an in-flight save go un-awaited. flushSaveBlocking
+    // awaits the in-flight promise and throws on actual save failure.
+    describe('H2 flushSaveBlocking failure handling', () => {
+        const minimalRaw = JSON.stringify({
+            schemaVersion: 1,
+            exportedAt: '2026-04-28T00:00:00.000Z',
+            appVersion: '0.0.0',
+            projects: [makeProject({ id: 'p-new' })],
+            tutorialState: {},
+            analysisHistory: [],
+        });
+
+        it('1st-attempt success: proceeds without retry, no toast', async () => {
+            readSnapshot.mockResolvedValue({ projects: [], tutorialState: {}, analysisHistory: [] });
+            const flushSaveBlocking = vi.fn().mockResolvedValue(undefined);
+            const fake = createFakeStore();
+            fake.set({ flushSaveBlocking });
+
+            const plan = await fake.state.prepareImport(minimalRaw);
+
+            // Common case: no retry needed, no nag toast.
+            expect(flushSaveBlocking).toHaveBeenCalledOnce();
+            expect(plan.backup.projects).toHaveLength(1);
+            expect(fake.state.importPlan).not.toBeNull();
+            expect((fake.state.showToast as any)).not.toHaveBeenCalled();
+        });
+
+        it('retries flushSaveBlocking once and proceeds when the retry succeeds', async () => {
+            readSnapshot.mockResolvedValue({ projects: [], tutorialState: {}, analysisHistory: [] });
+            const flushSaveBlocking = vi.fn()
+                .mockRejectedValueOnce(new Error('IDB locked'))
+                .mockResolvedValueOnce(undefined);
+            const fake = createFakeStore();
+            fake.set({ flushSaveBlocking });
+
+            const plan = await fake.state.prepareImport(minimalRaw);
+
+            // Retry actually happened (2 attempts), the import proceeded
+            // (plan is seeded), and we did NOT toast — a transient blip
+            // recovered should not nag the user.
+            expect(flushSaveBlocking).toHaveBeenCalledTimes(2);
+            expect(plan.backup.projects).toHaveLength(1);
+            expect(fake.state.importPlan).not.toBeNull();
+            expect((fake.state.showToast as any)).not.toHaveBeenCalled();
+        });
+
+        it('aborts with a toast + BackupPreflightError when both attempts fail', async () => {
+            const flushSaveBlocking = vi.fn()
+                .mockRejectedValueOnce(new Error('IDB locked (1)'))
+                .mockRejectedValueOnce(new Error('IDB locked (2)'));
+            const fake = createFakeStore();
+            fake.set({ flushSaveBlocking });
+
+            await expect(fake.state.prepareImport(minimalRaw)).rejects.toThrow(/インポートを中止/);
+
+            expect(flushSaveBlocking).toHaveBeenCalledTimes(2);
+            // readSnapshot must NOT have been called — aborting before
+            // touching the disk snapshot is the whole point.
+            expect(readSnapshot).not.toHaveBeenCalled();
+            expect(fake.state.importPlan).toBeNull();
+            expect((fake.state.showToast as any)).toHaveBeenCalledOnce();
+            const [message, kind] = (fake.state.showToast as any).mock.calls[0];
+            expect(message).toMatch(/IDB locked \(2\)/);
+            expect(kind).toBe('error');
+        });
+
+        it('timeout from flushSaveBlocking is treated like any other rejection (retried, then aborted)', async () => {
+            // The slice doesn't distinguish timeout from logical save failure
+            // — both are flushSaveBlocking rejections. Pin that the message
+            // surfaces in the toast so the user can tell which mode we're in.
+            const flushSaveBlocking = vi.fn()
+                .mockRejectedValueOnce(new Error('flushSave timed out after 10000ms'))
+                .mockRejectedValueOnce(new Error('flushSave timed out after 10000ms'));
+            const fake = createFakeStore();
+            fake.set({ flushSaveBlocking });
+
+            await expect(fake.state.prepareImport(minimalRaw)).rejects.toThrow(/インポートを中止/);
+            expect(flushSaveBlocking).toHaveBeenCalledTimes(2);
+            const [message] = (fake.state.showToast as any).mock.calls[0];
+            expect(message).toMatch(/timed out/);
+        });
+
+        it('legacy fallback: when flushSaveBlocking is not wired, falls back to best-effort flushSave', async () => {
+            // Existing tests + production code paths that wire only
+            // flushSave (not flushSaveBlocking) must keep working. We
+            // tolerate the original swallow-on-failure behavior in this
+            // legacy branch because the consumer didn't opt into the
+            // stronger contract.
+            readSnapshot.mockResolvedValue({ projects: [], tutorialState: {}, analysisHistory: [] });
+            const flushSave = vi.fn().mockResolvedValue(undefined);
+            const fake = createFakeStore();
+            fake.set({ flushSave });
+            // No flushSaveBlocking on the fake store.
+
+            const plan = await fake.state.prepareImport(minimalRaw);
+            expect(flushSave).toHaveBeenCalledOnce();
+            expect(plan.backup.projects).toHaveLength(1);
+            expect(fake.state.importPlan).not.toBeNull();
+        });
+
+        it('proceeds normally when neither flushSaveBlocking nor flushSave is wired (test/legacy)', async () => {
+            readSnapshot.mockResolvedValue({ projects: [], tutorialState: {}, analysisHistory: [] });
+            const fake = createFakeStore();
+            // No flush API of any kind.
+            const plan = await fake.state.prepareImport(minimalRaw);
+            expect(plan.backup.projects).toHaveLength(1);
+        });
+    });
+
     // H4: full prepareImport → setImportResolution → executeImport flow.
     // Existing tests cover the default-overwrite path; this block exercises
     // resolution mutation (skip / duplicate / mixed) so per-conflict resolutions

@@ -14,6 +14,20 @@ export class BackupValidationError extends Error {
     }
 }
 
+/**
+ * Thrown by prepareImport when the *preflight* (flushSave-blocking)
+ * step fails — i.e. before any backup parsing happens. Distinct from
+ * BackupValidationError which is reserved for malformed backup files.
+ * Aborting at this layer prevents the silent edit-loss path where a
+ * stale on-disk snapshot would be used for conflict detection.
+ */
+export class BackupPreflightError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'BackupPreflightError';
+    }
+}
+
 const isObject = (v: unknown): v is Record<string, unknown> =>
     !!v && typeof v === 'object' && !Array.isArray(v);
 
