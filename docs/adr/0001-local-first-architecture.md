@@ -91,7 +91,7 @@
 | M4 | Export/Import + バックアップ警告 UI | ✅ 完了（PR #48 2026-04-28） |
 | M5 | Stripe Subscription + Webhook + 法務 Tier 2 | ⏳ |
 | M6 | E2EE 暗号化バックアップ（任意機能、後回し可） | ⏳ |
-| M7-α | 公開準備 (Tier 0/1 法務 stub + 観測性 + エラー報告動線、Stripe 不要範囲) | 🚧 進行中 (2026-04-28 着手、`docs/spec/m7/tasks.md` 参照) |
+| M7-α | 公開準備 (Tier 0/1 法務 stub + 観測性 + エラー報告動線、Stripe 不要範囲) | ✅ 完了 (PR-A 観測性 / PR-B エラー報告 / PR-C 法務 stub / PR-D-1 BE accept-terms / PR-D-2 同意 UI、PR #67 で 2026-04-28 締め、本番公開前法務確認 MUST) |
 | M7-β | 公開最終チェック (Tier 2 規約節 + 特商法本文確定、M5 完了後) | ⏳ |
 
 詳細は `docs/spec/m1/tasks.md` 以降を参照。
