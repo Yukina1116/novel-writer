@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createBackupSlice } from './backupSlice';
 import { Project } from '../types';
 import { defaultAiSettings, defaultDisplaySettings } from '../constants';
@@ -214,9 +214,24 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
 });
 
 describe('isBackupStale (AC-7)', () => {
+    // Anchor "now" so day-boundary math is deterministic. Without a fixed clock
+    // a test comparing exact 30-day deltas would race the wall clock and flake
+    // around midnight UTC.
+    const FIXED_NOW = new Date('2026-05-01T00:00:00.000Z');
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
     const setLoaded = (fake: ReturnType<typeof createFakeStore>, lastExportedAt: string | null) => {
         fake.set({ lastExportedAt, backupMetaStatus: 'loaded' });
     };
+    const isoFromNowMinus = (ms: number) => new Date(FIXED_NOW.getTime() - ms).toISOString();
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(FIXED_NOW);
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
 
     it('returns true when never exported (loaded + null)', () => {
         const fake = createFakeStore();
@@ -226,13 +241,13 @@ describe('isBackupStale (AC-7)', () => {
 
     it('returns false when exported within 30 days', () => {
         const fake = createFakeStore();
-        setLoaded(fake, new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString());
+        setLoaded(fake, isoFromNowMinus(5 * DAY_MS));
         expect(fake.state.isBackupStale()).toBe(false);
     });
 
     it('returns true when exported >30 days ago', () => {
         const fake = createFakeStore();
-        setLoaded(fake, new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString());
+        setLoaded(fake, isoFromNowMinus(31 * DAY_MS));
         expect(fake.state.isBackupStale()).toBe(true);
     });
 
@@ -240,5 +255,41 @@ describe('isBackupStale (AC-7)', () => {
         const fake = createFakeStore();
         setLoaded(fake, 'not-an-iso');
         expect(fake.state.isBackupStale()).toBe(true);
+    });
+
+    // H6: Boundary tests — `isBackupStale` flips on `days > 30`, where
+    // `days = floor((now - exportedAt) / ms_per_day)`. Verify both sides of
+    // the floor (just-under / just-over) and the exact 30-day mark to lock
+    // the contract against accidental `>=` regressions.
+    describe('H6 boundary (exactly 30 days)', () => {
+        it('is NOT stale at exactly 30 days 0 ms (days === 30, boundary inclusive of fresh)', () => {
+            const fake = createFakeStore();
+            setLoaded(fake, isoFromNowMinus(30 * DAY_MS));
+            expect(fake.state.isBackupStale()).toBe(false);
+        });
+
+        it('is NOT stale at 30 days + 1 ms (still floors to 30)', () => {
+            const fake = createFakeStore();
+            setLoaded(fake, isoFromNowMinus(30 * DAY_MS + 1));
+            expect(fake.state.isBackupStale()).toBe(false);
+        });
+
+        it('is NOT stale just under 31 days (30 days + DAY_MS - 1 ms still floors to 30)', () => {
+            const fake = createFakeStore();
+            setLoaded(fake, isoFromNowMinus(31 * DAY_MS - 1));
+            expect(fake.state.isBackupStale()).toBe(false);
+        });
+
+        it('IS stale at exactly 31 days 0 ms (days === 31, first stale tick)', () => {
+            const fake = createFakeStore();
+            setLoaded(fake, isoFromNowMinus(31 * DAY_MS));
+            expect(fake.state.isBackupStale()).toBe(true);
+        });
+
+        it('IS stale at 31 days + 1 ms', () => {
+            const fake = createFakeStore();
+            setLoaded(fake, isoFromNowMinus(31 * DAY_MS + 1));
+            expect(fake.state.isBackupStale()).toBe(true);
+        });
     });
 });
