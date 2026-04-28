@@ -9,6 +9,16 @@ import { TERMS_VERSION } from '../services/termsConfig';
 
 const router = Router();
 
+// USER_DOC_MISSING は accept-terms route 内部の sentinel error。
+// 文字列 message でなく class で識別することで minifier / Babel 変換に強くする
+// (rules/error-handling.md のロバスト分類原則)。
+class UserDocMissingError extends Error {
+    constructor() {
+        super('USER_DOC_MISSING');
+        this.name = 'UserDocMissingError';
+    }
+}
+
 const ALLOWED_PLANS = ['free'] as const;
 type AllowedPlan = typeof ALLOWED_PLANS[number];
 
@@ -141,26 +151,37 @@ router.post('/accept-terms', verifyIdToken, async (req, res) => {
         const db = getFirebaseFirestore();
         const ref = db.collection('users').doc(user.uid);
 
-        const acceptedAt = await db.runTransaction(async (tx): Promise<string> => {
+        const fallbackAcceptedAt = await db.runTransaction(async (tx): Promise<string> => {
             const snap = await tx.get(ref);
             if (!snap.exists) {
-                throw new Error('USER_DOC_MISSING');
+                throw new UserDocMissingError();
             }
             tx.update(ref, sanitizeForUpdate({
                 termsAcceptedAt: FieldValue.serverTimestamp(),
                 termsVersion: TERMS_VERSION,
                 updatedAt: FieldValue.serverTimestamp(),
             }));
-            // server timestamp は transaction 内では未確定。書込み後に再 read して ISO 化する。
-            // 簡略化のため client が即座に表示する値は client now でも可だが、Firestore 値との
-            // 同期を保つため commit 後の取得を 1 回追加する。
+            // server timestamp は transaction 内では未確定。fallback として tx 内で client 時刻を
+            // 生成し、commit 後 re-read 失敗時にこの値を使う (silent re-read failure で 5xx を
+            // 返さない、書込み自体は成功している)。server timestamp と数 ms ずれる許容範囲。
             return new Date().toISOString();
         });
 
         // commit 後の最新値を取得して ISO 化 (server timestamp の確定値)。
-        const after = await ref.get();
-        const data = after.data() as Record<string, unknown> | undefined;
-        const finalAcceptedAt = toISOFromTimestamp(data?.termsAcceptedAt) ?? acceptedAt;
+        // re-read が transient で失敗した場合は fallback (tx 内 client 時刻) を返す。
+        // 書込みは成功しているので 200 を返し、UX を維持する。
+        let finalAcceptedAt = fallbackAcceptedAt;
+        try {
+            const after = await ref.get();
+            const data = after.data() as Record<string, unknown> | undefined;
+            finalAcceptedAt = toISOFromTimestamp(data?.termsAcceptedAt) ?? fallbackAcceptedAt;
+        } catch (rereadErr) {
+            logger.warn({
+                message: 'users/accept-terms post-commit re-read failed (using fallback)',
+                uid: user.uid,
+                error: serializeError(rereadErr),
+            });
+        }
 
         const response: AcceptTermsResponse = {
             success: true,
@@ -169,7 +190,7 @@ router.post('/accept-terms', verifyIdToken, async (req, res) => {
         };
         res.json(response);
     } catch (error) {
-        if (error instanceof Error && error.message === 'USER_DOC_MISSING') {
+        if (error instanceof UserDocMissingError) {
             // /api/users/init 未実行のまま accept-terms が呼ばれた経路。
             // FE は users/init を呼び直してから retry する想定。
             res.status(409).json({

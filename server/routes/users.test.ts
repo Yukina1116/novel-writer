@@ -362,7 +362,7 @@ describe('POST /api/users/accept-terms (M7-α)', () => {
         });
     });
 
-    it('updates termsAcceptedAt + termsVersion + updatedAt in transaction (Partial Update assertion: createdAt/plan/email 不在)', async () => {
+    it('updates termsAcceptedAt + termsVersion + updatedAt in transaction (Partial Update assertion: createdAt/plan/email 不在) and re-reads after commit', async () => {
         verifyIdTokenMock.mockResolvedValueOnce({ uid: 'accept-user', email: 'a@example.com' });
         const refSentinel = { __ref: 'users/accept-user' };
         const refGetMock = vi.fn(async () => ({
@@ -399,6 +399,35 @@ describe('POST /api/users/accept-terms (M7-α)', () => {
         expect(updateCall.data.termsAcceptedAt).toBe(SERVER_TIMESTAMP_SENTINEL);
         expect(updateCall.data.termsVersion).toBe(TERMS_VERSION);
         expect(updateCall.data.updatedAt).toBe(SERVER_TIMESTAMP_SENTINEL);
+        // post-commit re-read が確実に呼ばれていることを assert (server timestamp 確定値取得経路の固定)
+        expect(refGetMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to in-tx ISO when post-commit re-read fails (silent re-read failure → 200 維持)', async () => {
+        verifyIdTokenMock.mockResolvedValueOnce({ uid: 'reread-fail-user', email: 'a@example.com' });
+        const refSentinel = { __ref: 'users/reread-fail-user' };
+        const refGetMock = vi.fn(async () => {
+            throw Object.assign(new Error('firestore transient'), { code: 'UNAVAILABLE' });
+        });
+        docMock.mockReturnValueOnce(Object.assign(refSentinel, { get: refGetMock }));
+        const { tx } = buildTxStub(true, {});
+        runTransactionMock.mockImplementationOnce(async (fn: (tx: TxStub) => Promise<unknown>) => fn(tx));
+
+        const res = await request(buildApp())
+            .post('/api/users/accept-terms')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ termsVersion: TERMS_VERSION });
+
+        // 書込みは成功しているので 200 を返す (ユーザー再試行不要、UX 維持)
+        expect(res.status).toBe(200);
+        expect(res.body).toMatchObject({
+            success: true,
+            termsVersion: TERMS_VERSION,
+        });
+        // termsAcceptedAt は ISO 8601 文字列 (tx 内 fallback)
+        expect(typeof res.body.termsAcceptedAt).toBe('string');
+        expect(res.body.termsAcceptedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+        expect(refGetMock).toHaveBeenCalledTimes(1);
     });
 
     it('returns 503 for transient Firestore error (UNAVAILABLE)', async () => {

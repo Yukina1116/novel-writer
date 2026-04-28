@@ -26,7 +26,8 @@ service cloud.firestore {
       // update の許可フィールド: email/plan/updatedAt は users/init 経路、
       // termsAcceptedAt/termsVersion は accept-terms 経路。createdAt 改ざんは引き続き拒否。
       // termsAcceptedAt は timestamp (server timestamp) または null、
-      // termsVersion は string (最大 32 文字、'YYYY-MM-DD' 形式想定) または null。
+      // termsVersion は 'YYYY-MM-DD' 形式の string または null。
+      // 「片方同意・もう片方 null」の半端状態は禁止 (両方同時設定 or 両方 null のみ許可)。
       allow update: if request.auth != null
         && request.auth.uid == userId
         && request.resource.data.keys().hasOnly(['email', 'plan', 'createdAt', 'updatedAt', 'termsAcceptedAt', 'termsVersion'])
@@ -35,8 +36,15 @@ service cloud.firestore {
         && request.resource.data.plan in ['free']
         && request.resource.data.updatedAt is timestamp
         && request.resource.data.createdAt == resource.data.createdAt
-        && (request.resource.data.termsAcceptedAt == null || request.resource.data.termsAcceptedAt is timestamp)
-        && (request.resource.data.termsVersion == null || (request.resource.data.termsVersion is string && request.resource.data.termsVersion.size() > 0 && request.resource.data.termsVersion.size() <= 32));
+        && (
+          (request.resource.data.termsAcceptedAt == null && request.resource.data.termsVersion == null)
+          ||
+          (
+            request.resource.data.termsAcceptedAt is timestamp
+            && request.resource.data.termsVersion is string
+            && request.resource.data.termsVersion.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+          )
+        );
 
       allow delete: if false;
     }

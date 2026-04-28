@@ -192,6 +192,76 @@ async function main(): Promise<void> {
         }));
     });
 
+    // M7-α (P4) review fix: 形式 regex + 半端状態 (片方欠落) 防止
+    await run('update で termsVersion が YYYY-MM-DD 形式違反 → DENIED', async () => {
+        const seededCreatedAt = Timestamp.fromDate(new Date('2026-01-01T00:00:00Z'));
+        await env.withSecurityRulesDisabled(async (admin) => {
+            await setDoc(doc(admin.firestore(), 'users/aliceTermsBadFormat'), {
+                email: 'alice@example.com',
+                plan: 'free',
+                createdAt: seededCreatedAt,
+                updatedAt: seededCreatedAt,
+                termsAcceptedAt: null,
+                termsVersion: null,
+            });
+        });
+        const ctx = env.authenticatedContext('aliceTermsBadFormat');
+        await assertFails(updateDoc(doc(ctx.firestore(), 'users/aliceTermsBadFormat'), {
+            email: 'alice@example.com',
+            plan: 'free',
+            createdAt: seededCreatedAt,
+            updatedAt: serverTimestamp(),
+            termsAcceptedAt: serverTimestamp(),
+            termsVersion: 'invalid-format-xyz', // YYYY-MM-DD 違反
+        }));
+    });
+
+    await run('update で termsAcceptedAt のみ設定 (termsVersion=null) → DENIED (半端状態防止)', async () => {
+        const seededCreatedAt = Timestamp.fromDate(new Date('2026-01-01T00:00:00Z'));
+        await env.withSecurityRulesDisabled(async (admin) => {
+            await setDoc(doc(admin.firestore(), 'users/aliceTermsHalf1'), {
+                email: 'alice@example.com',
+                plan: 'free',
+                createdAt: seededCreatedAt,
+                updatedAt: seededCreatedAt,
+                termsAcceptedAt: null,
+                termsVersion: null,
+            });
+        });
+        const ctx = env.authenticatedContext('aliceTermsHalf1');
+        await assertFails(updateDoc(doc(ctx.firestore(), 'users/aliceTermsHalf1'), {
+            email: 'alice@example.com',
+            plan: 'free',
+            createdAt: seededCreatedAt,
+            updatedAt: serverTimestamp(),
+            termsAcceptedAt: serverTimestamp(),
+            termsVersion: null, // 半端: 同意時刻だけ書いて版が null
+        }));
+    });
+
+    await run('update で termsVersion のみ設定 (termsAcceptedAt=null) → DENIED (半端状態防止)', async () => {
+        const seededCreatedAt = Timestamp.fromDate(new Date('2026-01-01T00:00:00Z'));
+        await env.withSecurityRulesDisabled(async (admin) => {
+            await setDoc(doc(admin.firestore(), 'users/aliceTermsHalf2'), {
+                email: 'alice@example.com',
+                plan: 'free',
+                createdAt: seededCreatedAt,
+                updatedAt: seededCreatedAt,
+                termsAcceptedAt: null,
+                termsVersion: null,
+            });
+        });
+        const ctx = env.authenticatedContext('aliceTermsHalf2');
+        await assertFails(updateDoc(doc(ctx.firestore(), 'users/aliceTermsHalf2'), {
+            email: 'alice@example.com',
+            plan: 'free',
+            createdAt: seededCreatedAt,
+            updatedAt: serverTimestamp(),
+            termsAcceptedAt: null,
+            termsVersion: '2026-04-28', // 半端: 版だけ書いて時刻が null
+        }));
+    });
+
     await run('自 uid で email: null → DENIED', async () => {
         const ctx = env.authenticatedContext('alice2');
         await assertFails(setDoc(doc(ctx.firestore(), 'users/alice2'), baseUserDoc({ email: null })));

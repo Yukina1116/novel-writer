@@ -197,12 +197,18 @@ const callAcceptTerms = async (
 // から並列に走らないようにする（同 Promise を共有）。authSlice の state には
 // 入れず closure local で管理（Zustand の re-render を起こさないため）。
 let inFlightUserInitRetry: Promise<void> | null = null;
+// acceptTerms も同様 (multi-tab / 同時クリック)。state.termsAccepting は UI disabled 用、
+// in-flight guard は Promise 共有による真の二重実行防止。
+let inFlightAcceptTerms: Promise<void> | null = null;
 
 // test 間の module-scope state リーク防止のため、test 専用 reset を export する。
 // 本番コードからは参照しない。
 export const __testing = {
     resetInFlightUserInitRetry: (): void => {
         inFlightUserInitRetry = null;
+    },
+    resetInFlightAcceptTerms: (): void => {
+        inFlightAcceptTerms = null;
     },
 };
 
@@ -307,6 +313,9 @@ export const createAuthSlice = (set, get): AuthSlice => ({
                 termsVersion: null,
                 currentTermsVersion: null,
                 needsTermsAccept: false,
+                // acceptTerms 実行中に signOut した場合、termsAccepting=true のまま残ると
+                // 次回ログインで silent failure (UI disabled のまま) になる。明示的に false へ。
+                termsAccepting: false,
             });
             // currentUser update flows through onAuthStateChanged listener.
         } catch (error: unknown) {
@@ -346,33 +355,38 @@ export const createAuthSlice = (set, get): AuthSlice => ({
     },
 
     acceptTerms: async () => {
+        // Multi-tab / 同時クリック対策: in-flight Promise を共有して真の二重実行を防ぐ。
+        // state.termsAccepting (React state) は UI disabled 用で別レイヤー。
+        if (inFlightAcceptTerms) return inFlightAcceptTerms;
+
         const user = auth.currentUser;
         if (!user) throw new Error('acceptTerms called without authenticated user');
         const currentVersion = (get() as { currentTermsVersion?: string | null }).currentTermsVersion;
         if (!currentVersion) {
             throw new Error('acceptTerms called before users/init completed');
         }
-        if ((get() as { termsAccepting?: boolean }).termsAccepting) {
-            // 重複押下を防ぐ。loading 中はそのまま return (UI 側で disabled 表示)。
-            return;
-        }
-        set({ termsAccepting: true });
-        try {
-            const result = await callAcceptTerms(user, currentVersion);
-            applyTermsState(set, {
-                termsAcceptedAt: result.termsAcceptedAt,
-                termsVersion: result.termsVersion,
-                currentTermsVersion: currentVersion,
-            });
-        } catch (error: unknown) {
-            console.error('acceptTerms failed:', error);
-            reportAuthError(get, '利用規約の同意に失敗しました', error);
-            // TERMS_VERSION_MISMATCH (409) の場合は users/init を再 fetch して
-            // currentTermsVersion を更新する経路を作るべきだが、PR-D-1 では throw のみ。
-            // PR-D-2 (UI 実装) で modal 内で再 fetch する flow を追加する。
-            throw error;
-        } finally {
-            set({ termsAccepting: false });
-        }
+
+        inFlightAcceptTerms = (async () => {
+            set({ termsAccepting: true });
+            try {
+                const result = await callAcceptTerms(user, currentVersion);
+                applyTermsState(set, {
+                    termsAcceptedAt: result.termsAcceptedAt,
+                    termsVersion: result.termsVersion,
+                    currentTermsVersion: currentVersion,
+                });
+            } catch (error: unknown) {
+                console.error('acceptTerms failed:', error);
+                reportAuthError(get, '利用規約の同意に失敗しました', error);
+                // TERMS_VERSION_MISMATCH (409) の場合は users/init を再 fetch して
+                // currentTermsVersion を更新する経路を作るべきだが、PR-D-1 では throw のみ。
+                // PR-D-2 (UI 実装) で modal 内で再 fetch する flow を追加する。
+                throw error;
+            } finally {
+                set({ termsAccepting: false });
+                inFlightAcceptTerms = null;
+            }
+        })();
+        return inFlightAcceptTerms;
     },
 });
