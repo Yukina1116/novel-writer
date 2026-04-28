@@ -3,12 +3,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mock the singletons that wireBlockedHandler talks to. `setBlockedHandler`
 // is the contract surface — capture every call so we can assert install /
 // detach symmetry. `useStore.getState().showToast` is what the registered
-// handler must invoke when the blocked event fires.
-const setBlockedHandler = vi.fn<(handler: (() => void) | null) => void>();
+// handler must invoke when the blocked event fires. The handler now
+// receives a BlockedEventPayload (H10-followup-3); current consumer
+// ignores it but the contract test exercises both passing and absent
+// payloads.
+type BlockedHandler = (payload: { oldVersion: number; newVersion: number | null }) => void;
+const setBlockedHandler = vi.fn<(handler: BlockedHandler | null) => void>();
 const showToast = vi.fn<(message: string, kind?: string) => void>();
+const fakePayload = { oldVersion: 1, newVersion: 2 } as const;
 
 vi.mock('../db/dexie', () => ({
-    setBlockedHandler: (handler: (() => void) | null) => setBlockedHandler(handler),
+    setBlockedHandler: (handler: BlockedHandler | null) => setBlockedHandler(handler),
 }));
 vi.mock('../store/index', () => ({
     useStore: {
@@ -40,7 +45,11 @@ describe('wireBlockedHandler contract (H10-followup-1)', () => {
     it('the installed handler routes the blocked event to showToast with the canonical error message', () => {
         wireBlockedHandler();
         const installed = setBlockedHandler.mock.calls[0][0]!;
-        installed();
+        // Pass a payload like the real wrapper does. Today the consumer
+        // ignores it; we still pass it so a future regression in the
+        // signature (forgetting the parameter, accidentally requiring
+        // extra fields) surfaces here.
+        installed(fakePayload);
         expect(showToast).toHaveBeenCalledOnce();
         expect(showToast).toHaveBeenCalledWith(DB_BLOCKED_MESSAGE, 'error');
     });
@@ -67,7 +76,7 @@ describe('wireBlockedHandler contract (H10-followup-1)', () => {
         // even though the showToast spy was reset (i.e. it doesn't capture
         // the old reference).
         showToast.mockClear();
-        installed();
+        installed(fakePayload);
         expect(showToast).toHaveBeenCalledWith(DB_BLOCKED_MESSAGE, 'error');
     });
 
