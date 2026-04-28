@@ -48,7 +48,8 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 | `/api/ai/image/generate` | imageService + `withUsageQuota('image/generate', 1000 sen)` | Imagen画像生成 |
 | `/api/ai/utility/{names,knowledge-name,extract-character}` | utilityService + `withUsageQuota('utility/*', 50-100 sen)` | 名前生成、キャラ抽出等 |
 | `/api/ai/analysis/import` | analysisService + `withUsageQuota('analysis/import', 200 sen)` | テキストインポート分析 |
-| `/api/users/init` | verifyIdToken middleware → Firestore `users/{uid}` を transaction で冪等初期化（M2 PR-C） | ログイン直後のユーザーメタ初期化 |
+| `/api/users/init` | verifyIdToken middleware → Firestore `users/{uid}` を transaction で冪等初期化（M2 PR-C） | ログイン直後のユーザーメタ初期化、M7-α で `termsAcceptedAt` / `termsVersion` / `currentTermsVersion` をレスポンスに追加 |
+| `/api/users/accept-terms` | verifyIdToken + Firestore transaction で `termsAcceptedAt` / `termsVersion` 更新、`TERMS_VERSION` 不一致は 409 + `code: 'TERMS_VERSION_MISMATCH'`（M7-α PR-D-1） | 利用規約同意の永続化 |
 
 - **AIクライアント**: `server/aiClient.ts` — `USE_VERTEX_AI=true`でVertex AI、それ以外はAPIキーモード
 - **プロンプト構築**: `server/services/promptBuilder.ts` — format系ユーティリティ
@@ -73,7 +74,7 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 | tutorialSlice | 5種チュートリアルの進捗（IndexedDB の `tutorialState` ストア） |
 | analysisHistorySlice | テキストインポート分析の履歴（IndexedDB の `analysisHistory` ストア） |
 | formSlice | フォーム状態 |
-| authSlice | Firebase Auth 状態（`currentUser` / `authStatus: 'initializing' \| 'unauthenticated' \| 'authenticated'` / `authError` / `needsUserInit` / `retryUserInit()`、IndexedDB は uid に紐付けない設計、M2 PR-B で導入、M3 PR-G で users/init transient retry signal 追加） |
+| authSlice | Firebase Auth 状態（`currentUser` / `authStatus: 'initializing' \| 'unauthenticated' \| 'authenticated'` / `authError` / `needsUserInit` / `retryUserInit()`、M7-α PR-D-1 で `termsAcceptedAt` / `termsVersion` / `currentTermsVersion` / `needsTermsAccept` (派生) / `termsAccepting` / `acceptTerms()` 追加、IndexedDB は uid に紐付けない設計、M2 PR-B で導入、M3 PR-G で users/init transient retry signal 追加） |
 | backupSlice | 全データバックアップ (`exportAllData` / `prepareImport` / `executeImport` / `cancelImport` / `setImportResolution` / `isBackupStale`)、`lastExportedAt` + `backupMetaStatus: 'unknown' \| 'loaded'` sentinel、`importPlan: { backup: BackupV1, conflicts: ImportConflict[] }`、M4 で導入 |
 
 ### バックアップ層 (M4)

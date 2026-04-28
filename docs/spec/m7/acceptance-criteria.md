@@ -1,7 +1,7 @@
 # M7-α Acceptance Criteria
 
 - Related: [tasks.md](./tasks.md)
-- Status: 検証待ち（PR-A〜D 着手中）
+- Status: AC-1/2/3/4/5/6/7 ✅ 実装完了（M7-α PR-A〜D-2 全 merge 想定）/ AC-8 = CI 通過確認
 
 各基準は第三者が機械的に検証可能であること。曖昧な基準（「正しく動作する」等）は禁止。
 
@@ -168,6 +168,19 @@ npm run test                                                                    
 | AC-6 | accept-terms route.test (supertest) | rules unit test | dev サーバー + Firestore Emulator |
 | AC-7 | - | - | dev サーバー footer 目視 |
 | AC-8 | CI | CI | CI |
+
+---
+
+### AC-9: users/init transient 失敗時の同意フロー保留 (PR-D-2)
+
+**Given**: ログイン直後に `users/init` が transient 失敗 (503/504/network)
+**When**: `currentTermsVersion` が `null` のまま
+**Then**:
+- `computeNeedsTermsAccept(null, null, null) === false` となり TermsConsentModal は表示されない（モーダル抑止）
+- `authSlice.needsUserInit = true` のまま AI 呼出時に `retryUserInit()` で再判定 → 成功で users/init 完了 → 必要なら同意モーダル表示
+- 結果: 同意未取得のままユーザーがアプリ画面を閲覧する経路は許容される (transient 復帰までモーダル発火を保留)。permanent 失敗ならば AI 呼出でブロックされる
+
+**設計判断**: users/init が動かない状態で同意を要求しても BE 側で永続化できないため、transient 復帰待ちの方が UX として自然。permanent 失敗時はユーザーが AI を呼ぶまでモーダルが出ないが、AI 呼出経路で AUTH_REQUIRED に倒れて停止するため未同意のまま付加価値機能が使われる経路は閉じている。
 
 ---
 

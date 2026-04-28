@@ -127,6 +127,89 @@ describe('retryUserInit', () => {
     });
 });
 
+describe('refreshCurrentTermsVersion (M7-α PR-D-2)', () => {
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(async () => {
+        getIdTokenMock.mockReset();
+        getIdTokenMock.mockResolvedValue('id-token-xyz');
+        authMock.currentUser = { getIdToken: getIdTokenMock };
+        fetchMock = vi.fn();
+        globalThis.fetch = fetchMock as unknown as typeof fetch;
+        const { __testing } = await import('./authSlice');
+        __testing.resetInFlightUserInitRetry();
+        __testing.resetInFlightAcceptTerms();
+    });
+
+    it('updates terms state without touching needsUserInit on success', async () => {
+        const { slice, state } = createTestSlice();
+        state.needsUserInit = true; // refresh は needsUserInit を変えない契約
+        fetchMock.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({
+                user: { termsAcceptedAt: null, termsVersion: null },
+                currentTermsVersion: '2026-04-28',
+            }),
+        });
+        await slice.refreshCurrentTermsVersion();
+        expect(state.currentTermsVersion).toBe('2026-04-28');
+        expect(state.needsTermsAccept).toBe(true);
+        expect(state.needsUserInit).toBe(true); // 触っていないことを pin
+    });
+
+    it('throws when called without authenticated user', async () => {
+        const { slice } = createTestSlice();
+        authMock.currentUser = null;
+        await expect(slice.refreshCurrentTermsVersion()).rejects.toThrow(
+            /without authenticated user/,
+        );
+    });
+
+    it('rethrows fetch failure (UI 側でハンドリング)', async () => {
+        const { slice } = createTestSlice();
+        fetchMock.mockResolvedValueOnce({
+            ok: false,
+            status: 503,
+            json: async () => ({ error: 'down' }),
+        });
+        await expect(slice.refreshCurrentTermsVersion()).rejects.toThrow();
+    });
+});
+
+describe('isTermsVersionMismatch (M7-α PR-D-2 helper)', () => {
+    it('returns true for Error with status=409 + code=TERMS_VERSION_MISMATCH', async () => {
+        const { isTermsVersionMismatch } = await import('./authSlice');
+        const err = new Error('mismatch') as Error & { status: number; code: string };
+        err.status = 409;
+        err.code = 'TERMS_VERSION_MISMATCH';
+        expect(isTermsVersionMismatch(err)).toBe(true);
+    });
+
+    it('returns false when status is 409 but code differs', async () => {
+        const { isTermsVersionMismatch } = await import('./authSlice');
+        const err = new Error('other') as Error & { status: number; code: string };
+        err.status = 409;
+        err.code = 'OTHER_CONFLICT';
+        expect(isTermsVersionMismatch(err)).toBe(false);
+    });
+
+    it('returns false when status is not 409', async () => {
+        const { isTermsVersionMismatch } = await import('./authSlice');
+        const err = new Error('server error') as Error & { status: number; code: string };
+        err.status = 500;
+        err.code = 'TERMS_VERSION_MISMATCH';
+        expect(isTermsVersionMismatch(err)).toBe(false);
+    });
+
+    it('returns false for non-Error / plain Error / objects without status', async () => {
+        const { isTermsVersionMismatch } = await import('./authSlice');
+        expect(isTermsVersionMismatch('string')).toBe(false);
+        expect(isTermsVersionMismatch(null)).toBe(false);
+        expect(isTermsVersionMismatch({ status: 409, code: 'TERMS_VERSION_MISMATCH' })).toBe(false);
+        expect(isTermsVersionMismatch(new Error('plain'))).toBe(false);
+    });
+});
+
 describe('computeNeedsTermsAccept (M7-α 派生ロジック)', () => {
     // AC-6-3 / AC-6-4 の核心ロジック。境界条件を機械的に固定する。
 
@@ -251,6 +334,29 @@ describe('acceptTerms (M7-α、in-flight Promise pattern)', () => {
 
         await expect(slice.acceptTerms()).rejects.toMatchObject({ status: 409 });
         expect(state.termsAccepting).toBe(false);
+    });
+
+    it('releases in-flight Promise on failure (allows retry after error)', async () => {
+        // 例外パスでも finally の inFlightAcceptTerms=null が効くか pin。
+        // 効かないと「1 度失敗後永久に同じ Promise を返し続ける」silent failure が発生する。
+        const { slice, state } = createTestSlice();
+        state.currentTermsVersion = '2026-04-28';
+        fetchMock.mockResolvedValueOnce(
+            new Response(JSON.stringify({ error: 'down' }), { status: 503 }),
+        );
+        await expect(slice.acceptTerms()).rejects.toMatchObject({ status: 503 });
+
+        // 2 回目: 別の fetch mock を消費すれば in-flight guard が解放されている証拠
+        fetchMock.mockResolvedValueOnce(
+            new Response(JSON.stringify({
+                success: true,
+                termsAcceptedAt: '2026-04-29T00:00:00Z',
+                termsVersion: '2026-04-28',
+            }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+        );
+        await slice.acceptTerms();
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(state.termsAcceptedAt).toBe('2026-04-29T00:00:00Z');
     });
 });
 

@@ -337,11 +337,15 @@ describe('POST /api/users/accept-terms (M7-α)', () => {
             .set('Authorization', 'Bearer valid-token')
             .send({ termsVersion: '2025-01-01' });
         expect(res.status).toBe(409);
+        // 文字列リテラル + 共有定数の双方向 pin: BE が返す HTTP body の code field が
+        // shared/termsCodes.ts の値と一致することを保証する (片方の typo を即検知)。
+        const { TERMS_VERSION_MISMATCH_CODE } = await import('../../shared/termsCodes');
         expect(res.body).toMatchObject({
             success: false,
             code: 'TERMS_VERSION_MISMATCH',
             currentTermsVersion: TERMS_VERSION,
         });
+        expect(res.body.code).toBe(TERMS_VERSION_MISMATCH_CODE);
     });
 
     it('returns 409 with code USER_DOC_MISSING when users doc not yet initialized', async () => {

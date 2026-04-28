@@ -15,6 +15,7 @@ RUN npm ci
 
 COPY --from=builder /app/dist ./dist
 COPY server ./server
+COPY shared ./shared
 COPY types.ts ./types.ts
 
 ENV NODE_ENV=production

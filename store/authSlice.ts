@@ -6,6 +6,7 @@ import {
     type User,
 } from 'firebase/auth';
 import { auth } from '../firebaseClient';
+import { TERMS_VERSION_MISMATCH_CODE } from '../shared/termsCodes';
 
 export type AuthStatus = 'initializing' | 'unauthenticated' | 'authenticated';
 
@@ -43,6 +44,9 @@ export interface AuthSlice {
     // termsAcceptedAt / termsVersion を更新、needsTermsAccept = false に倒す。
     // 失敗時は throw (UI 側で toast)。
     acceptTerms: () => Promise<void>;
+    // 規約バージョン再取得専用。意図的に needsUserInit を touch せず、
+    // AI 呼出 retry 経路 (retryUserInit) と意味論を分離する。失敗時 throw。
+    refreshCurrentTermsVersion: () => Promise<void>;
 }
 
 const toCurrentUser = (user: User | null): CurrentUser | null =>
@@ -129,6 +133,16 @@ const callUsersInit = async (user: User): Promise<UsersInitTermsState | null> =>
                 currentTermsVersion: body.currentTermsVersion,
             };
         }
+        // legacy / malformed レスポンス: prod では fail-closed して
+        // 規約 gating を回避させない (rolling deploy / BE rollback 検知も兼ねる)。
+        // dev では legacy compat のため null を許容する (test 互換)。
+        if (import.meta.env.PROD) {
+            throw makeUserInitError(
+                'users/init returned legacy/malformed response (currentTermsVersion missing)',
+                502,
+            );
+        }
+        console.warn('users/init legacy null response (dev compat)');
         return null;
     }
     const body = await resp.json().catch(() => null) as { error?: string } | null;
@@ -153,6 +167,21 @@ export const computeNeedsTermsAccept = (
     return termsVersion !== currentTermsVersion;
 };
 
+// accept-terms route が throw する 4xx/5xx の error 形状。BE レスポンスの `code` を
+// 保持して FE 側で 409 / TERMS_VERSION_MISMATCH を分岐できるようにする。
+export interface AcceptTermsError extends Error {
+    status: number;
+    code?: string;
+}
+
+const isAcceptTermsError = (e: unknown): e is AcceptTermsError =>
+    e instanceof Error && typeof (e as { status?: unknown }).status === 'number';
+
+export const isTermsVersionMismatch = (error: unknown): boolean =>
+    isAcceptTermsError(error)
+    && error.status === 409
+    && error.code === TERMS_VERSION_MISMATCH_CODE;
+
 const callAcceptTerms = async (
     user: User,
     termsVersion: string,
@@ -169,16 +198,17 @@ const callAcceptTerms = async (
             body: JSON.stringify({ termsVersion }),
         });
     } catch (fetchErr) {
-        throw new Error(
+        // network 断 / CORS 拒否は status=0 で AcceptTermsError 化。
+        // status を持たせないと FE の transient 判定 / 文言マップが効かず raw error が露出する。
+        const err = new Error(
             fetchErr instanceof Error ? fetchErr.message : 'network error',
-        );
+        ) as AcceptTermsError;
+        err.status = 0;
+        throw err;
     }
     if (!resp.ok) {
         const body = await resp.json().catch(() => null) as { error?: string; code?: string } | null;
-        const err = new Error(body?.error ?? `accept-terms responded ${resp.status}`) as Error & {
-            status: number;
-            code?: string;
-        };
+        const err = new Error(body?.error ?? `accept-terms responded ${resp.status}`) as AcceptTermsError;
         err.status = resp.status;
         if (body?.code) err.code = body.code;
         throw err;
@@ -188,7 +218,10 @@ const callAcceptTerms = async (
         termsVersion?: string;
     } | null;
     if (!body || typeof body.termsAcceptedAt !== 'string' || typeof body.termsVersion !== 'string') {
-        throw new Error('accept-terms returned malformed response');
+        // 200 だが body 形が不正 → BE 契約違反。502 として固定し transient 判定対象外に。
+        const err = new Error('accept-terms returned malformed response') as AcceptTermsError;
+        err.status = 502;
+        throw err;
     }
     return { termsAcceptedAt: body.termsAcceptedAt, termsVersion: body.termsVersion };
 };
@@ -249,6 +282,28 @@ export const createAuthSlice = (set, get): AuthSlice => ({
                     authStatus: user ? 'authenticated' : 'unauthenticated',
                     authError: null,
                 });
+                // M7-α: persisted session の reload でも users/init を実行して terms state を取得。
+                // これを怠ると既ログインユーザーが規約同意を回避できる (法務 gating の核心)。
+                // signInWithGoogle でも別途呼ぶが、reload 経路では popup を経ないためここで担保。
+                if (!user) return;
+                void (async () => {
+                    const capturedUid = user.uid;
+                    try {
+                        const termsState = await callUsersInit(user);
+                        // resolve 時にユーザーが入れ替わっていれば破棄 (signOut + 別 sign-in race 対策)
+                        if (auth.currentUser?.uid !== capturedUid) return;
+                        set({ needsUserInit: false });
+                        if (termsState) {
+                            applyTermsState(set, termsState);
+                        }
+                    } catch (initError: unknown) {
+                        if (auth.currentUser?.uid !== capturedUid) return;
+                        console.error('users/init failed (persisted session):', initError);
+                        if (isUserInitError(initError) && isTransientUserInitError(initError.status)) {
+                            set({ needsUserInit: true });
+                        }
+                    }
+                })();
             },
             (error) => {
                 console.error('onAuthStateChanged error:', error);
@@ -361,6 +416,7 @@ export const createAuthSlice = (set, get): AuthSlice => ({
 
         const user = auth.currentUser;
         if (!user) throw new Error('acceptTerms called without authenticated user');
+        const capturedUid = user.uid;
         const currentVersion = (get() as { currentTermsVersion?: string | null }).currentTermsVersion;
         if (!currentVersion) {
             throw new Error('acceptTerms called before users/init completed');
@@ -370,6 +426,8 @@ export const createAuthSlice = (set, get): AuthSlice => ({
             set({ termsAccepting: true });
             try {
                 const result = await callAcceptTerms(user, currentVersion);
+                // resolve 時にユーザーが入れ替わっていれば破棄 (signOut + 別 sign-in race 対策)
+                if (auth.currentUser?.uid !== capturedUid) return;
                 applyTermsState(set, {
                     termsAcceptedAt: result.termsAcceptedAt,
                     termsVersion: result.termsVersion,
@@ -377,10 +435,11 @@ export const createAuthSlice = (set, get): AuthSlice => ({
                 });
             } catch (error: unknown) {
                 console.error('acceptTerms failed:', error);
-                reportAuthError(get, '利用規約の同意に失敗しました', error);
-                // TERMS_VERSION_MISMATCH (409) の場合は users/init を再 fetch して
-                // currentTermsVersion を更新する経路を作るべきだが、PR-D-1 では throw のみ。
-                // PR-D-2 (UI 実装) で modal 内で再 fetch する flow を追加する。
+                // mismatch (409) は recoverable signal なので generic 失敗 toast を出さない。
+                // modal 側が refreshCurrentTermsVersion → 再同意 UI を回す。
+                if (!isTermsVersionMismatch(error)) {
+                    reportAuthError(get, '利用規約の同意に失敗しました', error);
+                }
                 throw error;
             } finally {
                 set({ termsAccepting: false });
@@ -388,5 +447,22 @@ export const createAuthSlice = (set, get): AuthSlice => ({
             }
         })();
         return inFlightAcceptTerms;
+    },
+
+    refreshCurrentTermsVersion: async () => {
+        const user = auth.currentUser;
+        if (!user) throw new Error('refreshCurrentTermsVersion called without authenticated user');
+        const capturedUid = user.uid;
+        const termsState = await callUsersInit(user);
+        if (auth.currentUser?.uid !== capturedUid) return;
+        if (!termsState) {
+            // legacy / null レスポンス時に据え置きすると mismatch 連鎖で無限ループ。
+            // 再 fetch が意味を成さない状態なので throw して modal を fatal 経路に倒す。
+            throw new Error(
+                'refreshCurrentTermsVersion: users/init returned legacy/malformed response',
+            );
+        }
+        applyTermsState(set, termsState);
+        // needsUserInit は意図的に touch しない (AI 呼出 retry 経路と切り離す)。
     },
 });

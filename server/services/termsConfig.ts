@@ -14,3 +14,6 @@
 export const TERMS_VERSION = '2026-04-28' as const;
 
 export type TermsVersion = typeof TERMS_VERSION;
+
+// FE / BE 共有定数は shared/ から re-export。FE は shared/ から直接 import すること。
+export { TERMS_VERSION_MISMATCH_CODE } from '../../shared/termsCodes';

@@ -20,6 +20,7 @@ import * as utilityApi from '../utilityApi';
 import { SyncDialog } from './SyncDialog';
 import { ImportTextModal } from './ImportTextModal';
 import { ImportConflictModal } from './modals/ImportConflictModal';
+import { TermsConsentModal, isTermsDevBypass } from './modals/TermsConsentModal';
 
 interface ModalManagerProps {
     displayMenuButtonRef: React.RefObject<HTMLButtonElement>;
@@ -27,6 +28,8 @@ interface ModalManagerProps {
 }
 
 export const ModalManager: React.FC<ModalManagerProps> = ({ displayMenuButtonRef, isMobile = false }) => {
+    const needsTermsAccept = useStore(state => state.needsTermsAccept);
+    const authStatus = useStore(state => state.authStatus);
     const activeModal = useStore(state => state.activeModal);
     const helpTopic = useStore(state => state.helpTopic);
     const setHelpTopic = useStore(state => state.setHelpTopic);
@@ -52,6 +55,13 @@ export const ModalManager: React.FC<ModalManagerProps> = ({ displayMenuButtonRef
     const exportHtml = useStore(state => state.exportHtml);
 
     const activeProjectData = activeProjectId ? allProjectsData[activeProjectId] : null;
+
+    // dev bypass で TermsConsentModal の mount 自体を抑止 (二重ガード)。
+    // authStatus 'authenticated' を要求して、未認証や initializing 中の race で modal が
+    // 出て即 throw する経路を閉じる。
+    if (authStatus === 'authenticated' && needsTermsAccept && !isTermsDevBypass()) {
+        return <TermsConsentModal />;
+    }
 
     // importConflict can fire from ProjectSelectionScreen (no active project),
     // so handle it before the activeProjectData early-return that other modals
