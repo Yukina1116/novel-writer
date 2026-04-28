@@ -1,10 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
+
+// `useGlobalErrorHandlers.ts` は top-level で `useStore` を import し、その import
+// チェーンは `authSlice.ts` → `firebaseClient.ts` (VITE_FIREBASE_* env 必須) まで到達する。
+// CI 環境 (.env なし) でモジュール load 時に throw する経路を遮断するため、
+// vi.mock で `../store/index` を stub する。本テストは buildHandlers の引数注入版を
+// 検証する設計のため、useStore の実体は使わない。
+vi.mock('../store/index', () => ({
+    useStore: {
+        getState: () => ({ showToast: () => {} }),
+    },
+}));
+
+const {
     GLOBAL_ERROR_MESSAGE,
     UNHANDLED_REJECTION_MESSAGE,
     buildHandlers,
     registerGlobalErrorHandlers,
-} from './useGlobalErrorHandlers';
+} = await import('./useGlobalErrorHandlers');
 
 // `useGlobalErrorHandlers` は React hook のため node 環境では実 render 不可。
 // 純粋関数の `registerGlobalErrorHandlers` (window event listener の登録/解放) を
