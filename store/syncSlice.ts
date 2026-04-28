@@ -1,5 +1,20 @@
 import { putProject } from '../db/projectRepository';
 
+/**
+ * Delay before the auto-retry kicks in after a save failure. Single source
+ * of truth for both the timer (in flushSave's catch) and the user-facing
+ * toast text — a literal mismatch would lie to the user.
+ */
+export const SAVE_RETRY_DELAY_MS = 5_000;
+
+/**
+ * Default ceiling for flushSaveBlocking. A hung IndexedDB shouldn't be able
+ * to deadlock the UI for longer than this. prepareImport reuses this value
+ * directly; callers that genuinely need a different deadline should pass
+ * their own.
+ */
+export const FLUSH_SAVE_BLOCKING_DEFAULT_TIMEOUT_MS = 10_000;
+
 export interface SyncSlice {
     saveStatus: 'synced' | 'saving' | 'dirty' | 'error';
     lastSyncError: string | null;
@@ -13,22 +28,38 @@ export interface SyncSlice {
      * in flight. Consumers awaiting "true flush completion" must await
      * this — flushSave() itself returns immediately when `saveStatus`
      * was already 'saving' to avoid stacking writes.
+     *
+     * Internal — exposed on the interface only because Zustand slices
+     * can't use TypeScript `private`. External code MUST NOT mutate this
+     * directly; corrupting the field will break in-flight tracking and
+     * silently break flushSaveBlocking. The underscore prefix follows
+     * the existing internal-field convention (_saveTimer, _pendingFlush).
      */
     _savingPromise: Promise<void> | null;
     markDirty: () => void;
     flushSave: () => Promise<void>;
     /**
-     * Wait until the active project is fully persisted. Differs from
-     * flushSave(): if a save is in flight, waits for it; if dirty/error,
-     * triggers and waits for a fresh flush; if synced, returns immediately.
-     * Throws on save failure (the caller — e.g. prepareImport — needs to
-     * abort instead of silently using a stale on-disk snapshot). Times
-     * out after `timeoutMs` so a hung IndexedDB can't deadlock the UI.
+     * Wait until the active project is fully persisted, then resolve.
+     * Behavior:
+     * - synced: returns immediately (no-op).
+     * - saving (a putProject is in flight): awaits `_savingPromise`. If
+     *   that in-flight save **rejects**, this method rejects with the
+     *   same error — the caller decides whether to retry. We do NOT
+     *   silently retry inside the same call; doing so would obscure
+     *   transient failures and mask repeated cross-tab races.
+     * - dirty / error (no save in flight, but pending changes): triggers
+     *   a fresh flushSave() and awaits its outcome. flushSave never
+     *   throws (it converts failures into saveStatus='error'), so we
+     *   re-check saveStatus after the await and throw to surface a
+     *   real failure to the caller.
+     *
+     * Times out after `timeoutMs` (default
+     * `FLUSH_SAVE_BLOCKING_DEFAULT_TIMEOUT_MS`) so a hung IndexedDB
+     * can't deadlock the UI. The caller (e.g. prepareImport) is expected
+     * to retry once on rejection before giving up to the user.
      */
     flushSaveBlocking: (timeoutMs?: number) => Promise<void>;
 }
-
-const FLUSH_SAVE_BLOCKING_DEFAULT_TIMEOUT_MS = 10_000;
 
 export const createSyncSlice = (set, get): SyncSlice => ({
     saveStatus: 'synced',
@@ -94,7 +125,7 @@ export const createSyncSlice = (set, get): SyncSlice => ({
             console.error('Failed to save project:', error);
             // Schedule a retry so subsequent edits aren't stranded by a transient
             // failure (quota / DB closed by another tab / Dexie open race).
-            const retryTimer = setTimeout(() => get().flushSave(), 5000);
+            const retryTimer = setTimeout(() => get().flushSave(), SAVE_RETRY_DELAY_MS);
             set({
                 saveStatus: 'error' as const,
                 lastSyncError: error.message,
@@ -103,7 +134,7 @@ export const createSyncSlice = (set, get): SyncSlice => ({
                 _savingPromise: null,
             });
             (get() as any).showToast?.(
-                `保存に失敗しました（5秒後に自動再試行します）: ${error.message}`,
+                `保存に失敗しました（${SAVE_RETRY_DELAY_MS / 1000}秒後に自動再試行します）: ${error.message}`,
                 'error',
             );
             rejectSavingPromise!(error);
@@ -112,27 +143,30 @@ export const createSyncSlice = (set, get): SyncSlice => ({
 
     flushSaveBlocking: async (timeoutMs = FLUSH_SAVE_BLOCKING_DEFAULT_TIMEOUT_MS) => {
         const work = async () => {
-            // 1. If a save is already in flight, wait for IT to finish first.
-            //    Without this, callers see a "synced" race where flushSave
-            //    short-circuits while putProject is still in flight on the
-            //    other branch.
+            // 1. If a save is already in flight, wait for IT. If it rejects,
+            //    propagate the failure to the caller — DO NOT silently retry
+            //    inside this same call. Letting the caller see the rejection
+            //    keeps the contract clear (in-flight failure is the caller's
+            //    failure, not a hidden retry) and preserves their ability
+            //    to decide retry policy. prepareImport, for example, retries
+            //    once at its layer before alerting the user.
             const inFlight = get()._savingPromise;
             if (inFlight) {
-                // The in-flight save's failure is the caller's failure —
-                // propagate it (the throw is caught by the outer
-                // .catch below).
                 await inFlight;
+                // Successful in-flight save — the slice may now be 'dirty'
+                // because a markDirty during the save set _pendingFlush,
+                // which flushSave's success path translates back to dirty
+                // via markDirty(). Fall through to the dirty/error branch
+                // below so we re-flush.
             }
-            // 2. After waiting, the slice may be dirty (a markDirty fired
-            //    during the in-flight save — _pendingFlush=true path) or
-            //    error (the in-flight save rejected). Trigger a fresh
-            //    flush in either case.
-            //    Note: flushSave never throws — it converts failures into
-            //    saveStatus='error' + a 5s retry timer. We must re-check
-            //    saveStatus afterwards rather than relying on the await
-            //    to surface failure. activeProjectId-less stores leave
-            //    saveStatus untouched ('synced'), which is correctly
-            //    treated as nothing-to-do here.
+            // 2. dirty (markDirty fired during in-flight or unrelated edit)
+            //    or error (a previous failed flush parked here): trigger
+            //    a fresh flush. flushSave never throws — it converts
+            //    failures into saveStatus='error' + a SAVE_RETRY_DELAY_MS
+            //    retry timer. Re-check saveStatus afterwards rather than
+            //    relying on await to surface failure.
+            //    activeProjectId-less stores leave saveStatus untouched
+            //    ('synced'), which is correctly treated as nothing-to-do.
             const status = get().saveStatus;
             if (status === 'dirty' || status === 'error') {
                 await get().flushSave();

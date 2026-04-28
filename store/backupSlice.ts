@@ -37,8 +37,6 @@ type WithFlushSave = { flushSave?: () => Promise<void> };
 type WithFlushSaveBlocking = { flushSaveBlocking?: (timeoutMs?: number) => Promise<void> };
 type WithCloseModal = { closeModal?: () => void };
 
-const FLUSH_SAVE_PREFLIGHT_TIMEOUT_MS = 10_000;
-
 const errorMessage = (e: unknown): string =>
     e instanceof Error ? e.message : String(e);
 
@@ -172,22 +170,24 @@ export const createBackupSlice = (set, get): BackupSlice => ({
         // flushSave silently early-returns when saveStatus === 'saving',
         // which would let a still-in-flight save go un-awaited and let
         // prepareImport see a stale snapshot. flushSaveBlocking awaits the
-        // in-flight promise, then retriggers the flush if dirty/error,
-        // and throws on actual save failure so we abort instead of
-        // silently proceeding past a missed write.
+        // in-flight promise (propagating its rejection), then retriggers
+        // the flush if dirty/error, and throws on actual save failure so
+        // we abort instead of silently proceeding past a missed write.
         //
-        // Retry once before giving up. The sync slice already schedules a
-        // 5-second background retry on its own; one immediate retry here
-        // catches fast-recovery cases (transient quota, brief Dexie open
-        // race) without doubling overall latency.
+        // Retry once before giving up. flushSaveBlocking deliberately does
+        // NOT retry inside a single call — it surfaces in-flight failures
+        // so each layer can decide retry policy. We retry once here to
+        // catch fast-recovery cases (transient quota, brief Dexie open
+        // race); the sync slice's own SAVE_RETRY_DELAY_MS background timer
+        // handles slower recoveries on its own.
         const flushSaveBlocking = (get() as WithFlushSaveBlocking).flushSaveBlocking;
         if (flushSaveBlocking) {
             try {
-                await flushSaveBlocking(FLUSH_SAVE_PREFLIGHT_TIMEOUT_MS);
+                await flushSaveBlocking();
             } catch (firstError) {
                 console.error('flushSaveBlocking before prepareImport failed (1st):', firstError);
                 try {
-                    await flushSaveBlocking(FLUSH_SAVE_PREFLIGHT_TIMEOUT_MS);
+                    await flushSaveBlocking();
                 } catch (secondError) {
                     console.error('flushSaveBlocking before prepareImport failed (2nd, aborting):', secondError);
                     const detail = errorMessage(secondError);
