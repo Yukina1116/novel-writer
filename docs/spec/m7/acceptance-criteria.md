@@ -64,7 +64,11 @@ grep -r "console\.error" server/ --include="*.ts" | grep -v ".test.ts" | wc -l  
 npm run test                                                                       # → all PASS
 ```
 
-dev サーバー目視確認: `npm run dev` 起動 → 認証なしで `/api/ai/novel/generate` を curl → `{"severity":"WARNING","timestamp":"...","route":"/api/ai/novel/generate","code":"UNAUTHENTICATED",...}` 形式の log が出る
+**目視確認 (dev mode)**: `npm run dev` 起動 → 認証なしで `/api/ai/novel/generate` を curl → `[WARNING] verifyIdToken rejected (expected) {...}` 形式の人間可読 log が stdout/stderr に出る (NODE_ENV 未設定または development の場合は pretty-print 経路)。
+
+**目視確認 (prod mode、Cloud Logging 互換性)**: `NODE_ENV=production npm run start` で起動 → 同上 → `{"severity":"WARNING","timestamp":"...","service":"novel-writer-server","message":"verifyIdToken rejected (expected)",...}` 形式の JSON 1 行が stdout に出る。Cloud Run 本番環境はこの prod 経路で動作する。
+
+(検証用簡易コマンド: `NODE_ENV=production npx tsx -e "import { logger } from './server/utils/logger'; logger.info({ message: 'test', extra: 1 });"` で JSON 出力を確認可能)
 
 ---
 

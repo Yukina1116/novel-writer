@@ -1,17 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { handleApiError, CorsRejectError, __testing } from './errorHandler';
+import { logger } from '../utils/logger';
 
 const { extractMessage } = __testing;
 
 describe('handleApiError', () => {
-    let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+    let loggerErrorSpy: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
-        consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        loggerErrorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
     });
 
     afterEach(() => {
-        consoleErrorSpy.mockRestore();
+        loggerErrorSpy.mockRestore();
     });
 
     describe('gRPC transient errors → 503 (全 context で適用)', () => {
@@ -176,9 +177,12 @@ describe('handleApiError', () => {
     describe('Logging', () => {
         it('logs error with functionName prefix', () => {
             handleApiError(new Error('test'), 'my-handler', 'ai');
-            expect(consoleErrorSpy).toHaveBeenCalledWith(
-                'Error in my-handler:',
-                expect.anything(),
+            expect(loggerErrorSpy).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    message: 'Error in my-handler',
+                    functionName: 'my-handler',
+                    context: 'ai',
+                }),
             );
         });
     });
@@ -227,14 +231,14 @@ describe('extractMessage (Issue #40)', () => {
 });
 
 describe('handleApiError integration with extractMessage (Issue #40)', () => {
-    let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+    let loggerErrorSpy: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
-        consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        loggerErrorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
     });
 
     afterEach(() => {
-        consoleErrorSpy.mockRestore();
+        loggerErrorSpy.mockRestore();
     });
 
     it('classifies as 429 when outer message has RESOURCE_EXHAUSTED but inner message is generic (#40 silent failure)', () => {

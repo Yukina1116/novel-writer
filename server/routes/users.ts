@@ -4,6 +4,7 @@ import { getFirebaseFirestore } from '../firebaseAdmin';
 import { verifyIdToken, type AuthedRequest } from '../middleware/verifyIdToken';
 import { handleApiError } from '../middleware/errorHandler';
 import { sanitizeForUpdate } from '../utils/sanitize';
+import { logger, serializeError } from '../utils/logger';
 
 const router = Router();
 
@@ -50,8 +51,12 @@ router.post('/init', verifyIdToken, async (req, res) => {
         res.json({ success: true });
     } catch (error) {
         // 「特定 uid だけ users/init が落ちる」事象を本番ログから追跡できるよう、
-        // handleApiError 内部の汎用 console.error より前に context 付きで先行 log する。
-        console.error('users/init failed', { uid: user.uid, error });
+        // handleApiError 内部の汎用 logger.error より前に context 付きで先行 log する。
+        logger.error({
+            message: 'users/init failed',
+            uid: user.uid,
+            error: serializeError(error),
+        });
         const { status, message } = handleApiError(error, 'users/init', 'firestore');
         res.status(status).json({ success: false, error: message });
     }

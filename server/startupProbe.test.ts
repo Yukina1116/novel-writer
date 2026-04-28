@@ -12,6 +12,7 @@ vi.mock('./firebaseAdmin', async () => {
 });
 
 const { probeFirebaseAuth, isEmulatorMode } = await import('./startupProbe');
+const { logger } = await import('./utils/logger');
 
 describe('probeFirebaseAuth', () => {
     let originalAuthEmu: string | undefined;
@@ -24,7 +25,7 @@ describe('probeFirebaseAuth', () => {
         originalFirestoreEmu = process.env.FIRESTORE_EMULATOR_HOST;
         delete process.env.FIREBASE_AUTH_EMULATOR_HOST;
         delete process.env.FIRESTORE_EMULATOR_HOST;
-        logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        logSpy = vi.spyOn(logger, 'info').mockImplementation(() => {});
     });
 
     afterEach(() => {
@@ -46,14 +47,14 @@ describe('probeFirebaseAuth', () => {
             process.env.FIREBASE_AUTH_EMULATOR_HOST = 'localhost:9099';
             probeFirebaseAuth();
             expect(getFirebaseAuthMock).not.toHaveBeenCalled();
-            expect(logSpy).toHaveBeenCalledWith('Firebase Admin probe: skipped (emulator mode)');
+            expect(logSpy).toHaveBeenCalledWith({ message: 'Firebase Admin probe: skipped (emulator mode)' });
         });
 
         it('skips when FIRESTORE_EMULATOR_HOST is set', () => {
             process.env.FIRESTORE_EMULATOR_HOST = 'localhost:8080';
             probeFirebaseAuth();
             expect(getFirebaseAuthMock).not.toHaveBeenCalled();
-            expect(logSpy).toHaveBeenCalledWith('Firebase Admin probe: skipped (emulator mode)');
+            expect(logSpy).toHaveBeenCalledWith({ message: 'Firebase Admin probe: skipped (emulator mode)' });
         });
 
         it('skips when both emulator hosts are set', () => {
@@ -69,7 +70,7 @@ describe('probeFirebaseAuth', () => {
             getFirebaseAuthMock.mockReturnValueOnce({} as unknown);
             expect(() => probeFirebaseAuth()).not.toThrow();
             expect(getFirebaseAuthMock).toHaveBeenCalledTimes(1);
-            expect(logSpy).toHaveBeenCalledWith('Firebase Admin probe: ok (credential resolved)');
+            expect(logSpy).toHaveBeenCalledWith({ message: 'Firebase Admin probe: ok (credential resolved)' });
         });
 
         it('synchronously throws when applicationDefault() fails (ADC unset)', () => {

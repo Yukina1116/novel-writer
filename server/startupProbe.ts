@@ -1,4 +1,5 @@
 import { getFirebaseAuth, isEmulatorMode } from './firebaseAdmin';
+import { logger } from './utils/logger';
 
 export { isEmulatorMode };
 
@@ -12,9 +13,9 @@ export { isEmulatorMode };
  */
 export function probeFirebaseAuth(): void {
     if (isEmulatorMode()) {
-        console.log('Firebase Admin probe: skipped (emulator mode)');
+        logger.info({ message: 'Firebase Admin probe: skipped (emulator mode)' });
         return;
     }
     getFirebaseAuth();
-    console.log('Firebase Admin probe: ok (credential resolved)');
+    logger.info({ message: 'Firebase Admin probe: ok (credential resolved)' });
 }

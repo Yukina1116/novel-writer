@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import { errorHandlerMiddleware, CorsRejectError } from './middleware/errorHandler';
 import { probeFirebaseAuth } from './startupProbe';
 import { mountAiRoutes } from './aiRoutes';
+import { logger, serializeError } from './utils/logger';
 
 import usersRoutes from './routes/users';
 
@@ -135,7 +136,12 @@ async function startServer() {
 
     app.listen(PORT, '0.0.0.0', () => {
         const mode = process.env.USE_VERTEX_AI === 'true' ? 'Vertex AI' : 'API Key';
-        console.log(`Server running on http://localhost:${PORT} [AI: ${mode}, env: ${isDev ? 'dev' : 'prod'}]`);
+        logger.info({
+            message: `Server running on http://localhost:${PORT}`,
+            port: PORT,
+            aiMode: mode,
+            env: isDev ? 'dev' : 'prod',
+        });
     });
 }
 
@@ -144,6 +150,9 @@ async function startServer() {
 // process が alive のまま残る経路がある。Cloud Run の rollback 判定を確実化するため
 // 明示的に exit 1 する（fail-fast の意義保全）。
 startServer().catch((err) => {
-    console.error('Fatal startup error:', err);
+    logger.error({
+        message: 'Fatal startup error',
+        error: serializeError(err),
+    });
     process.exit(1);
 });

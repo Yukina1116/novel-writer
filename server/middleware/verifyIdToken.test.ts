@@ -9,6 +9,7 @@ vi.mock('../firebaseAdmin', () => ({
 }));
 
 const { verifyIdToken } = await import('./verifyIdToken');
+const { logger } = await import('../utils/logger');
 
 type MockRes = Response & {
     statusCode: number;
@@ -111,8 +112,8 @@ describe('verifyIdToken middleware', () => {
 
         for (const { name, err } of expectedCases) {
             it(`returns 401 for expected permanent ${name} (warn-level log)`, async () => {
-                const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-                const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+                const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+                const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
                 verifyIdTokenMock.mockRejectedValueOnce(err);
                 const req = buildReq('Bearer t');
                 const res = buildRes();
@@ -120,7 +121,9 @@ describe('verifyIdToken middleware', () => {
                 expect(res.statusCode).toBe(401);
                 expect(res.body).toMatchObject({ success: false, error: 'Invalid or expired token' });
                 expect(next).not.toHaveBeenCalled();
-                expect(warnSpy).toHaveBeenCalledWith('verifyIdToken rejected (expected):', expect.anything());
+                expect(warnSpy).toHaveBeenCalledWith(
+                    expect.objectContaining({ message: 'verifyIdToken rejected (expected)' }),
+                );
                 expect(errorSpy).not.toHaveBeenCalled();
                 warnSpy.mockRestore();
                 errorSpy.mockRestore();
@@ -129,8 +132,8 @@ describe('verifyIdToken middleware', () => {
 
         for (const { name, err } of unexpectedCases) {
             it(`returns 401 for unexpected permanent ${name} (error-level log)`, async () => {
-                const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-                const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+                const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+                const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
                 verifyIdTokenMock.mockRejectedValueOnce(err);
                 const req = buildReq('Bearer t');
                 const res = buildRes();
@@ -138,7 +141,9 @@ describe('verifyIdToken middleware', () => {
                 expect(res.statusCode).toBe(401);
                 expect(res.body).toMatchObject({ success: false, error: 'Invalid or expired token' });
                 expect(next).not.toHaveBeenCalled();
-                expect(errorSpy).toHaveBeenCalledWith('verifyIdToken rejected (unexpected):', err);
+                expect(errorSpy).toHaveBeenCalledWith(
+                    expect.objectContaining({ message: 'verifyIdToken rejected (unexpected)' }),
+                );
                 expect(warnSpy).not.toHaveBeenCalled();
                 warnSpy.mockRestore();
                 errorSpy.mockRestore();

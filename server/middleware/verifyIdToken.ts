@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { FirebaseAuthError } from 'firebase-admin/auth';
 import { getFirebaseAuth } from '../firebaseAdmin';
+import { logger, serializeError } from '../utils/logger';
 
 declare module 'express-serve-static-core' {
     interface Request {
@@ -28,8 +29,8 @@ const TRANSIENT_NETWORK_CODES = new Set<string>([
 
 // 期待された permanent エラー = ユーザー操作（再ログイン）で復旧する経路。
 // このリストにない permanent は分類漏れ / SDK breaking / 設定ミスの可能性があり、
-// catch ブロック末尾 (verifyIdToken rejected (unexpected)) の console.error で
-// 観測性を確保する。Sentry 等で異常な permanent code を拾って本リストに追加する運用。
+// catch ブロック末尾 (verifyIdToken rejected (unexpected)) の logger.error で
+// 観測性を確保する。Cloud Logging で異常な permanent code を拾って本リストに追加する運用。
 //
 // auth/quota-exceeded は意図的に追加していない: 公式ドキュメント
 // (https://firebase.google.com/docs/auth/admin/errors) では verifyIdToken() の
@@ -81,7 +82,10 @@ export async function verifyIdToken(req: Request, res: Response, next: NextFunct
         // transient (Firebase Auth サービス障害) は 503 透過で FE が再試行を判断、
         // permanent (invalid/expired token) は 401 で再ログイン誘導。
         if (isTransientAuthError(error)) {
-            console.error('verifyIdToken transient error:', error);
+            logger.error({
+                message: 'verifyIdToken transient error',
+                error: serializeError(error),
+            });
             res.status(503).json({ success: false, error: 'Auth service temporarily unavailable' });
             return;
         }
@@ -90,9 +94,15 @@ export async function verifyIdToken(req: Request, res: Response, next: NextFunct
         // 等を検知できるようにする
         if (isExpectedPermanentAuthError(error)) {
             const message = error instanceof Error ? error.message : String(error);
-            console.warn('verifyIdToken rejected (expected):', message);
+            logger.warn({
+                message: 'verifyIdToken rejected (expected)',
+                detail: message,
+            });
         } else {
-            console.error('verifyIdToken rejected (unexpected):', error);
+            logger.error({
+                message: 'verifyIdToken rejected (unexpected)',
+                error: serializeError(error),
+            });
         }
         res.status(401).json({ success: false, error: 'Invalid or expired token' });
     }
