@@ -12,8 +12,18 @@
 | #61 | PR-B: feat(m7) BE structured logger 導入 + console 全置換 (logger.test.ts 16 ケース、console.error 残存 0 件) | ✅ | +429/-49 |
 | #62 | PR-C: feat(m7) FE AppErrorBoundary + useGlobalErrorHandlers (純粋ロジック 13 ケース、実 render は E2E manual) | ✅ | +483/-1 |
 | #63 | PR-D-1: feat(m7) BE accept-terms + Firestore + authSlice fields 拡張 (TermsConsentModal/Footer は PR-D-2 持越) | ✅ | +962/-35 |
+| #64 | docs(handoff): P4 (M7-α) PR-A/B/C/D-1 完了 / PR-D-2 持越記録 | ✅ | +111/-114 |
+| #65 | fix(m7): useGlobalErrorHandlers.test.ts CI fragility 解消 (firebaseClient import 遮断、PR #62 由来 hotfix) | ✅ | +14/-2 |
 
 **P4 進捗**: 4/5 PR (PR-A/B/C/D-1) merge 済。残 PR-D-2 (UI 統合) のみ。
+
+### CI fragility 修正の経緯 (PR #65)
+
+PR #64 (handoff) の deploy CI が `Firebase config missing required VITE_FIREBASE_*` で failure。原因は PR #62 (PR-C) で導入した `useGlobalErrorHandlers.test.ts` の import チェーンが `firebaseClient.ts` まで到達し、`.env` のない CI 環境でモジュール load 時に throw する経路。
+
+**ローカル PASS / CI FAIL のクラシックパターン**。修正: test 冒頭に `vi.mock('../store/index', ...)` を追加して import チェーンを遮断。本テストは `buildHandlers` の引数注入版を検証する設計のため `useStore` 実体は使わない。他の FE テスト (`authSlice.test.ts` / `apiClient.test.ts` / `useLocalSync.test.ts`) はすでに同等パターンで対応済。
+
+**教訓**: FE テストで `store/` を import する際は CI で `.env` 不在を考慮し `vi.mock` で遮断するのが必須。次セッションで PR-D-2 着手時、TermsConsentModal の test を書く際にも同様の遮断が必要。
 
 ### マルチ Reviewer 反映実績
 
@@ -28,7 +38,7 @@
 
 ## 次セッション開始時の状態
 
-- ブランチ: `main` clean、origin/main と同期済み（HEAD: `e820597` = PR #63 merge）
+- ブランチ: `main` clean、origin/main と同期済み（HEAD: `3d0f0bf` = PR #65 merge、PR #64 が直前）
 - Open Issue: 1 件（#49 M4 follow-up umbrella、能動的作業不要・monitor 対象）
 - Open PR: 0 件（本セッションで作る handoff PR を除き全 merge 済）
 - グローバル `~/.claude/` への変更なし（プロジェクト CLAUDE.md §1 遵守）
@@ -151,12 +161,12 @@ gh run list --workflow="Deploy to Cloud Run" --branch main --limit 3
 GitHub Issue 数の変化:
 
 - Close 数（Issue）: 0 件
-- 起票数（Issue）: 0 件 (rating ≥ 7 + confidence ≥ 80 を満たす実害発見なし)
+- 起票数（Issue）: 0 件 (rating ≥ 7 + confidence ≥ 80 を満たす実害発見なし、CI fragility は hotfix で即解消)
 - **Net（Issue）: 0 件**
 
 PR の動き (参考):
 
-- Merge 数（PR）: 4 件 (#60/#61/#62/#63)
+- Merge 数（PR）: 6 件 (#60/#61/#62/#63/#64/#65)
 - Close 数（PR、設計やり直し）: 0 件
 
 進捗の質: **P4 (M7-α) 80% 完了 (4/5 PR merge 済)**。法務 stub + structured logging + FE error boundary + BE accept-terms スキーマと、後続実装 (PR-D-2 UI / 法務確認) のための基盤を全て整備済み。Issue Net=0 だが、各 PR で 2 並列レビュー (general-purpose + evaluator) を実施 + Critical/High を 2 ループ目で反映してマージしており、M3/M4 と同水準のレビューフロー継続。
