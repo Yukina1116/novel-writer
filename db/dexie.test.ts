@@ -7,195 +7,281 @@ const mockInstances: MockInstance[] = [];
 interface MockInstance {
     on: ReturnType<typeof vi.fn>;
     versionCalls: Array<{ version: number; stores: Record<string, string> }>;
-    blockedHandlers: Array<() => void>;
+    /**
+     * The wrapper Dexie hands to `instance.on('blocked', wrapper)` —
+     * createDb passes `(event: IDBVersionChangeEvent) => fireBlocked(...)`.
+     * Tests fire it with a synthesised event payload.
+     */
+    blockedListeners: Array<(event: IDBVersionChangeEvent) => void>;
 }
 
+const fakeEvent = (oldVersion = 1, newVersion: number | null = 2): IDBVersionChangeEvent =>
+    ({ oldVersion, newVersion }) as unknown as IDBVersionChangeEvent;
+
 vi.mock('dexie', () => {
+    // Minimal Dexie shape the SUT relies on. `version()` returns a chainable
+    // Version-like object whose `.stores()` records the call AND returns the
+    // same chainable so multi-step `.version().stores().upgrade()` chains
+    // (which the SUT may add later) don't crash. Asserting against
+    // `versionCalls` from a test catches schema-declaration regressions.
     class MockDexie {
         constructor(_name: string) {
             const captured: MockInstance = {
-                on: vi.fn((event: string, handler: () => void) => {
+                on: vi.fn((event: string, listener: (event: IDBVersionChangeEvent) => void) => {
                     if (event === 'blocked') {
-                        captured.blockedHandlers.push(handler);
+                        captured.blockedListeners.push(listener);
                     }
                 }),
                 versionCalls: [],
-                blockedHandlers: [],
+                blockedListeners: [],
             };
             mockInstances.push(captured);
-            // Mix the captured fields onto `this` so the SUT sees them
-            // (createDb does `instance.on(...)` etc.)
-            Object.assign(this, {
-                on: captured.on,
-                version: (v: number) => ({
+            const versionChain = (v: number) => {
+                const chain = {
                     stores: (s: Record<string, string>) => {
                         captured.versionCalls.push({ version: v, stores: s });
-                        return { stores: () => undefined };
+                        return chain;
                     },
-                }),
+                    upgrade: () => chain,
+                };
+                return chain;
+            };
+            Object.assign(this, {
+                on: captured.on,
+                version: versionChain,
             });
         }
     }
     return { default: MockDexie };
 });
 
-describe('db/dexie blocked-event handler wiring', () => {
+describe('db/dexie', () => {
     let dexieModule: typeof import('./dexie');
 
     beforeEach(async () => {
-        // Reset the captured instances and the module's lazy-init `_db`
-        // singleton so each test gets a fresh `createDb()` invocation.
+        // Reset captured instances + module's lazy-init `_db` singleton so
+        // each test gets a fresh `createDb()` invocation. fail-fast assert
+        // catches a future top-level side effect that creates instances
+        // before the test triggers getDb().
         mockInstances.length = 0;
         vi.resetModules();
         dexieModule = await import('./dexie');
+        expect(mockInstances).toHaveLength(0);
     });
 
-    it('registers exactly one blocked listener on the Dexie instance', () => {
-        dexieModule.getDb();
+    describe('schema declaration (H10-followup-2)', () => {
+        it('declares both v1 and v2 schemas with the expected store shapes', () => {
+            dexieModule.getDb();
 
-        expect(mockInstances).toHaveLength(1);
-        const onCalls = mockInstances[0].on.mock.calls;
-        const blockedCalls = onCalls.filter(([event]) => event === 'blocked');
-        expect(blockedCalls).toHaveLength(1);
-        expect(typeof blockedCalls[0][1]).toBe('function');
-    });
-
-    it('lazy-init: getDb returns the same instance across calls', () => {
-        const a = dexieModule.getDb();
-        const b = dexieModule.getDb();
-        expect(a).toBe(b);
-        expect(mockInstances).toHaveLength(1);
-    });
-
-    it('blocked event with no handler registered is a silent no-op (does not throw)', () => {
-        dexieModule.getDb();
-        const fire = mockInstances[0].blockedHandlers[0];
-        // No setBlockedHandler call → fire must not throw, must not call
-        // anything observable.
-        expect(() => fire()).not.toThrow();
-    });
-
-    it('setBlockedHandler installs a handler that the blocked event invokes', () => {
-        dexieModule.getDb();
-        const handler = vi.fn();
-        dexieModule.setBlockedHandler(handler);
-
-        const fire = mockInstances[0].blockedHandlers[0];
-        fire();
-
-        expect(handler).toHaveBeenCalledOnce();
-    });
-
-    it('setBlockedHandler(null) detaches the handler (idempotent re-fire safe)', () => {
-        dexieModule.getDb();
-        const handler = vi.fn();
-        dexieModule.setBlockedHandler(handler);
-        // Reset because installing the handler can flush a pending event;
-        // we want this case to test detach behavior in isolation.
-        handler.mockReset();
-        dexieModule.setBlockedHandler(null);
-
-        const fire = mockInstances[0].blockedHandlers[0];
-        fire();
-        fire();
-
-        expect(handler).not.toHaveBeenCalled();
-    });
-
-    it('latest setBlockedHandler call wins (replace, not stack)', () => {
-        dexieModule.getDb();
-        const first = vi.fn();
-        const second = vi.fn();
-        dexieModule.setBlockedHandler(first);
-        dexieModule.setBlockedHandler(second);
-
-        const fire = mockInstances[0].blockedHandlers[0];
-        fire();
-
-        expect(first).not.toHaveBeenCalled();
-        expect(second).toHaveBeenCalledOnce();
-    });
-
-    it('handler throwing does not bubble out of the event dispatcher', () => {
-        dexieModule.getDb();
-        const handler = vi.fn(() => {
-            throw new Error('showToast unavailable');
+            const calls = mockInstances[0].versionCalls;
+            expect(calls).toHaveLength(2);
+            expect(calls[0].version).toBe(1);
+            expect(calls[0].stores).toEqual({
+                projects: 'id, lastModified',
+                tutorialState: 'version',
+                analysisHistory: 'key',
+            });
+            // v2 must include backupMeta on top of v1's stores. Dropping any
+            // store or renaming a primary key would break upgrade for
+            // existing users — pin the shape so a refactor is loud.
+            expect(calls[1].version).toBe(2);
+            expect(calls[1].stores).toEqual({
+                projects: 'id, lastModified',
+                tutorialState: 'version',
+                analysisHistory: 'key',
+                backupMeta: 'key',
+            });
         });
-        dexieModule.setBlockedHandler(handler);
-        const fire = mockInstances[0].blockedHandlers[0];
-
-        // Dexie would otherwise propagate the throw into the IDB upgrade
-        // pipeline. The wrapper must catch + log so the user can still use
-        // the app.
-        const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-        expect(() => fire()).not.toThrow();
-        expect(errSpy).toHaveBeenCalled();
-        errSpy.mockRestore();
     });
 
-    it('multiple fires per handler installation collapse to a single notification', () => {
-        dexieModule.getDb();
-        const handler = vi.fn();
-        dexieModule.setBlockedHandler(handler);
-        const fire = mockInstances[0].blockedHandlers[0];
+    describe('blocked-event handler wiring', () => {
+        it('registers exactly one blocked listener on the Dexie instance', () => {
+            dexieModule.getDb();
 
-        fire();
-        fire();
-        fire();
+            expect(mockInstances).toHaveLength(1);
+            const onCalls = mockInstances[0].on.mock.calls;
+            const blockedCalls = onCalls.filter(([event]) => event === 'blocked');
+            expect(blockedCalls).toHaveLength(1);
+            expect(typeof blockedCalls[0][1]).toBe('function');
+        });
 
-        // Dexie can fire `blocked` repeatedly while another tab keeps the
-        // older schema open; spamming the user with the same toast for
-        // every retick is not what we want.
-        expect(handler).toHaveBeenCalledOnce();
-    });
+        it('lazy-init: getDb returns the same instance across calls', () => {
+            const a = dexieModule.getDb();
+            const b = dexieModule.getDb();
+            expect(a).toBe(b);
+            expect(mockInstances).toHaveLength(1);
+        });
 
-    it('re-installing a handler resets the once-only gate so future events fire again', () => {
-        dexieModule.getDb();
-        const first = vi.fn();
-        dexieModule.setBlockedHandler(first);
-        const fire = mockInstances[0].blockedHandlers[0];
-        fire();
-        fire(); // collapsed
-        expect(first).toHaveBeenCalledOnce();
+        it('blocked event with no handler registered is a silent no-op (does not throw)', () => {
+            dexieModule.getDb();
+            const fire = mockInstances[0].blockedListeners[0];
+            expect(() => fire(fakeEvent())).not.toThrow();
+        });
 
-        const second = vi.fn();
-        dexieModule.setBlockedHandler(second);
-        fire();
-        // After replacement the new handler is "fresh" — same blocked
-        // condition during a different session phase still notifies.
-        expect(second).toHaveBeenCalledOnce();
-    });
+        it('setBlockedHandler installs a handler that the blocked event invokes with the IDB version payload', () => {
+            dexieModule.getDb();
+            const handler = vi.fn();
+            dexieModule.setBlockedHandler(handler);
 
-    it('blocked fired before any handler is installed flushes once on first install', () => {
-        dexieModule.getDb();
-        const fire = mockInstances[0].blockedHandlers[0];
-        // Race: the IDB upgrade hits `blocked` before the consumer hook ran.
-        fire();
-        fire();
+            const fire = mockInstances[0].blockedListeners[0];
+            fire(fakeEvent(1, 2));
 
-        const handler = vi.fn();
-        dexieModule.setBlockedHandler(handler);
+            expect(handler).toHaveBeenCalledOnce();
+            // H10-followup-3: the wrapper must translate the raw
+            // IDBVersionChangeEvent into a stable BlockedEventPayload so
+            // future Dexie/IDB drift doesn't leak into consumers.
+            expect(handler).toHaveBeenCalledWith({ oldVersion: 1, newVersion: 2 });
+        });
 
-        // The pending fire is flushed exactly once; subsequent `fire`s on
-        // the same handler are collapsed by the once-gate.
-        expect(handler).toHaveBeenCalledOnce();
-        fire();
-        expect(handler).toHaveBeenCalledOnce();
-    });
+        it('payload preserves newVersion=null (delete request) as-is', () => {
+            // W3C IndexedDB §3.6: `newVersion` is null when the version
+            // change is a delete request. Pin the null path so a future
+            // refactor that coerces "0 or undefined" doesn't silently
+            // mistype delete events as upgrades.
+            dexieModule.getDb();
+            const handler = vi.fn();
+            dexieModule.setBlockedHandler(handler);
+            const fire = mockInstances[0].blockedListeners[0];
 
-    it('pending fire survives a transient null install — the next real handler still flushes', () => {
-        dexieModule.getDb();
-        const fire = mockInstances[0].blockedHandlers[0];
-        fire();
+            fire(fakeEvent(2, null));
 
-        // null detach must not throw and must not flush an absent handler.
-        expect(() => dexieModule.setBlockedHandler(null)).not.toThrow();
+            expect(handler).toHaveBeenCalledWith({ oldVersion: 2, newVersion: null });
+        });
 
-        // Hold the pending fire until a real handler arrives. Otherwise a
-        // hot-reload-induced unmount→remount cycle between IDB upgrade and
-        // hook init could silently lose the only `blocked` event.
-        const handler = vi.fn();
-        dexieModule.setBlockedHandler(handler);
-        expect(handler).toHaveBeenCalledOnce();
+        it('payload preserves oldVersion=0 (uninitialised remote tab) as a legitimate value', () => {
+            // `oldVersion === 0` means the other connection had no schema
+            // yet — distinct from "missing". The handler must see 0 (not
+            // undefined / NaN) so consumers can format the toast correctly.
+            dexieModule.getDb();
+            const handler = vi.fn();
+            dexieModule.setBlockedHandler(handler);
+            const fire = mockInstances[0].blockedListeners[0];
+
+            fire(fakeEvent(0, 1));
+
+            expect(handler).toHaveBeenCalledWith({ oldVersion: 0, newVersion: 1 });
+        });
+
+        it('payload-construction wrapper catches malformed events instead of bubbling into the IDB pipeline', () => {
+            // If a polyfill (fake-indexeddb / older browsers) hands the
+            // listener a null/undefined event, reading `.oldVersion` would
+            // throw a TypeError. The translation try/catch must keep the
+            // failure local — Dexie's upgrade pipeline must not see it.
+            dexieModule.getDb();
+            const handler = vi.fn();
+            dexieModule.setBlockedHandler(handler);
+            const fire = mockInstances[0].blockedListeners[0];
+
+            const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            expect(() => fire(null as any)).not.toThrow();
+            expect(errSpy).toHaveBeenCalled();
+            // Handler must NOT have been called with garbage payload — the
+            // failure aborts before fireBlocked sees anything.
+            expect(handler).not.toHaveBeenCalled();
+            errSpy.mockRestore();
+        });
+
+        it('setBlockedHandler(null) detaches the handler (idempotent re-fire safe)', () => {
+            dexieModule.getDb();
+            const handler = vi.fn();
+            dexieModule.setBlockedHandler(handler);
+            handler.mockReset();
+            dexieModule.setBlockedHandler(null);
+
+            const fire = mockInstances[0].blockedListeners[0];
+            fire(fakeEvent());
+            fire(fakeEvent());
+
+            expect(handler).not.toHaveBeenCalled();
+        });
+
+        it('latest setBlockedHandler call wins (replace, not stack)', () => {
+            dexieModule.getDb();
+            const first = vi.fn();
+            const second = vi.fn();
+            dexieModule.setBlockedHandler(first);
+            dexieModule.setBlockedHandler(second);
+
+            const fire = mockInstances[0].blockedListeners[0];
+            fire(fakeEvent());
+
+            expect(first).not.toHaveBeenCalled();
+            expect(second).toHaveBeenCalledOnce();
+        });
+
+        it('handler throwing does not bubble out of the event dispatcher', () => {
+            dexieModule.getDb();
+            const handler = vi.fn(() => {
+                throw new Error('showToast unavailable');
+            });
+            dexieModule.setBlockedHandler(handler);
+            const fire = mockInstances[0].blockedListeners[0];
+
+            const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            expect(() => fire(fakeEvent())).not.toThrow();
+            expect(errSpy).toHaveBeenCalled();
+            errSpy.mockRestore();
+        });
+
+        it('multiple fires per handler installation collapse to a single notification', () => {
+            dexieModule.getDb();
+            const handler = vi.fn();
+            dexieModule.setBlockedHandler(handler);
+            const fire = mockInstances[0].blockedListeners[0];
+
+            fire(fakeEvent());
+            fire(fakeEvent());
+            fire(fakeEvent());
+
+            expect(handler).toHaveBeenCalledOnce();
+        });
+
+        it('re-installing a handler resets the once-only gate so future events fire again', () => {
+            dexieModule.getDb();
+            const first = vi.fn();
+            dexieModule.setBlockedHandler(first);
+            const fire = mockInstances[0].blockedListeners[0];
+            fire(fakeEvent());
+            fire(fakeEvent()); // collapsed
+            expect(first).toHaveBeenCalledOnce();
+
+            const second = vi.fn();
+            dexieModule.setBlockedHandler(second);
+            fire(fakeEvent());
+            expect(second).toHaveBeenCalledOnce();
+        });
+
+        it('blocked fired before any handler is installed flushes the latest payload once on first install', () => {
+            dexieModule.getDb();
+            const fire = mockInstances[0].blockedListeners[0];
+            // Race: the IDB upgrade hits `blocked` before the consumer hook ran.
+            // We keep only the latest payload (most recent version numbers
+            // are the useful ones), so flush should carry the second event's
+            // shape, not the first.
+            fire(fakeEvent(1, 2));
+            fire(fakeEvent(2, 3));
+
+            const handler = vi.fn();
+            dexieModule.setBlockedHandler(handler);
+
+            expect(handler).toHaveBeenCalledOnce();
+            expect(handler).toHaveBeenCalledWith({ oldVersion: 2, newVersion: 3 });
+            fire(fakeEvent());
+            expect(handler).toHaveBeenCalledOnce();
+        });
+
+        it('pending fire survives a transient null install — the next real handler still flushes', () => {
+            dexieModule.getDb();
+            const fire = mockInstances[0].blockedListeners[0];
+            fire(fakeEvent(5, 6));
+
+            expect(() => dexieModule.setBlockedHandler(null)).not.toThrow();
+
+            const handler = vi.fn();
+            dexieModule.setBlockedHandler(handler);
+            expect(handler).toHaveBeenCalledOnce();
+            expect(handler).toHaveBeenCalledWith({ oldVersion: 5, newVersion: 6 });
+        });
     });
 });

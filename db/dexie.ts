@@ -49,26 +49,53 @@ export const BACKUP_META_KEY = 'current';
 // setter and called back when the event fires.
 //
 // Bootstrap-gap policy: if `blocked` fires before the consumer has had a
-// chance to register a handler, queue a single "fired-while-unhandled"
-// flag so the next setBlockedHandler call can flush it. Dexie may also fire
-// `blocked` multiple times — we collapse repeated fires into one user-facing
+// chance to register a handler, queue the latest payload so the next
+// setBlockedHandler call can flush it. We defensively assume `blocked` may
+// fire multiple times (Dexie can re-dispatch while another tab keeps the
+// older schema open) and collapse repeated fires into one user-facing
 // notification per setBlockedHandler installation to avoid spam.
-let blockedHandler: (() => void) | null = null;
-let pendingBlocked = false;
+
+/**
+ * Payload mirrors `IDBVersionChangeEvent` fields the consumer is most likely
+ * to surface (e.g. for richer toasts). We don't pass the raw event so the
+ * handler signature stays stable across Dexie/IDB API drift.
+ *
+ * Field semantics (W3C IndexedDB §3.6):
+ * - `oldVersion`: the schema version the older connection is pinning. `0`
+ *   means the DB hadn't been initialised on the other side yet (legitimate
+ *   value, not "missing").
+ * - `newVersion`: the version this tab is trying to upgrade to, or `null`
+ *   when the request is a delete.
+ *
+ * Marked `Readonly` so a consumer mutating the object can't poison the
+ * pending-fire queue (which holds the same reference until flush).
+ */
+export type BlockedEventPayload = Readonly<{
+    oldVersion: number;
+    newVersion: number | null;
+}>;
+
+export type BlockedHandler = (payload: BlockedEventPayload) => void;
+
+let blockedHandler: BlockedHandler | null = null;
+let pendingBlocked: BlockedEventPayload | null = null;
 let alreadyNotifiedThisHandler = false;
 
-const fireBlocked = () => {
+const fireBlocked = (payload: BlockedEventPayload) => {
     if (!blockedHandler) {
-        // No consumer ready yet — remember that we missed an event so the
-        // next install can flush. Without this, a `blocked` racing the hook
-        // mount would silently regress to the pre-PR hang.
-        pendingBlocked = true;
+        // No consumer ready yet — remember the latest event so the next
+        // install can flush. Without this, a `blocked` racing the hook
+        // mount would silently regress to the pre-PR hang. We keep only
+        // the most recent payload because Dexie may re-fire as the older
+        // tab keeps pinning, and the latest version numbers are the
+        // useful ones.
+        pendingBlocked = payload;
         return;
     }
     if (alreadyNotifiedThisHandler) return;
     alreadyNotifiedThisHandler = true;
     try {
-        blockedHandler();
+        blockedHandler(payload);
     } catch (e) {
         // Dexie's event dispatcher would otherwise let an exception thrown
         // by showToast (e.g. store not yet initialised) bubble into the IDB
@@ -77,12 +104,13 @@ const fireBlocked = () => {
     }
 };
 
-export const setBlockedHandler = (handler: (() => void) | null): void => {
+export const setBlockedHandler = (handler: BlockedHandler | null): void => {
     blockedHandler = handler;
     alreadyNotifiedThisHandler = false;
     if (handler && pendingBlocked) {
-        pendingBlocked = false;
-        fireBlocked();
+        const flushed = pendingBlocked;
+        pendingBlocked = null;
+        fireBlocked(flushed);
     }
 };
 
@@ -99,7 +127,20 @@ const createDb = (): AppDexieDb => {
         analysisHistory: 'key',
         backupMeta: 'key',
     });
-    instance.on('blocked', fireBlocked);
+    instance.on('blocked', (event: IDBVersionChangeEvent) => {
+        // Wrap the translation in its own try/catch so a missing/malformed
+        // event object can't bubble a TypeError into Dexie's IDB upgrade
+        // pipeline. fireBlocked itself catches handler exceptions, but
+        // payload construction happens *before* fireBlocked is reached.
+        try {
+            fireBlocked({
+                oldVersion: event.oldVersion,
+                newVersion: event.newVersion,
+            });
+        } catch (e) {
+            console.error('Dexie blocked-event wrapper threw:', e);
+        }
+    });
     return instance;
 };
 

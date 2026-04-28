@@ -25,8 +25,13 @@ export const DB_BLOCKED_MESSAGE =
 // `useStore.getState()` (not `useStore(...)` subscription) is intentional:
 // reading showToast at call time means a future store reset doesn't leave
 // a stale closure pointing at an old action.
+//
+// The `_payload` argument carries `{ oldVersion, newVersion }` from the
+// underlying IDBVersionChangeEvent. Currently unused — the toast text is
+// fixed — but accepting it keeps the door open for richer messaging later
+// without another signature break.
 export const wireBlockedHandler = (): (() => void) => {
-    setBlockedHandler(() => {
+    setBlockedHandler((_payload) => {
         useStore.getState().showToast(DB_BLOCKED_MESSAGE, 'error');
     });
     return () => {
