@@ -19,6 +19,7 @@ import {
     type ReservationHandle,
 } from '../services/usageService';
 import { MONTHLY_LIMIT_SEN, ROUTE_COST_SEN, type AiRouteKey, type Tier } from '../services/usageConfig';
+import { logger, serializeError } from '../utils/logger';
 
 // 現状 Tier 取得経路がないため固定。将来 users.plan からの取得に切替予定。
 const DEFAULT_TIER: Tier = 'free';
@@ -40,7 +41,10 @@ export const withUsageQuota = <TData>(
         const authed = req as AuthedRequest;
         if (!authed.user?.uid) {
             // verifyIdToken middleware が抜けていない限りここには来ない。二重防御。
-            console.error(`withUsageQuota: req.user missing for route ${routeKey}`);
+            logger.error({
+                message: 'withUsageQuota: req.user missing',
+                route: routeKey,
+            });
             res.status(500).json({ success: false, error: '認証コンテキストが取得できませんでした。' });
             return;
         }
@@ -101,17 +105,24 @@ export const withUsageQuota = <TData>(
                 // actualCost は記録されないが、上限到達誤判定よりリスクが小さい。
                 // どちらも失敗した場合は観測ログのみ（同一月内の reservation 残存を
                 // Sentry 等で監視 → 必要に応じ reconciliation job 検討）。
-                console.error(
-                    `usage:commit failed for ${routeKey} uid=${uid} requestId=${requestId} estimatedCost=${estimatedCost}`,
-                    commitErr,
-                );
+                logger.error({
+                    message: 'usage:commit failed',
+                    route: routeKey,
+                    uid,
+                    requestId,
+                    estimatedCost,
+                    error: serializeError(commitErr),
+                });
                 try {
                     await cancel(uid, requestId, handle);
                 } catch (cancelErr) {
-                    console.error(
-                        `usage:cancel-after-commit-failure also failed for ${routeKey} uid=${uid} requestId=${requestId}`,
-                        cancelErr,
-                    );
+                    logger.error({
+                        message: 'usage:cancel-after-commit-failure also failed',
+                        route: routeKey,
+                        uid,
+                        requestId,
+                        error: serializeError(cancelErr),
+                    });
                 }
             }
             res.json({ success: true, data });
@@ -119,10 +130,14 @@ export const withUsageQuota = <TData>(
             try {
                 await cancel(uid, requestId, handle);
             } catch (cancelErr) {
-                console.error(
-                    `usage:cancel failed for ${routeKey} uid=${uid} requestId=${requestId} estimatedCost=${estimatedCost}`,
-                    cancelErr,
-                );
+                logger.error({
+                    message: 'usage:cancel failed',
+                    route: routeKey,
+                    uid,
+                    requestId,
+                    estimatedCost,
+                    error: serializeError(cancelErr),
+                });
             }
             const { status, message } = handleApiError(handlerErr, routeKey, 'ai');
             res.status(status).json({ success: false, error: message });

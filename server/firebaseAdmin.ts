@@ -6,6 +6,7 @@ import {
 } from 'firebase-admin/app';
 import { getAuth, type Auth } from 'firebase-admin/auth';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { logger } from './utils/logger';
 
 const EMULATOR_HOST_PATTERN = /^[\w.-]+:\d+$/;
 
@@ -19,7 +20,11 @@ export function hasEmulatorHost(envVar: EmulatorEnvVar): boolean {
   // host が設定されているが pattern 不一致 (port 忘れ / typo) → 開発者は emulator
   // 接続を意図しているはず。ここで本番 mode に silent fallback すると ADC 未設定で
   // cryptic な applicationDefault() error になり原因究明が困難。明示的に warn する。
-  console.warn(`${envVar}="${host}" looks invalid (expected host:port format); treating as production mode`);
+  logger.warn({
+    message: `Emulator host env looks invalid (expected host:port format); treating as production mode`,
+    envVar,
+    value: host,
+  });
   return false;
 }
 

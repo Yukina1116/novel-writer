@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { logger, serializeError } from '../utils/logger';
 
 // NODE_ENV 未設定時は production 扱い (raw message 漏洩を防ぐ)。
 // Cloud Run / 本番デプロイで `NODE_ENV=production` 設定漏れがあっても
@@ -117,7 +118,12 @@ export const handleApiError = (
     functionName: string,
     context: ErrorContext,
 ): { status: number; message: string } => {
-    console.error(`Error in ${functionName}:`, isDev ? error : maskError(error));
+    logger.error({
+        message: `Error in ${functionName}`,
+        functionName,
+        context,
+        error: isDev ? serializeError(error) : maskError(error),
+    });
 
     const config = MESSAGES[context];
 

@@ -29,6 +29,7 @@ vi.mock('firebase-admin/firestore', () => ({
 }));
 
 const usersRouter = (await import('./users')).default;
+const { logger } = await import('../utils/logger');
 
 const buildApp = () => {
     const app = express();
@@ -185,7 +186,7 @@ describe('POST /api/users/init', () => {
         }
 
         it('logs uid context before generic handleApiError log (forensic trail)', async () => {
-            const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
             verifyIdTokenMock.mockResolvedValueOnce({ uid: 'forensic-uid', email: 'a@example.com' });
             docMock.mockReturnValueOnce({});
             runTransactionMock.mockRejectedValueOnce(Object.assign(new Error('firestore down'), { code: 'UNAVAILABLE' }));
@@ -195,8 +196,10 @@ describe('POST /api/users/init', () => {
                 .set('Authorization', 'Bearer valid-token');
 
             expect(errorSpy).toHaveBeenCalledWith(
-                'users/init failed',
-                expect.objectContaining({ uid: 'forensic-uid' }),
+                expect.objectContaining({
+                    message: 'users/init failed',
+                    uid: 'forensic-uid',
+                }),
             );
             errorSpy.mockRestore();
         });
