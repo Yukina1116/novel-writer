@@ -9,8 +9,26 @@ export { refreshFromIndexedDb } from './refreshFromIndexedDb';
 const LOCAL_DB_INIT_FAILED_MESSAGE =
     'ローカルデータの読み込みに失敗しました。プライベートモードや容量不足で IndexedDB が利用できない場合、データはメモリ上のみ保持され、リロードで失われます。';
 
-const DB_BLOCKED_MESSAGE =
+export const DB_BLOCKED_MESSAGE =
     '他のタブで古いバージョンのアプリが開いたままです。データベースの更新が完了できません。古いタブを閉じてからリロードしてください。';
+
+// Pure factory for the Dexie blocked-event wiring. Extracted so the contract
+// (install handler → invoke surfaces a toast → cleanup detaches) can be
+// unit-tested without spinning up a React renderer. The hook below just
+// calls this in useEffect; the hook's lifecycle adds no behavior beyond
+// install/detach symmetry.
+//
+// `useStore.getState()` (not `useStore(...)` subscription) is intentional:
+// reading showToast at call time means a future store reset doesn't leave
+// a stale closure pointing at an old action.
+export const wireBlockedHandler = (): (() => void) => {
+    setBlockedHandler(() => {
+        useStore.getState().showToast(DB_BLOCKED_MESSAGE, 'error');
+    });
+    return () => {
+        setBlockedHandler(null);
+    };
+};
 
 export const useLocalSync = () => {
     const [isInitializing, setIsInitializing] = useState(true);
@@ -19,13 +37,8 @@ export const useLocalSync = () => {
     useEffect(() => {
         // Install the Dexie blocked-event handler before any getDb() call in
         // this hook so a stale tab pinning the schema produces a toast
-        // instead of an indefinite stall. `useStore.getState()` (not
-        // `useStore(...)` subscription) is intentional: the handler reads
-        // showToast at call time, so swapping in a fresh store reference
-        // without re-registering still works.
-        setBlockedHandler(() => {
-            useStore.getState().showToast(DB_BLOCKED_MESSAGE, 'error');
-        });
+        // instead of an indefinite stall.
+        const detachBlocked = wireBlockedHandler();
         const init = async () => {
             try {
                 const result = await refreshFromIndexedDb();
@@ -46,12 +59,7 @@ export const useLocalSync = () => {
             }
         };
         init();
-        return () => {
-            // Strict Mode double-mount and hot-reload otherwise leave a stale
-            // closure registered on the singleton; null on unmount makes
-            // re-mount install the fresh handler cleanly.
-            setBlockedHandler(null);
-        };
+        return detachBlocked;
     }, []);
 
     useEffect(() => {
