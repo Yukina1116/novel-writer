@@ -5,7 +5,11 @@ import { verifyIdToken, type AuthedRequest } from '../middleware/verifyIdToken';
 import { handleApiError } from '../middleware/errorHandler';
 import { sanitizeForUpdate } from '../utils/sanitize';
 import { logger, serializeError } from '../utils/logger';
-import { TERMS_VERSION, TERMS_VERSION_MISMATCH_CODE } from '../services/termsConfig';
+import {
+    TERMS_VERSION,
+    TERMS_VERSION_MISMATCH_CODE,
+    USER_DOC_MISSING_CODE,
+} from '../services/termsConfig';
 
 const router = Router();
 
@@ -196,7 +200,7 @@ router.post('/accept-terms', verifyIdToken, async (req, res) => {
             res.status(409).json({
                 success: false,
                 error: 'ユーザー初期化が未完了です。リロードして再試行してください。',
-                code: 'USER_DOC_MISSING',
+                code: USER_DOC_MISSING_CODE,
             });
             return;
         }

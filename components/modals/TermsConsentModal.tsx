@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../store/index';
-import { isTermsVersionMismatch, type AcceptTermsError } from '../../store/authSlice';
+import { isTermsVersionMismatch } from '../../store/authSlice';
 import { LegalLinkList } from '../LegalLinkList';
 
 // dev bypass: prod では query を無視 (二重ガード)。SSR-safety: window 不在時は false。
@@ -20,16 +20,18 @@ type TermsError =
 
 // 実装漏洩防止: BE error の生 message を user に出さず、status から actionable 文言に倒す。
 // 0 = network 断 (CORS / fetch throw)、502 = malformed response、5xx = サーバ側障害、4xx = 認証/契約問題。
+// AcceptTermsError (主経路) と UserInitError (refreshCurrentTermsVersion 失敗経路) の両方を
+// 扱うため、specific class instanceof ではなく status duck-typing で抽出する。
 const userFacingMessage = (error: unknown): string => {
-    if (error instanceof Error) {
-        const e = error as AcceptTermsError;
-        if (typeof e.status === 'number') {
-            if (e.status === 0) return 'ネットワーク接続を確認してください。';
-            if (e.status === 401) return '認証セッションが切れました。再ログインしてください。';
-            if (e.status === 502) return 'サーバ応答が不正です。時間をおいて再試行してください。';
-            if (e.status >= 500) return 'サーバ側で一時的な問題が発生しています。時間をおいて再試行してください。';
-            if (e.status >= 400) return '同意処理に失敗しました。ページを再読み込みしてください。';
-        }
+    const status = error instanceof Error && typeof (error as unknown as { status?: unknown }).status === 'number'
+        ? (error as unknown as { status: number }).status
+        : null;
+    if (status !== null) {
+        if (status === 0) return 'ネットワーク接続を確認してください。';
+        if (status === 401) return '認証セッションが切れました。再ログインしてください。';
+        if (status === 502) return 'サーバ応答が不正です。時間をおいて再試行してください。';
+        if (status >= 500) return 'サーバ側で一時的な問題が発生しています。時間をおいて再試行してください。';
+        if (status >= 400) return '同意処理に失敗しました。ページを再読み込みしてください。';
     }
     return '同意処理に失敗しました。';
 };
@@ -59,6 +61,9 @@ export const TermsConsentModal: React.FC = () => {
         try {
             await acceptTerms();
         } catch (acceptError) {
+            // raw error は authSlice.acceptTerms の catch (`console.error('acceptTerms failed:', error)`)
+            // で既に出力済み。Sentry 重複イベント化を避けるため modal 側では再ログしない。
+            // userFacingMessage は status から固定文言に倒す (実装漏洩防止)。
             if (!isTermsVersionMismatch(acceptError)) {
                 setError({ kind: 'message', text: userFacingMessage(acceptError) });
                 return;
@@ -69,6 +74,7 @@ export const TermsConsentModal: React.FC = () => {
                 await refreshCurrentTermsVersion();
                 setError({ kind: 'mismatch' });
             } catch (refetchError) {
+                console.error('[TermsConsentModal] refreshCurrentTermsVersion failed', refetchError);
                 // 再 fetch 失敗 → ボタン disable 維持で無限再送ループを防ぎ、ページ再読込誘導。
                 setError({ kind: 'fatal', text: userFacingMessage(refetchError) });
             }
