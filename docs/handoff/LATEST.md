@@ -36,14 +36,14 @@
   - `NonConflictAcceptTermsStatus = 0 | 400 | 401 | 500 | 502 | 503 | 504` を `as const` 配列から派生（型と Set 二重管理を排除）
   - 想定外 status (例 422) は `narrowAcceptTermsStatus` で 502 (BE 契約違反扱い) に倒す **fail-closed 方針**（PR description で明示、blocker ではない挙動変更）
   - `isTermsVersionMismatch` は plain Error with status の duck-typing 維持（既存テスト互換 + 将来 fetch ラッパー等が同形状 Error を throw した場合の互換性、rationale をコメント明記）
-  - 二重 console.error 解消: `acceptTerms` 失敗は authSlice 側 (`L499 console.error('acceptTerms failed:', error)`) で既出のため、TermsConsentModal 側の console.error は削除。`refreshCurrentTermsVersion` 失敗は authSlice 側に出力なしのため modal 側で維持
+  - 二重 console.error 解消: `acceptTerms` 失敗は authSlice の `acceptTerms` action 内 catch (`console.error('acceptTerms failed:', error)`) で既出のため、TermsConsentModal 側の console.error は削除。`refreshCurrentTermsVersion` 失敗は authSlice 側に出力なしのため modal 側で維持
 
-## 次セッション開始時の状態
+## 次セッション開始時の状態 (2026-04-29 本 PR merge 時点 snapshot、追加 PR があれば変動)
 
 - ブランチ: 本 PR (handoff) merge 後は `main` clean
 - Open Issue: 1 件（#49 M4/M7 follow-up umbrella、rating ≥ 7 全消化済、rating ≤ 6 follow-up + USER_DOC_MISSING UX 課題で open 維持・能動作業不要・monitor 対象）
-- 自動テスト: vitest **357/357 PASS**（前 339 → +18: shared/termsCodes +5 / authSlice AcceptTermsError class instance +5 / ts-expect-error pin +1 / callAcceptTerms throw paths +7）
-- 型チェック: `tsc --noEmit` 0 errors / build OK / Cloud Run deploy CI は PR #71 merge で再実行済 (status は次セッションの `/catchup` で確認)
+- 自動テスト (snapshot): vitest **357/357 PASS**（前 339 → +18: shared/termsCodes +5 / authSlice AcceptTermsError class instance +5 / ts-expect-error pin +1 / callAcceptTerms throw paths +7）。次セッション開始時は `npm test` で実数を再確認すること
+- 型チェック (snapshot): `tsc --noEmit` 0 errors / build OK / Cloud Run deploy CI は PR #71 merge で再実行済 (status は次セッションの `/catchup` で確認)
 
 ## 次のアクション（推奨順）
 
