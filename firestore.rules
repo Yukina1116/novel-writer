@@ -8,24 +8,35 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
 
+      // M7-α (P4) で termsAcceptedAt / termsVersion を追加。
+      // create 時は両者 null (= 未同意)、accept-terms route が update で server timestamp +
+      // 現行 TERMS_VERSION を書込む。
       allow create: if request.auth != null
         && request.auth.uid == userId
-        && request.resource.data.keys().hasOnly(['email', 'plan', 'createdAt', 'updatedAt'])
-        && request.resource.data.keys().hasAll(['email', 'plan', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['email', 'plan', 'createdAt', 'updatedAt', 'termsAcceptedAt', 'termsVersion'])
+        && request.resource.data.keys().hasAll(['email', 'plan', 'createdAt', 'updatedAt', 'termsAcceptedAt', 'termsVersion'])
         && request.resource.data.email is string
         && request.resource.data.email.size() > 0
         && request.resource.data.plan in ['free']
         && request.resource.data.createdAt is timestamp
-        && request.resource.data.updatedAt is timestamp;
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.termsAcceptedAt == null
+        && request.resource.data.termsVersion == null;
 
+      // update の許可フィールド: email/plan/updatedAt は users/init 経路、
+      // termsAcceptedAt/termsVersion は accept-terms 経路。createdAt 改ざんは引き続き拒否。
+      // termsAcceptedAt は timestamp (server timestamp) または null、
+      // termsVersion は string (最大 32 文字、'YYYY-MM-DD' 形式想定) または null。
       allow update: if request.auth != null
         && request.auth.uid == userId
-        && request.resource.data.keys().hasOnly(['email', 'plan', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['email', 'plan', 'createdAt', 'updatedAt', 'termsAcceptedAt', 'termsVersion'])
         && request.resource.data.email is string
         && request.resource.data.email.size() > 0
         && request.resource.data.plan in ['free']
         && request.resource.data.updatedAt is timestamp
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && request.resource.data.createdAt == resource.data.createdAt
+        && (request.resource.data.termsAcceptedAt == null || request.resource.data.termsAcceptedAt is timestamp)
+        && (request.resource.data.termsVersion == null || (request.resource.data.termsVersion is string && request.resource.data.termsVersion.size() > 0 && request.resource.data.termsVersion.size() <= 32));
 
       allow delete: if false;
     }
