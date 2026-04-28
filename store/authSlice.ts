@@ -79,10 +79,6 @@ export interface UserInitError extends Error {
     status: number;
 }
 
-// Shared predicate for Error-with-numeric-status carriers (UserInitError /
-// AcceptTermsError). Pulled out so the two wrappers stay literally identical
-// and `isTermsVersionMismatch` can layer code-checks directly on top without
-// indirecting through a near-empty wrapper.
 const hasNumericStatus = <T extends Error>(e: unknown): e is T & { status: number } =>
     e instanceof Error && typeof (e as { status?: unknown }).status === 'number';
 
