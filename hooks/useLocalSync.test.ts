@@ -15,8 +15,8 @@ vi.mock('../store/index', () => ({
         getState: () => ({ showToast }),
     },
 }));
-// useLocalSync also imports refreshFromIndexedDb at module-eval time via the
-// useEffect; stub it so importing the file doesn't drag IndexedDB in.
+// useLocalSync transitively imports refreshFromIndexedDb; stub it so importing
+// this module doesn't drag IndexedDB into the test environment.
 vi.mock('./refreshFromIndexedDb', () => ({
     refreshFromIndexedDb: vi.fn().mockResolvedValue({ failureCount: 0, healthyCount: 0 }),
 }));
@@ -47,6 +47,10 @@ describe('wireBlockedHandler contract (H10-followup-1)', () => {
 
     it('returns a detach function that calls setBlockedHandler(null)', () => {
         const detach = wireBlockedHandler();
+        // The detach return must satisfy React's `useEffect` cleanup
+        // contract — `() => void`. A regression returning undefined would
+        // skip detach silently and leak a stale handler.
+        expect(typeof detach).toBe('function');
         setBlockedHandler.mockClear(); // ignore the install call so we only see detach
         detach();
         expect(setBlockedHandler).toHaveBeenCalledOnce();
@@ -67,11 +71,15 @@ describe('wireBlockedHandler contract (H10-followup-1)', () => {
         expect(showToast).toHaveBeenCalledWith(DB_BLOCKED_MESSAGE, 'error');
     });
 
-    it('strict-mode-style double mount and detach in LIFO order: latest detach restores null', () => {
-        // React Strict Mode invokes the effect twice in dev: setUp1 → setUp2
-        // → cleanup1 → cleanup2 (or browsers' hot-reload follows the same
-        // shape). The wiring must end with a non-stale handler (the second
-        // mount's) that subsequently detaches cleanly.
+    it('two consecutive installs end with the singleton at null after both detaches (regardless of order)', () => {
+        // We don't simulate React's actual Strict Mode dispatch (the real
+        // ordering is mount → cleanup → mount on remount, not two mounts
+        // followed by two cleanups). What we do pin is the contract this
+        // singleton needs to honor when re-installation happens before a
+        // detach: each install builds a fresh closure, and once both
+        // detaches have run, no stale closure remains registered. That
+        // property is sufficient for any plausible Strict Mode / HMR /
+        // double-consumer scenario.
         const detach1 = wireBlockedHandler();
         const detach2 = wireBlockedHandler();
         expect(setBlockedHandler).toHaveBeenCalledTimes(2);
@@ -82,8 +90,6 @@ describe('wireBlockedHandler contract (H10-followup-1)', () => {
         // break this assertion.
         expect(handler1).not.toBe(handler2);
 
-        // React invokes cleanups in LIFO; the last `setBlockedHandler` call
-        // we observe must be `null` — no stale closure left registered.
         detach1();
         detach2();
         expect(setBlockedHandler).toHaveBeenLastCalledWith(null);
@@ -97,5 +103,28 @@ describe('wireBlockedHandler contract (H10-followup-1)', () => {
         expect(setBlockedHandler).toHaveBeenCalledTimes(2);
         expect(setBlockedHandler).toHaveBeenNthCalledWith(1, null);
         expect(setBlockedHandler).toHaveBeenNthCalledWith(2, null);
+    });
+});
+
+describe('useLocalSync useEffect ordering (H10-followup-1, fragile static check)', () => {
+    // Without a React renderer we cannot run useLocalSync's useEffect
+    // callback to observe the call order at runtime. Until jsdom +
+    // @testing-library/react are introduced (see Issue #49 future
+    // follow-up), pin the order via a low-effort static check on the
+    // source: the line invoking wireBlockedHandler() must precede the
+    // line invoking init(). This is fragile (sensitive to formatting)
+    // but it does catch the most likely regression — a future refactor
+    // that swaps the two lines and reintroduces the bootstrap-gap silent
+    // hang.
+    it('source: wireBlockedHandler() is invoked before init() inside the wiring useEffect', async () => {
+        const { readFile } = await import('node:fs/promises');
+        const { fileURLToPath } = await import('node:url');
+        const path = fileURLToPath(new URL('./useLocalSync.ts', import.meta.url));
+        const src = await readFile(path, 'utf-8');
+        const wireIdx = src.indexOf('wireBlockedHandler()');
+        const initIdx = src.indexOf('init();');
+        expect(wireIdx).toBeGreaterThan(-1);
+        expect(initIdx).toBeGreaterThan(-1);
+        expect(wireIdx).toBeLessThan(initIdx);
     });
 });

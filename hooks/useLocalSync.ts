@@ -9,14 +9,18 @@ export { refreshFromIndexedDb } from './refreshFromIndexedDb';
 const LOCAL_DB_INIT_FAILED_MESSAGE =
     'ローカルデータの読み込みに失敗しました。プライベートモードや容量不足で IndexedDB が利用できない場合、データはメモリ上のみ保持され、リロードで失われます。';
 
+// Exported for the contract test to assert the canonical toast payload —
+// keep in sync with wireBlockedHandler. Sibling LOCAL_DB_INIT_FAILED_MESSAGE
+// is module-private because no test currently asserts against it.
 export const DB_BLOCKED_MESSAGE =
     '他のタブで古いバージョンのアプリが開いたままです。データベースの更新が完了できません。古いタブを閉じてからリロードしてください。';
 
 // Pure factory for the Dexie blocked-event wiring. Extracted so the contract
 // (install handler → invoke surfaces a toast → cleanup detaches) can be
-// unit-tested without spinning up a React renderer. The hook below just
-// calls this in useEffect; the hook's lifecycle adds no behavior beyond
-// install/detach symmetry.
+// unit-tested without spinning up a React renderer. The wiring effect
+// below adds no behavior beyond install/detach symmetry; the separate
+// init/flush effects (refreshFromIndexedDb, beforeunload/visibilitychange)
+// are tested elsewhere.
 //
 // `useStore.getState()` (not `useStore(...)` subscription) is intentional:
 // reading showToast at call time means a future store reset doesn't leave
@@ -35,9 +39,9 @@ export const useLocalSync = () => {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        // Install the Dexie blocked-event handler before any getDb() call in
-        // this hook so a stale tab pinning the schema produces a toast
-        // instead of an indefinite stall.
+        // Install the Dexie blocked-event handler before any IndexedDB
+        // access this hook may trigger, so a stale tab pinning the schema
+        // produces a toast instead of an indefinite stall.
         const detachBlocked = wireBlockedHandler();
         const init = async () => {
             try {
