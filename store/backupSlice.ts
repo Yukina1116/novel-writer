@@ -158,13 +158,38 @@ export const createBackupSlice = (set, get): BackupSlice => ({
 
     prepareImport: async (raw: string) => {
         // Flush in-memory edits to IndexedDB first so that conflict detection
-        // sees the user's latest unsaved work and overwrite/skip choices apply
-        // to the actual on-disk state. Without this, a project that the user
-        // is currently editing would not appear in conflicts.
-        try {
-            await (get() as WithFlushSave).flushSave?.();
-        } catch (e) {
-            console.error('flushSave before prepareImport failed:', e);
+        // sees the user's latest unsaved work and overwrite/skip choices
+        // apply to the actual on-disk state. Without this, a project that
+        // the user is currently editing would not appear in conflicts —
+        // and a subsequent overwrite resolution would silently drop the
+        // unsaved edit.
+        //
+        // H2 (Issue #49): a single transient failure (IDB quota/lock,
+        // tab race, Dexie open conflict) used to be swallowed via
+        // `console.error` and the import continued against a stale disk
+        // snapshot. Retry once before giving up, and on a second failure
+        // abort the import with an explicit toast — never proceed past
+        // a failed flush, because doing so is the silent edit-loss path.
+        const flushSave = (get() as WithFlushSave).flushSave;
+        if (flushSave) {
+            try {
+                await flushSave();
+            } catch (firstError) {
+                console.error('flushSave before prepareImport failed (1st):', firstError);
+                try {
+                    await flushSave();
+                } catch (secondError) {
+                    console.error('flushSave before prepareImport failed (2nd, aborting):', secondError);
+                    const detail = errorMessage(secondError);
+                    (get() as WithToast).showToast?.(
+                        `未保存の編集が IndexedDB に書き込めませんでした（${detail}）。インポートを中止しました。自動再試行後にもう一度お試しください。`,
+                        'error',
+                    );
+                    throw new BackupValidationError(
+                        `未保存の編集の保存に失敗したためインポートを中止しました: ${detail}`,
+                    );
+                }
+            }
         }
         const backup = parseBackup(raw);
         const snapshot = await readSnapshot();

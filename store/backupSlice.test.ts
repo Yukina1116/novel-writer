@@ -217,6 +217,73 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
         expect(fake.state.isImporting).toBe(false);
     });
 
+    // H2: prepareImport must not silently proceed when flushSave fails — a
+    // stale on-disk snapshot would let the user's unsaved edits be silently
+    // overwritten by a subsequent overwrite resolution. Retry once; if both
+    // attempts fail, abort with a toast + BackupValidationError so the
+    // importPlan is never seeded against stale state.
+    describe('H2 flushSave failure handling', () => {
+        const minimalRaw = JSON.stringify({
+            schemaVersion: 1,
+            exportedAt: '2026-04-28T00:00:00.000Z',
+            appVersion: '0.0.0',
+            projects: [makeProject({ id: 'p-new' })],
+            tutorialState: {},
+            analysisHistory: [],
+        });
+
+        it('retries flushSave once and proceeds when the retry succeeds', async () => {
+            readSnapshot.mockResolvedValue({ projects: [], tutorialState: {}, analysisHistory: [] });
+            const flushSave = vi.fn()
+                .mockRejectedValueOnce(new Error('IDB locked'))
+                .mockResolvedValueOnce(undefined);
+            const fake = createFakeStore();
+            fake.set({ flushSave });
+
+            const plan = await fake.state.prepareImport(minimalRaw);
+
+            // Retry actually happened (2 attempts), the import proceeded
+            // (plan is seeded), and we did NOT toast — a transient blip
+            // recovered should not nag the user.
+            expect(flushSave).toHaveBeenCalledTimes(2);
+            expect(plan.backup.projects).toHaveLength(1);
+            expect(fake.state.importPlan).not.toBeNull();
+            expect((fake.state.showToast as any)).not.toHaveBeenCalled();
+        });
+
+        it('aborts with a toast + BackupValidationError when both attempts fail', async () => {
+            const flushSave = vi.fn()
+                .mockRejectedValueOnce(new Error('IDB locked (1)'))
+                .mockRejectedValueOnce(new Error('IDB locked (2)'));
+            const fake = createFakeStore();
+            fake.set({ flushSave });
+
+            await expect(fake.state.prepareImport(minimalRaw)).rejects.toThrow(/インポートを中止/);
+
+            expect(flushSave).toHaveBeenCalledTimes(2);
+            // readSnapshot must NOT have been called — aborting before
+            // touching the disk snapshot is the whole point.
+            expect(readSnapshot).not.toHaveBeenCalled();
+            expect(fake.state.importPlan).toBeNull();
+            expect((fake.state.showToast as any)).toHaveBeenCalledOnce();
+            const [message, kind] = (fake.state.showToast as any).mock.calls[0];
+            expect(message).toMatch(/IDB locked \(2\)/);
+            expect(kind).toBe('error');
+        });
+
+        it('proceeds normally when no flushSave is wired (legacy/test environment)', async () => {
+            // Existing behavior must hold: backupSlice runs in tests and
+            // legacy contexts where flushSave isn't injected. The retry
+            // logic must not insist on its presence.
+            readSnapshot.mockResolvedValue({ projects: [], tutorialState: {}, analysisHistory: [] });
+            const fake = createFakeStore();
+            // no flushSave on the fake state
+            const plan = await fake.state.prepareImport(minimalRaw);
+            expect(plan.backup.projects).toHaveLength(1);
+            expect(fake.state.importPlan).not.toBeNull();
+        });
+    });
+
     // H4: full prepareImport → setImportResolution → executeImport flow.
     // Existing tests cover the default-overwrite path; this block exercises
     // resolution mutation (skip / duplicate / mixed) so per-conflict resolutions
