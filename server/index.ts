@@ -35,7 +35,9 @@ async function startServer() {
                 directives: {
                     defaultSrc: ["'self'"],
                     // aistudiocdn.com: ESM importmap targets (react/zustand/etc.).
-                    // Tailwind は PostCSS で self-host (dist/index.css にバンドル) しているため CDN 不要。
+                    // 旧: cdn.tailwindcss.com (ランタイム JIT script) を許可していたが、
+                    // Tailwind は PostCSS でビルド時に self-host (dist/assets/index-*.css)
+                    // するようになったため scriptSrc から除去。
                     scriptSrc: [
                         "'self'",
                         "'unsafe-inline'",

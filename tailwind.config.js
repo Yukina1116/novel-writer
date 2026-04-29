@@ -9,7 +9,6 @@ export default {
         './utils/**/*.{ts,tsx}',
         './shared/**/*.{ts,tsx}',
         './db/**/*.{ts,tsx}',
-        './firebase/**/*.{ts,tsx}',
     ],
     theme: {
         extend: {
