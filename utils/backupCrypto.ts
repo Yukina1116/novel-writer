@@ -59,7 +59,8 @@ export const fromBase64 = (b64: string): Uint8Array => {
     return out;
 };
 
-const codepointLength = (s: string): number => [...s].length;
+// UI が強度表示で再利用するため export (CRLF surrogate ペア対応の codepoint 数)。
+export const codepointLength = (s: string): number => [...s].length;
 
 export const validatePassphraseLength = (passphrase: string): void => {
     if (codepointLength(passphrase) < MIN_PASSPHRASE_CODEPOINTS) {

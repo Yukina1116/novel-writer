@@ -67,6 +67,10 @@ const createFakeStore = (): FakeStore => {
     fake.state = {
         ...createBackupSlice(fake.set, fake.get),
         showToast: vi.fn(),
+        // PR-D F3 regression: cancelPendingDecryption / 5 回到達時に slice が
+        // closeModal を呼ばないことを spy で assert するために stub を仕込む。
+        // 過去 closeModal を呼んでいた経路は削除済 (handoff §3 F3 持ち越し fix)。
+        closeModal: vi.fn(),
     } as any;
     return fake;
 };
@@ -861,6 +865,36 @@ describe('M6 PR-C state machine (pendingDecryption)', () => {
         fake.state.cancelPendingDecryption();
         expect(abortSpy).toHaveBeenCalled();
         expect(fake.state.pendingDecryption).toBeNull();
+    });
+
+    // PR-D F3 regression (handoff §3): ImportPassphraseModal は pendingDecryption 連動の
+    // 自動 unmount。slice は activeModal slot を使わないので closeModal を呼んではいけない
+    // (無関係な help / other modal を巻き込む副作用を防ぐ)。
+    it('F3: cancelPendingDecryption MUST NOT call closeModal (auto-unmount via state)', async () => {
+        const fake = createFakeStore();
+        const raw = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw);
+        fake.state.cancelPendingDecryption();
+        expect((fake.state as any).closeModal).not.toHaveBeenCalled();
+        expect(fake.state.pendingDecryption).toBeNull();
+    });
+
+    it('F3: retry MAX exceedance MUST NOT call closeModal (auto-unmount via state)', async () => {
+        const fake = createFakeStore();
+        const raw = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw);
+        for (let i = 0; i < MAX_DECRYPT_RETRIES; i++) {
+            await expect(
+                fake.state.decryptAndPrepareImport('wrong-passphrase-12c'),
+            ).rejects.toThrow();
+        }
+        expect(fake.state.pendingDecryption).toBeNull();
+        expect((fake.state as any).closeModal).not.toHaveBeenCalled();
+        // toast は引き続き発火する (UX 上の通知は必要)。
+        expect(fake.state.showToast).toHaveBeenCalledWith(
+            DECRYPT_RETRY_EXCEEDED_TOAST,
+            'error',
+        );
     });
 
     it('T7-real: Decrypting → Idle (cancel mid-decrypt) abort fires AND retryCount stays 0', async () => {

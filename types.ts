@@ -333,7 +333,8 @@ export type ModalType =
   | 'tutorialModeSelection'
   | 'displaySettings'
   | 'importText'
-  | 'importConflict';
+  | 'importConflict'
+  | 'exportEncrypt';
 
 // --- Backup (M4) ---
 

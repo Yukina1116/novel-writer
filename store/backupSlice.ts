@@ -8,6 +8,7 @@ import {
 } from '../types';
 import {
     BackupPreflightError,
+    BackupCancelledError,
     BackupValidationError,
     buildBackupFilename,
     buildBackupV1,
@@ -206,14 +207,20 @@ export const createBackupSlice = (set, get): BackupSlice => ({
             //    the messaging so the user isn't told the export "failed"
             //    when the JSON is actually in their downloads folder.
             const count = backup.projects.length;
+            // AC-5: 暗号化経路は専用 toast「暗号化バックアップを作成しました」を表示
+            // (平文 export と区別、ユーザーに encrypt 成功を伝える)。文言契約は slice 側に
+            // 集約 (state-diagram.md エラー文言契約と同じ所在)。
+            const successMsg = encryptOpt
+                ? `暗号化バックアップを作成しました（${count} 件）`
+                : `${count} 件のプロジェクトをエクスポートしました`;
             try {
                 await saveLastExportedAt(backup.exportedAt);
                 set({ lastExportedAt: backup.exportedAt, backupMetaStatus: 'loaded' });
-                (get() as WithToast).showToast?.(`${count} 件のプロジェクトをエクスポートしました`, 'success');
+                (get() as WithToast).showToast?.(successMsg, 'success');
             } catch (e: unknown) {
                 console.error('saveLastExportedAt failed (download succeeded):', e);
                 (get() as WithToast).showToast?.(
-                    `${count} 件のプロジェクトをエクスポートしました（最終バックアップ日時の記録に失敗: ${errorMessage(e)}）`,
+                    `${successMsg}（最終バックアップ日時の記録に失敗: ${errorMessage(e)}）`,
                     'error',
                 );
             }
@@ -434,8 +441,10 @@ export const createBackupSlice = (set, get): BackupSlice => ({
             const next = get().pendingDecryption!;
             const newRetry = next.retryCount + 1;
             if (newRetry >= MAX_DECRYPT_RETRIES) {
+                // ImportPassphraseModal は pendingDecryption 連動の自動 unmount。
+                // 過去 closeModal() を呼んでいたが、別 modal (help 等) を巻き込む副作用が
+                // あったため削除 (handoff PR-D F3 持ち越し fix、AC-6-UI-3)。
                 set({ pendingDecryption: null });
-                (get() as WithCloseModal).closeModal?.();
                 (get() as WithToast).showToast?.(DECRYPT_RETRY_EXCEEDED_TOAST, 'error');
             } else {
                 // Slice owns retryCount; UI (PR-D) reads pendingDecryption.retryCount
@@ -454,7 +463,7 @@ export const createBackupSlice = (set, get): BackupSlice => ({
         // replacing the new session's state with stale plaintext.
         if (isStaleDecryptSession(sessionController, get().pendingDecryption)) {
             console.warn('decryptBackup success on stale session (dropped)');
-            throw new BackupValidationError('復号処理がキャンセルされました。');
+            throw new BackupCancelledError('復号処理がキャンセルされました。');
         }
 
         const snapshot = await readSnapshot();
@@ -463,7 +472,7 @@ export const createBackupSlice = (set, get): BackupSlice => ({
         // otherwise let stale plaintext clobber the newer session's state.
         if (isStaleDecryptSession(sessionController, get().pendingDecryption)) {
             console.warn('decryptBackup success on stale session (dropped)');
-            throw new BackupValidationError('復号処理がキャンセルされました。');
+            throw new BackupCancelledError('復号処理がキャンセルされました。');
         }
         const conflicts = detectConflicts(backup.projects, snapshot.projects);
         const plan: ImportPlan = { backup, conflicts };
@@ -478,8 +487,10 @@ export const createBackupSlice = (set, get): BackupSlice => ({
         const pending = get().pendingDecryption;
         if (!pending) return;
         pending.abortController.abort();
+        // ImportPassphraseModal は pendingDecryption 連動の自動 unmount。
+        // 過去 closeModal() を呼んでいたが、無関係な activeModal (help 等) を
+        // 巻き込む副作用があったため削除 (handoff PR-D F3 持ち越し fix)。
         set({ pendingDecryption: null });
-        (get() as WithCloseModal).closeModal?.();
     },
 
     isBackupStale: () => {

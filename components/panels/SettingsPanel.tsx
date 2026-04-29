@@ -17,7 +17,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onExportProject, o
     const lastExportedAt = useStore(state => state.lastExportedAt);
     const isStale = useStore(state => state.isBackupStale());
     const isExporting = useStore(state => state.isExporting);
-    const exportAllData = useStore(state => state.exportAllData);
     const prepareImport = useStore(state => state.prepareImport);
     const showToast = useStore(state => state.showToast);
     const importInputRef = useRef<HTMLInputElement>(null);
@@ -28,8 +27,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onExportProject, o
         if (!file) return;
         try {
             const raw = await readFileAsText(file);
-            await prepareImport(raw);
-            openModal('importConflict');
+            const result = await prepareImport(raw);
+            // 暗号化 envelope の場合は pendingDecryption が set され ImportPassphraseModal が
+            // ModalManager 経由で自動 mount される (state-diagram.md ModalManager 統合節)。
+            // 平文の場合のみ既存の ImportConflictModal を開く。
+            if (result.kind === 'plaintext') {
+                openModal('importConflict');
+            }
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : 'インポートの準備に失敗しました';
             showToast(msg, 'error');
@@ -102,7 +106,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onExportProject, o
                 <div className="space-y-2">
                     <button
                         type="button"
-                        onClick={() => void exportAllData()}
+                        onClick={() => openModal('exportEncrypt')}
                         disabled={isExporting}
                         className="w-full text-sm px-3 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-md transition flex items-center gap-2 btn-pressable text-white disabled:opacity-50"
                     >
@@ -121,7 +125,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onExportProject, o
                         type="file"
                         ref={importInputRef}
                         onChange={handleImportFile}
-                        accept=".json,application/json"
+                        accept=".json,application/json,.enc.json"
                         className="hidden"
                     />
                 </div>

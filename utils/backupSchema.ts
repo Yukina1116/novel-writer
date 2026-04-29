@@ -7,7 +7,7 @@ import {
     Project,
 } from '../types';
 import { ProjectValidationError, validateAndSanitizeProjectData } from '../utils';
-import { BackupPreflightError, BackupValidationError } from './backupErrors';
+import { BackupCancelledError, BackupPreflightError, BackupValidationError } from './backupErrors';
 // Single source of truth: backupCrypto exports the canonical encrypted-envelope
 // constants. Importing here avoids drift if OWASP recommendations change.
 // (No circular: backupCrypto imports BackupValidationError from backupErrors,
@@ -21,7 +21,7 @@ import {
 } from './backupCrypto';
 
 // Re-export for callers who import the error types from backupSchema (back-compat).
-export { BackupPreflightError, BackupValidationError };
+export { BackupCancelledError, BackupPreflightError, BackupValidationError };
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
     !!v && typeof v === 'object' && !Array.isArray(v);
