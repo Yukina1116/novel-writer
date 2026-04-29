@@ -357,6 +357,28 @@ export interface BackupV1 {
     analysisHistory: AnalysisResult[];
 }
 
+// --- Encrypted Backup (M6) ---
+//
+// Envelope wrapping a BackupV1 payload encrypted with AES-GCM-256, key derived
+// via PBKDF2-SHA256 from a user passphrase. envelopeVersion is independent from
+// payload BackupV1.schemaVersion: bump envelopeVersion only when envelope shape
+// changes (crypto metadata layout, AAD format), not when payload schema changes.
+// Spec: docs/spec/m6/acceptance-criteria.md (AC-4)
+export interface EncryptedBackupV1 {
+    envelopeVersion: 1;
+    encrypted: true;
+    algorithm: 'AES-GCM-256';
+    kdf: 'PBKDF2-SHA256';
+    kdfParams: {
+        salt: string;          // base64, decoded length must be 16 bytes
+        iterations: number;    // PBKDF2 iterations, see PBKDF2_ITERATIONS constant
+    };
+    iv: string;                // base64, decoded length must be 12 bytes (AES-GCM)
+    ciphertext: string;        // base64, AES-GCM output (auth tag concatenated at end)
+    appVersion: string;
+    encryptedAt: string;       // ISO 8601
+}
+
 export type ImportConflictResolution = 'overwrite' | 'duplicate' | 'skip';
 
 export interface ImportConflict {

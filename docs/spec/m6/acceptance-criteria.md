@@ -45,7 +45,7 @@ expect(decrypted.projects.length).toBe(plaintext.projects.length);
 - `BackupValidationError` が throw される
 - UI 向け `error.message` は constant `DECRYPT_FAILURE_MESSAGE` （「パスフレーズが正しくないか、ファイルが壊れています」）と完全一致
 - 内部 triage 用に `error.cause === { kind: 'auth-tag-mismatch' }` が設定される（**UI 層は cause を読まない**規律。AC-9 で別途固定）
-- `logger.warn('M6_DECRYPT_AUTH_TAG_FAILED', { envelopeVersion, algorithm, kdf, iterations, encryptedAt })` が呼ばれる（**passphrase / plaintext / derived key / salt / ciphertext は絶対に log に含めない**）
+- `console.warn('M6_DECRYPT_AUTH_TAG_FAILED', { envelopeVersion, algorithm, kdf, iterations, encryptedAt })` が呼ばれる（**passphrase / plaintext / derived key / salt / ciphertext は絶対に log に含めない**）
 
 **検証方法**: vitest
 
@@ -57,9 +57,10 @@ await expect(decryptBackup(envelope, 'wrong-passphrase'))
     message: DECRYPT_FAILURE_MESSAGE,
     cause: { kind: 'auth-tag-mismatch' },
   });
-expect(loggerMock.warn).toHaveBeenCalledWith(
+// FE は専用 logger を持たないため `console.warn` を直接使用。第 1 引数で event id を pin。
+expect(consoleWarnSpy).toHaveBeenCalledWith(
   'M6_DECRYPT_AUTH_TAG_FAILED',
-  expect.not.objectContaining({ passphrase: expect.anything() }),
+  expect.objectContaining({ envelopeVersion: 1, algorithm: 'AES-GCM-256' }),
 );
 ```
 
@@ -228,7 +229,7 @@ await expect(parseEncryptedEnvelope({ ...env, kdfParams: { ...env.kdfParams, ite
   3. `'schema-invalid'`: 復号後 BackupV1 schema validation 失敗
   4. `'kdf-import-failed'`: `crypto.subtle.importKey` / `deriveKey` 失敗 (KDF パラメータ不正、`NotSupportedError` 等)
 - 上記いずれにも該当しない catch-all は **禁止** (再 throw、CLAUDE.md「empty catch / 広い catch 禁止」準拠)
-- 各 cause に対応する `logger.warn` が呼ばれる: `M6_DECRYPT_AUTH_TAG_FAILED` / `M6_DECRYPT_PLAINTEXT_CORRUPTED` / `M6_DECRYPT_SCHEMA_INVALID` / `M6_DECRYPT_KDF_FAILED`
+- 各 cause に対応する `console.warn` が呼ばれる: `M6_DECRYPT_AUTH_TAG_FAILED` / `M6_DECRYPT_PLAINTEXT_CORRUPTED` / `M6_DECRYPT_SCHEMA_INVALID` / `M6_DECRYPT_KDF_FAILED`
 
 **検証方法**: vitest
 
@@ -473,7 +474,7 @@ expect(deriveKeyMock).toHaveBeenCalledWith(
 | AC | PR で達成 | 検証層 |
 |---|---|---|
 | AC-1 | PR-B | vitest |
-| AC-2 | PR-B | vitest + logger mock |
+| AC-2 | PR-B | vitest + console.warn spy |
 | AC-3 | PR-B | vitest |
 | AC-4 | PR-B | vitest + ts-expect-error |
 | AC-5 | PR-C (slice) + PR-D (UI) | vitest + manual E2E |

@@ -3,30 +3,25 @@ import {
     AnalysisResult,
     BACKUP_SCHEMA_VERSION,
     BackupV1,
+    EncryptedBackupV1,
     Project,
 } from '../types';
 import { ProjectValidationError, validateAndSanitizeProjectData } from '../utils';
+import { BackupPreflightError, BackupValidationError } from './backupErrors';
+// Single source of truth: backupCrypto exports the canonical encrypted-envelope
+// constants. Importing here avoids drift if OWASP recommendations change.
+// (No circular: backupCrypto imports BackupValidationError from backupErrors,
+// not from this file.)
+import {
+    IV_BYTES,
+    MAX_ACCEPTED_ITERATIONS,
+    MAX_CIPHERTEXT_BYTES,
+    MIN_ACCEPTED_ITERATIONS,
+    SALT_BYTES,
+} from './backupCrypto';
 
-export class BackupValidationError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = 'BackupValidationError';
-    }
-}
-
-/**
- * Thrown by prepareImport when the *preflight* (flushSave-blocking)
- * step fails — i.e. before any backup parsing happens. Distinct from
- * BackupValidationError which is reserved for malformed backup files.
- * Aborting at this layer prevents the silent edit-loss path where a
- * stale on-disk snapshot would be used for conflict detection.
- */
-export class BackupPreflightError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = 'BackupPreflightError';
-    }
-}
+// Re-export for callers who import the error types from backupSchema (back-compat).
+export { BackupPreflightError, BackupValidationError };
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
     !!v && typeof v === 'object' && !Array.isArray(v);
@@ -194,6 +189,133 @@ export const parseBackup = (raw: string, opts: ParseOptions = { rawSize: raw.len
         tutorialState,
         analysisHistory,
     };
+};
+
+// --- Encrypted envelope (M6) ---
+//
+// AC-8: discriminate encrypted envelopes from plaintext BackupV1 with an AND
+// of all required fields. Half-broken envelopes (encrypted:true but missing
+// other fields) are rejected explicitly by parseEncryptedEnvelope rather than
+// silently falling through to the plaintext path.
+
+export const isEncryptedBackup = (
+    json: Record<string, unknown>,
+): json is EncryptedBackupV1 & Record<string, unknown> =>
+    json.encrypted === true
+    && typeof json.algorithm === 'string'
+    && typeof json.kdf === 'string'
+    && typeof json.iv === 'string'
+    && typeof json.ciphertext === 'string'
+    && typeof json.kdfParams === 'object'
+    && json.kdfParams !== null
+    && typeof (json.kdfParams as Record<string, unknown>).salt === 'string';
+
+const decodedByteLength = (b64: string): number => {
+    // Approximate decoded byte length without allocating: 3 bytes per 4 chars,
+    // minus padding. Avoids materializing huge buffers just for size checks.
+    if (!/^[A-Za-z0-9+/=]+$/.test(b64)) return -1;
+    const padding = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
+    return Math.floor((b64.length / 4) * 3) - padding;
+};
+
+export const parseEncryptedEnvelope = (
+    json: Record<string, unknown>,
+): EncryptedBackupV1 => {
+    if (!isEncryptedBackup(json)) {
+        throw new BackupValidationError(
+            '暗号化バックアップの形式が壊れています（必須フィールドが不足しています）。',
+            { cause: { kind: 'envelope-incomplete' } },
+        );
+    }
+    if (json.envelopeVersion !== 1) {
+        throw new BackupValidationError(
+            `対応していない暗号化バックアップ形式です（envelopeVersion=${String(json.envelopeVersion)}）。`,
+        );
+    }
+    if (json.algorithm !== 'AES-GCM-256') {
+        throw new BackupValidationError(
+            `対応していない暗号化アルゴリズムです: ${String(json.algorithm)}`,
+        );
+    }
+    if (json.kdf !== 'PBKDF2-SHA256') {
+        throw new BackupValidationError(
+            `対応していない鍵派生関数です: ${String(json.kdf)}`,
+        );
+    }
+    const kdfParams = json.kdfParams as { salt: string; iterations: unknown };
+    if (
+        typeof kdfParams.iterations !== 'number'
+        || !Number.isFinite(kdfParams.iterations)
+    ) {
+        throw new BackupValidationError('iterations が数値ではありません。');
+    }
+    if (
+        kdfParams.iterations < MIN_ACCEPTED_ITERATIONS
+        || kdfParams.iterations > MAX_ACCEPTED_ITERATIONS
+    ) {
+        throw new BackupValidationError(
+            `iterations が許容範囲外です（${MIN_ACCEPTED_ITERATIONS}〜${MAX_ACCEPTED_ITERATIONS}）。`,
+        );
+    }
+    const saltLen = decodedByteLength(kdfParams.salt);
+    if (saltLen !== SALT_BYTES) {
+        throw new BackupValidationError(
+            `salt の長さが不正です（${SALT_BYTES} bytes 期待）。`,
+        );
+    }
+    const ivLen = decodedByteLength(json.iv);
+    if (ivLen !== IV_BYTES) {
+        throw new BackupValidationError(
+            `iv の長さが不正です（${IV_BYTES} bytes 期待）。`,
+        );
+    }
+    const ciphertextLen = decodedByteLength(json.ciphertext);
+    if (ciphertextLen <= 0 || ciphertextLen > MAX_CIPHERTEXT_BYTES) {
+        throw new BackupValidationError(
+            `ciphertext の長さが不正です（最大 ${MAX_CIPHERTEXT_BYTES} bytes）。`,
+        );
+    }
+    const appVersion = typeof json.appVersion === 'string' ? json.appVersion : 'unknown';
+    const encryptedAt = typeof json.encryptedAt === 'string'
+        ? json.encryptedAt
+        : new Date().toISOString();
+
+    return {
+        envelopeVersion: 1,
+        encrypted: true,
+        algorithm: 'AES-GCM-256',
+        kdf: 'PBKDF2-SHA256',
+        kdfParams: { salt: kdfParams.salt, iterations: kdfParams.iterations },
+        iv: json.iv,
+        ciphertext: json.ciphertext,
+        appVersion,
+        encryptedAt,
+    };
+};
+
+// AC-8: parseAnyBackup is the new top-level entrypoint for encrypted-aware
+// callers. parseBackup keeps its narrow BackupV1 return type unchanged so
+// existing callers don't need union narrowing they don't care about.
+export const parseAnyBackup = (raw: string): BackupV1 | EncryptedBackupV1 => {
+    if (raw.length === 0 || raw.trim() === '') {
+        throw new BackupValidationError('ファイルが空です。');
+    }
+    let json: unknown;
+    try {
+        json = JSON.parse(raw);
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        throw new BackupValidationError(`バックアップファイルが壊れています: ${msg}`);
+    }
+    if (!isObject(json)) {
+        throw new BackupValidationError('バックアップファイルが有効なオブジェクトではありません。');
+    }
+    if (json.encrypted === true) {
+        // Half-broken envelopes (e.g., {encrypted:true} only) are rejected
+        // explicitly here — we never silently fall through to plaintext path.
+        return parseEncryptedEnvelope(json);
+    }
+    return parseBackup(raw);
 };
 
 export interface ResolvedImportProjects {

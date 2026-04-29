@@ -261,3 +261,156 @@ describe('resolveImportProjects (AC-3)', () => {
         ).toThrow(BackupValidationError);
     });
 });
+
+// --- M6 PR-B: parseAnyBackup + isEncryptedBackup + parseEncryptedEnvelope (AC-8) ---
+
+import { encryptBackup, IV_BYTES, PBKDF2_ITERATIONS, randomBytes, SALT_BYTES, toBase64 } from './backupCrypto';
+import { isEncryptedBackup, parseAnyBackup, parseEncryptedEnvelope } from './backupSchema';
+import { buildSampleBackup } from '../tests/fixtures/backup';
+import type { BackupV1 } from '../types';
+
+const VALID_PASSPHRASE = 'test-passphrase-12-chars-ok';
+
+describe('parseBackup return type invariance (AC-8 regression)', () => {
+    it('AC-8: parseBackup of plaintext BackupV1 returns BackupV1, not union', () => {
+        const backup = buildBackupV1({
+            projects: [makeProject({ id: 'p-1' })],
+            tutorialState: {},
+            analysisHistory: [],
+            appVersion: '1.0.0',
+        });
+        const raw = serializeBackup(backup);
+        const parsed = parseBackup(raw);
+        // type-level: parseBackup must return BackupV1; encrypted should not exist.
+        // @ts-expect-error -- BackupV1 has no encrypted field
+        const _check: typeof parsed.encrypted = undefined;
+        expect(parsed.schemaVersion).toBe(1);
+        expect(parsed.projects).toHaveLength(1);
+    });
+});
+
+describe('parseAnyBackup + isEncryptedBackup AND-conjunction (AC-8)', () => {
+    it('AC-8: plaintext BackupV1 routes through plaintext path (parseAnyBackup)', () => {
+        const backup = buildBackupV1({
+            projects: [makeProject({ id: 'p-1' })],
+            tutorialState: {},
+            analysisHistory: [],
+            appVersion: '1.0.0',
+        });
+        const raw = serializeBackup(backup);
+        const result = parseAnyBackup(raw);
+        expect((result as { encrypted?: boolean }).encrypted).toBeUndefined();
+        expect((result as BackupV1).schemaVersion).toBe(1);
+    });
+
+    it('AC-8: half-broken envelope (encrypted:true only) is REJECTED, not silently treated as plaintext', () => {
+        const half = JSON.stringify({ encrypted: true, schemaVersion: 1 });
+        try {
+            parseAnyBackup(half);
+            expect.unreachable();
+        } catch (e) {
+            expect(e).toBeInstanceOf(BackupValidationError);
+            expect((e as Error).cause).toEqual({ kind: 'envelope-incomplete' });
+        }
+    });
+
+    it('AC-8: isEncryptedBackup AND-conjunction returns false when any field missing', () => {
+        const base = {
+            envelopeVersion: 1,
+            encrypted: true,
+            algorithm: 'AES-GCM-256',
+            kdf: 'PBKDF2-SHA256',
+            kdfParams: { salt: 'sss', iterations: 600_000 },
+            iv: 'iii',
+            ciphertext: 'ccc',
+            appVersion: '1.0.0',
+            encryptedAt: '2026-04-29T00:00:00.000Z',
+        };
+        expect(isEncryptedBackup(base)).toBe(true);
+
+        const fields: Array<keyof typeof base> = ['encrypted', 'algorithm', 'kdf', 'iv', 'ciphertext', 'kdfParams'];
+        for (const k of fields) {
+            const broken = { ...base } as Record<string, unknown>;
+            delete broken[k];
+            expect(isEncryptedBackup(broken)).toBe(false);
+        }
+    });
+
+    it('AC-8: isEncryptedBackup returns false when encrypted=false (legacy plaintext shape)', () => {
+        expect(isEncryptedBackup({ encrypted: false } as Record<string, unknown>)).toBe(false);
+        expect(isEncryptedBackup({} as Record<string, unknown>)).toBe(false);
+    });
+
+    it('AC-8: encrypted envelope round-trips through parseAnyBackup', async () => {
+        const env = await encryptBackup(buildSampleBackup(), VALID_PASSPHRASE, '1.0.0');
+        const raw = JSON.stringify(env);
+        const result = parseAnyBackup(raw);
+        expect((result as { encrypted?: boolean }).encrypted).toBe(true);
+    });
+});
+
+describe('parseEncryptedEnvelope parse-time guards (AC-4)', () => {
+    const baseEnv = (): Record<string, unknown> => ({
+        envelopeVersion: 1,
+        encrypted: true,
+        algorithm: 'AES-GCM-256',
+        kdf: 'PBKDF2-SHA256',
+        kdfParams: { salt: toBase64(randomBytes(SALT_BYTES)), iterations: PBKDF2_ITERATIONS },
+        iv: toBase64(randomBytes(IV_BYTES)),
+        ciphertext: toBase64(new Uint8Array(64)),
+        appVersion: '1.0.0',
+        encryptedAt: '2026-04-29T00:00:00.000Z',
+    });
+
+    it('AC-4: rejects unknown algorithm literal', () => {
+        const env = { ...baseEnv(), algorithm: 'AES-GCM-256-FUTURE' };
+        expect(() => parseEncryptedEnvelope(env)).toThrow(/アルゴリズム/);
+    });
+
+    it('AC-4: rejects unknown kdf literal', () => {
+        const env = { ...baseEnv(), kdf: 'Argon2id' };
+        expect(() => parseEncryptedEnvelope(env)).toThrow(/鍵派生関数/);
+    });
+
+    it('AC-4: rejects iterations below MIN_ACCEPTED_ITERATIONS', () => {
+        const env = baseEnv();
+        (env.kdfParams as { iterations: number }).iterations = 50_000;
+        expect(() => parseEncryptedEnvelope(env)).toThrow(/iterations/);
+    });
+
+    it('AC-4: rejects iterations above MAX_ACCEPTED_ITERATIONS', () => {
+        const env = baseEnv();
+        (env.kdfParams as { iterations: number }).iterations = 20_000_000;
+        expect(() => parseEncryptedEnvelope(env)).toThrow(/iterations/);
+    });
+
+    it('AC-4: rejects salt with wrong byte length', () => {
+        const env = baseEnv();
+        (env.kdfParams as { salt: string }).salt = toBase64(new Uint8Array(8)); // 8 bytes != 16
+        expect(() => parseEncryptedEnvelope(env)).toThrow(/salt/);
+    });
+
+    it('AC-4: rejects iv with wrong byte length', () => {
+        const env = baseEnv();
+        env.iv = toBase64(new Uint8Array(16)); // 16 bytes != 12
+        expect(() => parseEncryptedEnvelope(env)).toThrow(/iv/);
+    });
+
+    it('AC-4: rejects empty ciphertext', () => {
+        const env = baseEnv();
+        env.ciphertext = '';
+        expect(() => parseEncryptedEnvelope(env)).toThrow(/ciphertext/);
+    });
+
+    it('AC-4: boundary iterations MIN_ACCEPTED_ITERATIONS accepted', () => {
+        const env = baseEnv();
+        (env.kdfParams as { iterations: number }).iterations = 100_000;
+        expect(() => parseEncryptedEnvelope(env)).not.toThrow();
+    });
+
+    it('AC-4: boundary iterations MAX_ACCEPTED_ITERATIONS accepted', () => {
+        const env = baseEnv();
+        (env.kdfParams as { iterations: number }).iterations = 10_000_000;
+        expect(() => parseEncryptedEnvelope(env)).not.toThrow();
+    });
+});
