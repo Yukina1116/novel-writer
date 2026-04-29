@@ -94,6 +94,15 @@ export const buildBackupFilename = (now: Date = new Date()): string => {
     return `novel-writer-backup_${iso}.json`;
 };
 
+// Encrypted variant — same timestamp policy as buildBackupFilename, just a
+// different suffix so users can tell at a glance which file requires a
+// passphrase to import. Co-located so a future timestamp-format change
+// (e.g. shortening, switching to local time) updates both consistently.
+export const buildEncryptedBackupFilename = (now: Date = new Date()): string => {
+    const iso = now.toISOString().replace(/[:.]/g, '-');
+    return `novel-writer-backup_${iso}.enc.json`;
+};
+
 interface ParseOptions {
     rawSize: number;
 }
