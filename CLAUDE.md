@@ -109,8 +109,8 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 - **本番**: `novel-writer-prod`（課金クォータ引き上げ待ち）
 - **ランタイム**: Cloud Run + Vertex AI（Workload Identity認証）
 - **CI/CD**: GitHub Actions → WIF → Cloud Run自動デプロイ（mainブランチ）
-- **Docker**: マルチステージビルド（`Dockerfile`）
-- **direnv**: `.envrc` で `CLOUDSDK_ACTIVE_CONFIG_NAME=novel-writer-dev` 自動設定
+- **Docker**: マルチステージビルド（`Dockerfile`）。Vite の build-time 静的置換のため、`VITE_FIREBASE_*` 6 変数は `docker build --build-arg` で注入する必要があり、GitHub Secrets → workflow の `env:` ブロック → shell 変数の順で受け渡す（直接 `${{ secrets.* }}` を `run:` に展開しない、command injection 回避）
+- **direnv**: `.envrc` で `CLOUDSDK_ACTIVE_CONFIG_NAME=novel-writer-dev` 自動設定 + `gh auth switch --user yasushi-honda` 自動実行（direnv は shell の interactive hook (`eval "$(direnv hook bash)"`) に依存し、Claude Code Bash ツールが起動する非対話 subshell では発火しないため、補助として下記 §5 の `.claude/hooks/` で吸収）
 
 ## Claude Code 運用ルール（本プロジェクト固有の規律）
 
@@ -142,3 +142,15 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 - 同種の規範違反・運用ミスが再発したら、**口頭の謝罪で終わらせず、本セクションへの事例と対策の追記を完了してからセッションを閉じる**。
 - 軽微な事例は `docs/adr/` または個別 ADR に追記、重大な再発防止は本ファイルで常時参照可能にする。
 - 過去事例は時系列の根拠（特定セッション日付）を残す。理由: 規律の正当性が「過去の具体的失敗」に紐付いていると次セッションの Claude がルールを軽視しにくい。詳細セッション要約は `docs/adr/` に分離し、本ファイルからは相対リンクで辿れる構造を保つ。
+
+### 5. GitHub アカウント自動切替（プロジェクトローカル hook）
+
+`gh auth` の active account はマシン全体で `~/.config/gh/hosts.yml` で共有される。本プロジェクトの GitHub identity は `yasushi-honda` だが、別 claude セッションや別ターミナルで `gh auth switch` が走ると active account が他ユーザーに変わり、`gh pr create` / `gh pr merge` が GraphQL の collaborator チェックで失敗する（2026-04-29 セッション、PR #80 の発端事象）。`.envrc` での自動 switch は direnv の interactive hook 依存により Claude Code Bash ツールでは機能しないため、プロジェクトローカルの PreToolUse hook で吸収する。
+
+- **`.claude/hooks/ensure-gh-account.sh`**: Bash ツール実行直前に `tool_input.command` を検査し、`gh ` を独立したコマンド語として含む場合は `gh auth switch --user yasushi-honda` を実行（既に同ユーザーなら no-op）。失敗時は stderr に `[ensure-gh-account] WARN:` で診断を出すが、exit 0 を維持して Bash tool は block しない。`git push` / `git pull` 等は origin URL に token (`https://x-access-token:gho_...@github.com/...`) を埋め込んで認証するため、`gh auth` の active account に依存しない（hook の検知対象外で問題ない）
+- **`.claude/settings.json`**: 上記 hook を `PreToolUse` × `Bash` matcher に登録
+- **`tests/static/ensure-gh-account-hook-resilience.test.ts`**: jq 不在 / malformed JSON / 空 input 等の異常系で hook が exit 0 を維持することを vitest で hard-pin
+- **廃止条件 (sunset)**: 以下のいずれかが満たされたら本 hook は撤去する
+  1. グローバル `~/.claude/` 側で「他プロジェクトでの `gh auth switch` を session 終了時に元アカウントへ復帰させる」規律 / hook が確立されたとき
+  2. Claude Code Bash ツールが direnv hook を発火するようになったとき（公式 changelog で確認）
+  3. プロジェクトが per-command identity（全 gh 呼出で `--user` flag、または ephemeral `GH_TOKEN`）に移行し、active account 依存が解消されたとき
