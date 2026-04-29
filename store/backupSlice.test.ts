@@ -156,7 +156,7 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
             tutorialState: {},
             analysisHistory: [],
         });
-        const plan = await fake.state.prepareImport(raw);
+        const result = await fake.state.prepareImport(raw); if (result.kind !== "plaintext") throw new Error("expected plaintext"); const plan = result.plan;
         expect(plan.conflicts).toHaveLength(1);
         expect(plan.conflicts[0].incomingId).toBe('p-existing');
         expect(plan.conflicts[0].existingName).toBe('既存');
@@ -241,7 +241,7 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
             const fake = createFakeStore();
             fake.set({ flushSaveBlocking });
 
-            const plan = await fake.state.prepareImport(minimalRaw);
+            const result = await fake.state.prepareImport(minimalRaw); if (result.kind !== "plaintext") throw new Error("expected plaintext"); const plan = result.plan;
 
             // Common case: no retry needed, no nag toast.
             expect(flushSaveBlocking).toHaveBeenCalledOnce();
@@ -258,7 +258,7 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
             const fake = createFakeStore();
             fake.set({ flushSaveBlocking });
 
-            const plan = await fake.state.prepareImport(minimalRaw);
+            const result = await fake.state.prepareImport(minimalRaw); if (result.kind !== "plaintext") throw new Error("expected plaintext"); const plan = result.plan;
 
             // Retry actually happened (2 attempts), the import proceeded
             // (plan is seeded), and we did NOT toast — a transient blip
@@ -317,7 +317,7 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
             fake.set({ flushSave });
             // No flushSaveBlocking on the fake store.
 
-            const plan = await fake.state.prepareImport(minimalRaw);
+            const result = await fake.state.prepareImport(minimalRaw); if (result.kind !== "plaintext") throw new Error("expected plaintext"); const plan = result.plan;
             expect(flushSave).toHaveBeenCalledOnce();
             expect(plan.backup.projects).toHaveLength(1);
             expect(fake.state.importPlan).not.toBeNull();
@@ -327,7 +327,7 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
             readSnapshot.mockResolvedValue({ projects: [], tutorialState: {}, analysisHistory: [] });
             const fake = createFakeStore();
             // No flush API of any kind.
-            const plan = await fake.state.prepareImport(minimalRaw);
+            const result = await fake.state.prepareImport(minimalRaw); if (result.kind !== "plaintext") throw new Error("expected plaintext"); const plan = result.plan;
             expect(plan.backup.projects).toHaveLength(1);
         });
     });
@@ -755,5 +755,305 @@ describe('isBackupStale (AC-7)', () => {
             setLoaded(fake, isoFromNowMinus((STALE_BACKUP_DAYS + 1) * DAY_MS + 1));
             expect(fake.state.isBackupStale()).toBe(true);
         });
+    });
+});
+
+// =============================================================================
+// M6 PR-C: state machine tests for pendingDecryption
+// =============================================================================
+import { encryptBackup } from '../utils/backupCrypto';
+import { buildSampleBackup } from '../tests/fixtures/backup';
+import {
+    DECRYPT_OVERWRITE_TOAST,
+    DECRYPT_RETRY_EXCEEDED_TOAST,
+    MAX_DECRYPT_RETRIES,
+} from './backupSlice';
+
+const VALID_PASSPHRASE = 'pr-c-passphrase-test';
+
+const buildEncryptedRaw = async (): Promise<string> => {
+    const backup = buildSampleBackup();
+    const env = await encryptBackup(backup, VALID_PASSPHRASE, '1.0.0');
+    return JSON.stringify(env);
+};
+
+describe('M6 PR-C state machine (pendingDecryption)', () => {
+    beforeEach(() => {
+        readSnapshot.mockResolvedValue({
+            projects: [],
+            tutorialState: {},
+            analysisHistory: [],
+        });
+    });
+
+    it('T1: Idle → AwaitingPassphrase (encrypted envelope detection)', async () => {
+        const fake = createFakeStore();
+        const raw = await buildEncryptedRaw();
+        const result = await fake.state.prepareImport(raw);
+        expect(result.kind).toBe('encrypted');
+        expect(fake.state.pendingDecryption).not.toBeNull();
+        expect(fake.state.pendingDecryption!.retryCount).toBe(0);
+        expect(fake.state.pendingDecryption!.isDecrypting).toBe(false);
+        expect(fake.state.importPlan).toBeNull();
+    });
+
+    it('T2: Idle → ImportPlan (plaintext BackupV1, regression of legacy path)', async () => {
+        const fake = createFakeStore();
+        const raw = JSON.stringify(buildSampleBackup());
+        const result = await fake.state.prepareImport(raw);
+        expect(result.kind).toBe('plaintext');
+        expect(fake.state.importPlan).not.toBeNull();
+        expect(fake.state.pendingDecryption).toBeNull();
+    });
+
+    it('T3: AwaitingPassphrase → Decrypting → ImportPlan (happy path)', async () => {
+        const fake = createFakeStore();
+        const raw = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw);
+        const result = await fake.state.decryptAndPrepareImport(VALID_PASSPHRASE);
+        expect(result.kind).toBe('plaintext');
+        expect(fake.state.pendingDecryption).toBeNull();
+        expect(fake.state.importPlan).not.toBeNull();
+    });
+
+    it('T4: AwaitingPassphrase → Decrypting → AwaitingPassphrase (retry < 5)', async () => {
+        const fake = createFakeStore();
+        const raw = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw);
+        await expect(
+            fake.state.decryptAndPrepareImport('wrong-passphrase-12c'),
+        ).rejects.toThrow(/パスフレーズ/);
+        expect(fake.state.pendingDecryption).not.toBeNull();
+        expect(fake.state.pendingDecryption!.retryCount).toBe(1);
+        expect(fake.state.pendingDecryption!.isDecrypting).toBe(false);
+    });
+
+    it('T5: AwaitingPassphrase → Decrypting → Idle (retry == MAX, force close + toast)', async () => {
+        const fake = createFakeStore();
+        const raw = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw);
+        for (let i = 0; i < MAX_DECRYPT_RETRIES; i++) {
+            await expect(
+                fake.state.decryptAndPrepareImport('wrong-passphrase-12c'),
+            ).rejects.toThrow();
+        }
+        expect(fake.state.pendingDecryption).toBeNull();
+        expect(fake.state.showToast).toHaveBeenCalledWith(
+            DECRYPT_RETRY_EXCEEDED_TOAST,
+            'error',
+        );
+    });
+
+    it('T6: AwaitingPassphrase → Idle (cancel)', async () => {
+        const fake = createFakeStore();
+        const raw = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw);
+        fake.state.cancelPendingDecryption();
+        expect(fake.state.pendingDecryption).toBeNull();
+    });
+
+    it('T7-pre: cancel from AwaitingPassphrase fires abort()', async () => {
+        const fake = createFakeStore();
+        const raw = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw);
+        const controller = fake.state.pendingDecryption!.abortController;
+        const abortSpy = vi.spyOn(controller, 'abort');
+        fake.state.cancelPendingDecryption();
+        expect(abortSpy).toHaveBeenCalled();
+        expect(fake.state.pendingDecryption).toBeNull();
+    });
+
+    it('T7-real: Decrypting → Idle (cancel mid-decrypt) abort fires AND retryCount stays 0', async () => {
+        const fake = createFakeStore();
+        const raw = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw);
+        const controller = fake.state.pendingDecryption!.abortController;
+        const abortSpy = vi.spyOn(controller, 'abort');
+        // Kick off a real decrypt with WRONG passphrase so a successful retry
+        // increment would otherwise be observable. Cancel synchronously so
+        // the catch arm hits isStaleDecryptSession instead.
+        const decryptPromise = fake.state.decryptAndPrepareImport('wrong-passphrase-12c');
+        fake.state.cancelPendingDecryption();
+        await expect(decryptPromise).rejects.toThrow();
+        expect(abortSpy).toHaveBeenCalled();
+        expect(fake.state.pendingDecryption).toBeNull();
+    });
+
+    it('T8: Idle → Decrypting direct call throws no-pending-decryption', async () => {
+        const fake = createFakeStore();
+        await expect(
+            fake.state.decryptAndPrepareImport('any-pass-12-chars-ok'),
+        ).rejects.toMatchObject({
+            cause: { kind: 'no-pending-decryption' },
+        });
+    });
+
+    it('T9: AwaitingPassphrase → AwaitingPassphrase (2nd encrypted prepareImport, race-free overwrite)', async () => {
+        const fake = createFakeStore();
+        const raw1 = await buildEncryptedRaw();
+        const raw2 = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw1);
+        const ctrl1 = fake.state.pendingDecryption!.abortController;
+        const abortSpy = vi.spyOn(ctrl1, 'abort');
+        const result = await fake.state.prepareImport(raw2);
+        expect(result.kind).toBe('encrypted');
+        expect(abortSpy).toHaveBeenCalled();
+        // new pending replaced cleanly
+        expect(fake.state.pendingDecryption).not.toBeNull();
+        expect(fake.state.pendingDecryption!.abortController).not.toBe(ctrl1);
+        expect(fake.state.pendingDecryption!.retryCount).toBe(0);
+        expect(fake.state.showToast).toHaveBeenCalledWith(DECRYPT_OVERWRITE_TOAST, 'info');
+    });
+
+    it('T10: AwaitingPassphrase → ImportPlan (2nd prepareImport is plaintext)', async () => {
+        const fake = createFakeStore();
+        const rawEnc = await buildEncryptedRaw();
+        const rawPlain = JSON.stringify(buildSampleBackup());
+        await fake.state.prepareImport(rawEnc);
+        const ctrl = fake.state.pendingDecryption!.abortController;
+        const abortSpy = vi.spyOn(ctrl, 'abort');
+        const result = await fake.state.prepareImport(rawPlain);
+        expect(result.kind).toBe('plaintext');
+        expect(abortSpy).toHaveBeenCalled();
+        expect(fake.state.pendingDecryption).toBeNull();
+        expect(fake.state.importPlan).not.toBeNull();
+    });
+
+    it('T11: concurrent decryptAndPrepareImport during decrypt throws concurrent-decrypt', async () => {
+        const fake = createFakeStore();
+        const raw = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw);
+        // Manually flip isDecrypting to simulate in-flight decrypt
+        const pending = fake.state.pendingDecryption!;
+        fake.set({
+            pendingDecryption: { ...pending, isDecrypting: true },
+        });
+        await expect(
+            fake.state.decryptAndPrepareImport(VALID_PASSPHRASE),
+        ).rejects.toMatchObject({
+            cause: { kind: 'concurrent-decrypt' },
+        });
+    });
+
+    it('T12: race - decrypt completion after cancel does not overwrite state', async () => {
+        const fake = createFakeStore();
+        const raw = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw);
+        // Start decrypt, but cancel before await completes.
+        const pending = fake.state.pendingDecryption!;
+        const decryptPromise = fake.state.decryptAndPrepareImport(VALID_PASSPHRASE);
+        // Synchronously cancel — this aborts the controller mid-KDF.
+        pending.abortController.abort();
+        fake.set({ pendingDecryption: null });
+        await expect(decryptPromise).rejects.toThrow();
+        expect(fake.state.pendingDecryption).toBeNull();
+        expect(fake.state.importPlan).toBeNull();
+    });
+});
+
+// =============================================================================
+// M6 PR-C: encrypted exportAllData
+// =============================================================================
+describe('M6 PR-C encrypted exportAllData', () => {
+    beforeEach(() => {
+        readSnapshot.mockResolvedValue({
+            projects: [makeProject({ id: 'p-1' })],
+            tutorialState: {},
+            analysisHistory: [],
+        });
+        saveLastExportedAt.mockResolvedValue(undefined);
+    });
+
+    it('encrypted: filename ends with .enc.json and content is an envelope, not plaintext', async () => {
+        const fake = createFakeStore();
+        let captured: { filename?: string; content?: string } = {};
+        (globalThis as any).document.createElement = vi.fn(() => ({
+            click: vi.fn(),
+            remove: vi.fn(),
+            set href(_v: string) {},
+            set download(v: string) { captured.filename = v; },
+        }));
+        // Capture Blob content
+        (globalThis as any).Blob = class {
+            constructor(public parts: any, public opts: any) {
+                captured.content = parts.join('');
+            }
+        } as any;
+        await fake.state.exportAllData({ encrypt: { passphrase: VALID_PASSPHRASE } });
+        expect(captured.filename).toMatch(/\.enc\.json$/);
+        const json = JSON.parse(captured.content!);
+        expect(json.encrypted).toBe(true);
+        expect(json.algorithm).toBe('AES-GCM-256');
+        expect(json.envelopeVersion).toBe(1);
+        // ciphertext is opaque — must not contain the project name in plaintext
+        expect(captured.content).not.toContain('"name":"P"');
+    });
+
+    it('plaintext: filename uses .json (no .enc) and content is a plain BackupV1', async () => {
+        const fake = createFakeStore();
+        let capturedFilename = '';
+        (globalThis as any).document.createElement = vi.fn(() => ({
+            click: vi.fn(),
+            remove: vi.fn(),
+            set href(_v: string) {},
+            set download(v: string) { capturedFilename = v; },
+        }));
+        await fake.state.exportAllData();
+        expect(capturedFilename).toMatch(/^novel-writer-backup_.*\.json$/);
+        expect(capturedFilename).not.toMatch(/\.enc\.json$/);
+    });
+});
+
+// =============================================================================
+// M6 PR-C review-pr 反映: race-during-decrypt + saveLastExportedAt 失敗 toast
+// =============================================================================
+describe('M6 PR-C race during decrypt + export error branches', () => {
+    beforeEach(() => {
+        readSnapshot.mockResolvedValue({
+            projects: [makeProject({ id: 'p-1' })],
+            tutorialState: {},
+            analysisHistory: [],
+        });
+    });
+
+    it('T9b: Decrypting × prepareImport(2nd) — stale decrypt resolution does NOT clobber new session', async () => {
+        const fake = createFakeStore();
+        const raw1 = await buildEncryptedRaw();
+        const raw2 = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw1);
+        const decryptPromise = fake.state.decryptAndPrepareImport(VALID_PASSPHRASE);
+        // While KDF is running, second prepareImport arrives.
+        await fake.state.prepareImport(raw2);
+        // Session 1's promise must reject (race guard fires) and importPlan
+        // must NOT be set from session 1's plaintext.
+        await expect(decryptPromise).rejects.toThrow();
+        expect(fake.state.importPlan).toBeNull();
+        expect(fake.state.pendingDecryption).not.toBeNull();
+        expect(fake.state.pendingDecryption!.retryCount).toBe(0);
+    });
+
+    it('G1 (encrypted): saveLastExportedAt failure surfaces "saved file but timestamp lost" toast, not generic export failure', async () => {
+        saveLastExportedAt.mockRejectedValue(new Error('IDB write failed'));
+        const fake = createFakeStore();
+        await fake.state.exportAllData({ encrypt: { passphrase: VALID_PASSPHRASE } });
+        const calls = (fake.state.showToast as any).mock.calls;
+        // Last toast should be the timestamp-failure variant (download succeeded).
+        const lastCall = calls[calls.length - 1];
+        expect(lastCall[0]).toMatch(/最終バックアップ日時の記録に失敗/);
+        // Critical negative assertion: NEVER claim the export itself failed.
+        expect(lastCall[0]).not.toMatch(/^エクスポートに失敗/);
+        expect(lastCall[1]).toBe('error');
+        expect(fake.state.backupMetaStatus).toBe('unknown'); // wasn't promoted to loaded
+    });
+
+    it('G1 (plaintext): saveLastExportedAt failure surfaces same contract', async () => {
+        saveLastExportedAt.mockRejectedValue(new Error('IDB write failed'));
+        const fake = createFakeStore();
+        await fake.state.exportAllData();
+        const calls = (fake.state.showToast as any).mock.calls;
+        const lastCall = calls[calls.length - 1];
+        expect(lastCall[0]).toMatch(/最終バックアップ日時の記録に失敗/);
+        expect(lastCall[0]).not.toMatch(/^エクスポートに失敗/);
+        expect(lastCall[1]).toBe('error');
     });
 });

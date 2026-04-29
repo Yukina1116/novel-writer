@@ -6,12 +6,25 @@
 // Discriminated union of internal failure causes carried via Error.cause.
 // UI must NOT branch on this — it exists for log triage / debug only.
 // See AC-2/AC-7/AC-9 (fingerprinting prevention vs developer debuggability).
+//
+// Categories:
+//   crypto / parse — produced inside utils/backupCrypto.ts and
+//     utils/backupSchema.ts when an envelope or its payload is malformed.
+//   flow guard (M6 PR-C) — produced by store/backupSlice.ts state machine
+//     guards. These never bubble up to the UI as user-visible messages
+//     (the slice transitions back to a recoverable state and lets the UI
+//     re-prompt) but remain on the typed cause chain so tests and Sentry
+//     breadcrumbs can discriminate them from real crypto failures.
 export type BackupErrorCauseKind =
+    // crypto / parse
     | 'auth-tag-mismatch'
     | 'plaintext-corrupted'
     | 'schema-invalid'
     | 'kdf-import-failed'
-    | 'envelope-incomplete';
+    | 'envelope-incomplete'
+    // flow guard
+    | 'no-pending-decryption'
+    | 'concurrent-decrypt';
 
 export interface BackupErrorCause {
     kind: BackupErrorCauseKind;

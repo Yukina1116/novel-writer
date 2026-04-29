@@ -344,10 +344,14 @@ expect(elapsed).toBeLessThan(limit);
 ### AC-11: AbortSignal 対応 + UI timeout
 
 **Given**: `encryptBackup` / `decryptBackup` の long-running 操作（PBKDF2 + AES-GCM）
-**When**: `AbortSignal` を option として渡し、KDF 中に `controller.abort()` を呼ぶ
+**When**: `AbortSignal` を option として渡し、abort タイミングは以下のチェックポイントで検知される (Web Crypto API は `crypto.subtle.deriveKey` / `decrypt` の **mid-execution 中断をサポートしない**ため、KDF 自体の早期終了は不可能)
+- `encryptBackup` / `decryptBackup` 開始直後
+- KDF (PBKDF2 600k iter.) 完了直後
+- AES-GCM `encrypt` / `decrypt` 完了直後
 **Then**:
 - `encryptBackup({ signal })` / `decryptBackup({ signal })` が `'AbortError'` DOMException で reject
 - abort 時に Blob 未生成 (export) / pendingDecryption state 未更新 (import) の invariant 維持
+- KDF 進行中に `controller.abort()` を呼んだ場合、KDF 完了 (~70ms 〜数百 ms) まで待機後に直近の `checkAborted` で abort が発火する (実装の限界)
 - UI 層は **30 秒経過時に強制 abort** + トースト「暗号化に時間がかかっています。デバイス性能を確認するか、データ量を減らしてください」+ cancel ボタン
 - mobile Safari の background throttle (15 秒以上) に対しては、abort 後の再試行を許可（state を「再試行可能」に戻す）
 
