@@ -1,101 +1,131 @@
-# Handoff: M6 PR-D 完走 + M6 全体完了 (E2EE 暗号化バックアップ 100%)
+# Handoff: 本番運用修正セッション (Firebase env / gh auth hook / Tailwind PostCSS / UI overlap)
 
-- Session Date: 2026-04-29（夜セッション、PR #77 マージで M6 完走）
+- Session Date: 2026-04-29（夜セッション、M6 完走後の本番運用修正 4 件）
 - Owner: yasushi-honda
-- Status: ✅ 再開可能（M6 PR-A〜D 全完了、本セッションで M6 完走）
-- Previous handoff: [2026-04-29-m6-pr-abc.md](./2026-04-29-m6-pr-abc.md)
+- Status: ✅ 再開可能（無料範囲のアプリ機能完成 + 公開可能 + UI レイアウト健全）
+- Previous handoff: [2026-04-29-m6-completion.md](./2026-04-29-m6-completion.md)
+
+## 今セッションのトリガー
+
+M6 完走後、ユーザーが「公開リンクで動作確認したい」と要望。Cloud Run dev URL `https://novel-writer-446321146441.asia-northeast1.run.app` を提示したところ、起動時に Firebase 初期化エラーで画面真っ暗。芋づる式で本番運用に必要な修正 4 件を順次対応。
 
 ## 今セッションの完了内容
 
 | PR | 内容 | 状態 | 規模 |
 |---|---|---|---|
-| #77 | feat(m6): PR-D UI 実装 (ExportEncryptModal + ImportPassphraseModal + Export/Import 動線統合 + ModalManager 統合 + F3 持ち越し fix) | ✅ merged (squash `7c13a16`) | 15 ファイル +657/-59 |
-| 本 PR | docs: M6 完走を反映 (ADR-0001 Roadmap M6 ✅ 化 + handoff 更新) | 進行中 | docs のみ |
+| #79 | fix(deploy): Vite build-time の `VITE_FIREBASE_*` 注入 (Dockerfile ARG/ENV + GitHub Actions Secrets 経由 `--build-arg`) | ✅ merged (`b21f4cc`) | 2 ファイル +28/-1 |
+| #80 | feat(claude): プロジェクトローカル PreToolUse Bash hook で `gh auth` の active account を自動切替 (silent failure 解消版、廃止条件記載済) | ✅ merged (`b8b19f5`) | 4 ファイル +149/-2 |
+| #81 | feat(build): Tailwind v3 を CDN 配信から PostCSS plugin 統合へ移行 (`cdn.tailwindcss.com should not be used in production` warning 解消) | ✅ merged (`0bc6c6b`) | 7 ファイル +676/-41 |
+| #82 | fix(ui): `ProjectSelectionScreen` の AuthButton 絶対配置を normal flow に変更し `BackupWarningBanner` との重なりを解消 | ✅ merged (`1ad3c28`) | 1 ファイル +4/-4 |
 
-(merge commit hash は merge 後に確認)
+各 PR の Quality Gate 実施実績:
 
-**M6 進捗**: PR-A spec ✅ / PR-B crypto core ✅ / PR-C slice integration ✅ / **PR-D UI ✅** = **100% 完了**。M6 全体完走。
+- **#79 (small tier)**: 軽量レビュー (5 観点手動チェック) のみ。インフラ単純修正で issue なし
+- **#80 (medium tier)**: 4 並列レビュー (code-reviewer / silent-failure-hunter / comment-analyzer / pr-test-analyzer) → Important 7 件指摘を全反映 (silent failure stderr 復活 / 廃止条件記載 / direnv 仕様の正しい帰属 / git push 説明明確化 / CLAUDE.md 配置位置移動 / vitest static resilience test 追加 / regex 末尾 `\)` 追加)
+- **#81 (large tier)**: code-reviewer + evaluator 2 並列 (5+ ファイル発動条件) → MED-1 (`./firebase/**` glob 削除) + S-3 (CSP コメント明確化) を反映。evaluator HIGH-2/3 (typography plugin 由来の prose 系) は CDN 版にも plugin 含まれない事実から誤判定と判定、対応不要
+- **#82 (small tier)**: 軽量レビュー、CSS class 変更のみで issue なし
 
-### Quality Gate 実施実績 (PR #77)
+## 主要設計判断 (本セッションで確定)
 
-CLAUDE.md MUST に従い、5 ファイル+ 新規機能の Evaluator 分離プロトコル + 大規模 PR の codex セカンドオピニオンまで全段階発動。
-
-- **第 1 段階 (4 並列)**: simplify reuse / simplify quality / evaluator / silent-failure-hunter
-  - Critical 4 件 (B1 AC-5 toast 文言契約 / B2 AC-9 autoComplete=new-password / B3 closeModal タイミング修正 / B4 BackupCancelledError 独立 class 化) + High 3 件 (H1 PASSPHRASE_INPUT_GUARDS 共通 helper / H2 timeout cleanup / H3 設計コメント追記) を反映
-- **第 2 段階 (6 並列)**: comment-analyzer / pr-test-analyzer / type-design / code-reviewer / simplify-final / silent-failure-final
-  - Critical 4 件 (test [1] BackupCancelledError instance pin / test [2] 暗号化 toast assert / C1 tasks.md `[x]` 化 / I1 accept 修正) を反映
-- **セカンドオピニオン**: /codex review (mcp 版)
-  - High 2 件 (High-1 ExportEncryptModal in-flight cancel ボタン enable / High-2 ImportPassphraseModal Decrypting 中 cancel ボタン enable) を反映
-
-### 主要設計判断 (PR-D で確定)
-
-| 判断 | 採用 |
-|---|---|
-| ExportEncryptModal の構造 | 「暗号化する」チェックボックス内蔵型 (3 起点 1 mount に集約) |
-| F3 fix の方針 | `closeModal()` 削除 (auto-unmount で完結、無関係 modal を巻き込む副作用を解消) |
-| 30 秒 timeout の実装層 | UI 層 (`useEffect` + `useRef` + `setTimeout` + `AbortController`) |
-| BackupCancelledError 独立 class | AC-9 「cause 不参照」規律を厳守するため `name`-based 機械判定 |
-| ImportPassphraseModal の遷移先 | `openModal('importConflict')` で activeModal slot を経由 (M4 lifecycle と整合) |
-| encrypted export 専用 toast 文言所在 | slice 側に集約「暗号化バックアップを作成しました（N 件）」 |
-| in-flight cancel ボタン | 暗号化中 / 復号中も常時 enable (codex review High-1/2) |
+| 判断 | 採用 | 理由 |
+|---|---|---|
+| Firebase Web SDK config の Secrets 化 | GitHub Secrets → workflow `env:` → shell 変数 → `--build-arg` の 4 段階受け渡し | command injection 経路を排除 (`${{ secrets.* }}` を `run:` に直接展開しない) |
+| Firebase config の機密性扱い | PUBLIC 値 (ADR-0001 §M1)、Secrets 化は git 隔離目的のみ | 取得は `firebase apps:sdkconfig WEB <appId> --json` で AI 側自動化可 |
+| gh auth 自動切替の実装層 | プロジェクトローカル PreToolUse Bash hook (`.claude/hooks/ensure-gh-account.sh`) | グローバル `~/.claude/` 改修 (CLAUDE.md §1 スコープ違反) を回避、direnv 不発火問題を吸収 |
+| hook の失敗時挙動 | stderr に `[ensure-gh-account] WARN:` 出力 + exit 0 維持 | PreToolUse hook contract: exit 2 のみ block、それ以外許可。診断情報を残しつつ Bash tool を block しない |
+| hook の廃止条件 (sunset) 明記 | header + CLAUDE.md §5 に 3 条件記載 | 上流規律強化で寿命を迎える defensive code を後続が「恒久仕組み」と誤解しないため |
+| Tailwind バージョン | v3 (`^3.4.19`) + PostCSS plugin | v3 は実績ある統合パターン、`theme.extend.colors` を素直に移植可能。v4 は CSS-first config (`@theme` directive) で API 大幅変更、互換性検証は別 PR |
+| Tailwind typography plugin | 導入しない | CDN 版にも含まれず `.prose` 系は `index.css` 内で完全手書きされていた (リグレッションでない) |
+| AuthButton の配置方針 | `absolute` から normal flow へ | `BackupWarningBanner` との衝突を最小変更で解消 |
 
 ## 次セッション開始時の状態
 
-- ブランチ: 本 handoff PR merge 後は `main` clean、最新コミットは PR #77 + 本 PR の squash merge
-- Open Issue: 1 件（#49 M4/M7 follow-up umbrella、rating ≥ 7 全消化済の monitor 対象、本セッションで状況変化なし）
-- 自動テスト: vitest **428/428 PASS** (前 425 → +3、F3 regression 2 件 + B4 BackupCancelledError pin 1 件)
-- 型チェック: `tsc --noEmit` 0 errors / build OK / Cloud Run deploy CI は PR #77 merge で **success (3m14s)**
+- ブランチ: 本 handoff PR merge 後は `main` clean
+- Open Issue: 1 件 (#49 M4/M7 follow-up umbrella、rating ≥ 7 全消化済の monitor 対象、本セッションで状況変化なし)
+- 自動テスト: vitest **435/435 PASS** (前セッション 428 → 本セッション +7、PR #80 で `tests/static/ensure-gh-account-hook-resilience.test.ts` 追加)
+- 型チェック: `tsc --noEmit` 0 errors / build OK / Cloud Run deploy CI は PR #82 merge で **success (3m23s)**
+- Cloud Run revision: `novel-writer-00067-qfb` 以降 (PR #82 反映後の新 revision)
+- 公開 URL 動作確認: ✅ Firebase エラー / Tailwind warning / UI 重なり 全解消
+
+## 公開可能性の到達
+
+| 項目 | 状態 |
+|---|---|
+| 無料範囲のアプリ機能 (M0〜M4 / M6 / M7-α) | ✅ 完成 |
+| Firebase Web SDK 初期化 | ✅ 動作確認済 |
+| Tailwind バンドル | ✅ self-host (`dist/assets/index-*.css` 58.97KB) |
+| UI レイアウト | ✅ `BackupWarningBanner` と `AuthButton` 衝突解消 |
+| 有料機能 (M5 Stripe Tier 2) | 🚧 当面実装しない方針、UI 露出ゼロ |
+| M7-β 公開最終チェック | ⏸ 法務本文確定待ち (外部依存) |
+
+無料範囲のみで「機能完成 + 公開可能 + 動作確認済」状態に到達。残るのは法務同期作業のみ。
 
 ## 次のアクション（推奨順）
 
 ### 1. 法務確認 (AI セッション外、MUST、引き続き保留)
 
-M7-α 本番公開前法務確認 (ADR-0001 Roadmap M7-α 行参照、`docs/handoff/2026-04-29-m7a-issue49-cleanup.md` §1) は前セッションから継続して保留中。M5 / M7-β / 本番公開判断はすべて本確認の完了が前提。法務確認の進捗があるまで本セッション内では能動的なリリース判断作業を行わない。
+M7-α 本番公開前法務確認は M6 完了セッションから継続して保留中。M5 / M7-β / 本番公開判断はすべて本確認の完了が前提。
 
 ### 2. M5 着手判断 (法務確認状況に依存、ユーザー判断)
 
-M6 完走で「ローカルファイル E2EE バックアップ」は完了。M6.5 (Cloud Storage 連携) は M5 (Stripe Tier 2) が前提のため、次の選択肢は:
+選択肢:
+- **M5 着手**: Stripe Subscription + Webhook + Tier 2 法務節 (M7-β 法務本文確定が前提)
+- **M7-β 着手**: 公開最終チェック (Tier 2 規約節 + 特商法本文確定)
+- **小規模技術改善**: Issue #49 monitor 対象の rating 5-6 follow-up を本番障害として再現したものから着手
 
-- **M5 着手**: Stripe Subscription + Webhook + Tier 2 法務節。M7-β 法務本文確定が前提。
-- **M7-β 着手**: 公開最終チェック (Tier 2 規約節 + 特商法本文確定)。法務確認待機状態継続中なら、本作業も保留。
-- **小規模技術改善**: Issue #49 monitor 対象の rating 5-6 follow-up を本番障害として再現したものから着手。
+### 3. 既知の既存問題 (PR #81 evaluator が指摘、本セッションスコープ外)
 
-### 3. AC-11 後半「mobile Safari background throttle 後の再試行」を実機 (iOS Safari) で確認 (ユーザー判断)
+別 Issue 化候補:
+- `index.html` の `<link rel="stylesheet">` / `<script type="module">` 二重記述 (PR 編集前から存在、React 二重マウントの可能性)
+- `<body class="bg-gray-900">` と `--color-bg-app` の背景色二重指定 (PostCSS 移行後の視覚差異要実機確認、現状画面では問題なし)
+- `.sr-only` の二重定義 (Tailwind utility と index.css の手書き)
+- `@layer` directive 不在による特異性問題
 
-AC-11 は spec で「mobile Safari の background throttle (15 秒以上) に対しては、abort 後の再試行を許可（state を「再試行可能」に戻す）」を要求。Export 側は modal を残す設計、Import 側は cancel で modal unmount される設計。実機で UX を確認し、必要なら spec を narrowing or 追加実装。
+triage 基準: いずれも実害再現未確認のため、本番障害として再現した時点で起票。
 
-### 4. Issue #49 の monitor 継続
+### 4. AC-11 後半「mobile Safari background throttle 後の再試行」を実機確認 (ユーザー判断)
 
-rating ≥ 7 全消化済の状態は維持。再開条件: rating ≤ 6 follow-up が本番障害として再現 / M5 着手時に同一コードパス / USER_DOC_MISSING UX 実装判断 / review agent rerating で rating ≥ 7 新規発見。
+iOS Safari 実機 (iOS ネイティブアプリ開発ではなく Web アプリの mobile Safari) での UX 確認。本セッションで「iOS Safari サポートは best-effort」方針確定。動作確認は受動的サポート扱い。
+
+### 5. Issue #49 の monitor 継続
+
+rating ≥ 7 全消化済の状態維持。再開条件は前 handoff と同じ。
 
 ## 主要参照
 
-- 関連 PR: #73 (PR-A spec) / #74 (PR-B crypto core) / #75 (PR-C slice) / #77 (PR-D UI)
-- spec: `docs/spec/m6/{tasks,acceptance-criteria,state-diagram}.md` (全 [x] 化済)
-- ADR: `docs/adr/0001-local-first-architecture.md` Roadmap M6 ✅ 化済 (本 PR で反映)
-- 主要新規ファイル: `components/modals/{ExportEncryptModal,ImportPassphraseModal}.tsx` / `utils/{backupCrypto,backupErrors,backupSchema,passphraseUi}.ts` / `store/backupSlice.ts`
-- CLAUDE.md Architecture: 「E2EE 暗号化バックアップ層 (M6)」セクション新設済 (PR #77 で反映)
+- 関連 PR: #79 (Firebase env) / #80 (gh auth hook) / #81 (Tailwind PostCSS) / #82 (AuthButton overlap)
+- 主要新規ファイル:
+  - `.claude/hooks/ensure-gh-account.sh` (PR #80)
+  - `.claude/settings.json` (PR #80)
+  - `tests/static/ensure-gh-account-hook-resilience.test.ts` (PR #80)
+  - `tailwind.config.js` (PR #81)
+  - `postcss.config.js` (PR #81)
+- 主要編集ファイル:
+  - `Dockerfile` (PR #79: ARG/ENV)
+  - `.github/workflows/deploy.yml` (PR #79: --build-arg)
+  - `index.html` (PR #81: CDN script 削除)
+  - `index.css` (PR #81: `@tailwind` directive)
+  - `server/index.ts` (PR #81: CSP scriptSrc 修正)
+  - `components/ProjectSelectionScreen.tsx` (PR #82: AuthButton 配置変更)
+  - `CLAUDE.md` (PR #79/#80/#81 で運用ルール追記)
 
-## M6 振り返り
-
-### スコープ達成度
-M6 全 14 AC (AC-1〜14) 達成。設計判断 5 件 (鍵管理 / 保管先段階 / Tier ゲート / envelope schema / UI 統合) は impl-plan 段階でユーザー A 確定承認、各 PR で blocker fix を吸収しながら spec 通り完走。
+## 振り返り
 
 ### Quality Gate の有効性
-- **PR-A (spec)**: code-reviewer + comment-analyzer + /review-pr 4 並列 + /codex で blocker 20 件反映。spec 段階で実装 trap (B12 AAD 採用 / B6 envelopeVersion 独立 / 12 grapheme 強度) を先に確定できた
-- **PR-B (crypto core)**: Evaluator 3 周 (REQUEST_CHANGES → REQUEST_CHANGES → APPROVE)、循環 import を解消、AC-10 perf 35% 短縮 (toBase64 chunked)
-- **PR-C (slice integration)**: state-diagram.md 先行作成 (CLAUDE.md MUST) + readSnapshot 後の race を codex セカンドオピニオンで検出 (specialized agents は見落とした blocker)
-- **PR-D (UI)**: 第 1+2 段階 4+6 並列 + codex review で Critical 8 件 + High 5 件反映。特に codex review High-1/2 「in-flight cancel ボタン disabled」は specialized agents 全体で見落としていた spec 違反 (state-diagram.md 文面と乖離)。codex セカンドオピニオンの仕様文面照合の有効性を再確認
 
-### 改善できる点
-- Testing Library 未導入のため UI render 単体テストが書けない。manual E2E (Playwright MCP) で代替したが、機械的 enforcement がない。M6.5 着手前に Testing Library 導入 + 既存 modal の component test 追加を検討候補とする (Issue #49 monitor 内に類似要望あり)
-- ハンドオフ M6 関連で「PR-D」「F3」等の version-specific 参照が一部残った (comment-analyzer rating 5-6)。merge 後 1〜2 milestone で意味不明化するため、ADR 化 or 言い換えで rot 防止できる
+- **PR #80 (medium tier 4 並列レビュー)**: silent-failure-hunter が「`gh auth switch` 失敗時の stderr 完全抑制で診断不能」を Important として検出。元の実装は「fallback したことすら気づけない」silent failure であり、PR description の「false negative があれば手動 switch にフォールバック」方針と矛盾していた。並列レビューでこの設計欠陥を merge 前に検出できた価値は大きい。
+- **PR #81 (large tier 2 並列レビュー)**: evaluator が「`prose` クラスが typography plugin なしで動作不能」と HIGH 指摘したが、code-reviewer は同 PR を Approve。事実検証で「CDN 版 Tailwind にも typography plugin は元々含まれず、`.prose` 系は `index.css` 内手書き」と判明、evaluator HIGH-2/3 は誤判定と判定。Generator-Evaluator 分離の「誤検知も発生する」事例として、AI に対しても**事実検証を経てから採用判断する**規律の重要性を再確認。
 
 ### CLAUDE.md 4 原則遵守
-1. AI executor として decision-maker 越権なし (設計判断 5 件 + B4 選択肢 A は impl-plan / Quality Gate 段階でユーザー確定承認)
-2. hook ブロックは「立ち止まれ」として尊重 (post-pr-review hook で各 PR の complete review 実施、large tier も全段階発動)
-3. PR マージは番号単位の明示認可で 4 件実施 (`#73 をマージしてよい` / `#74 を...` / `#75 を...` / `#77 を...`)
-4. main 直 push 一切なし、全 PR を feature ブランチ + PR 経由
+
+1. **AI executor として decision-maker 越権なし**: 各 PR の修正範囲は impl-plan で明示承認後に着手、evaluator 誤判定時もユーザーに事実提示して判断を仰いだ
+2. **hook ブロックは「立ち止まれ」として尊重**: PR #80 で security_reminder_hook 発火時に secrets を `run:` に直接展開する実装を env: 経由に変更
+3. **PR マージは番号単位の明示認可**: 4 件すべて `#N をマージしてよい` 単位で実施
+4. **main 直 push 一切なし**: 全 PR を feature ブランチ + PR 経由
+
+### gh auth multi-account 運用の発見
+
+`gh auth switch` がマシン全体で `~/.config/gh/hosts.yml` を共有することを今セッションで実体験。複数アカウント運用 (catchup memory `project_multi_device.md` 参照) で本プロジェクトの GitHub identity (`yasushi-honda`) が他セッション操作で他ユーザーに切り替わるケースを実際に踏み、PR #80 で hook 化。本来は global `~/.claude/` 側で「session 終了時に元アカウント復帰」規律を入れるのが本筋だが、それまでの defensive code として project ローカル hook を採用。
 
 ## Issue Net 変化（本セッション全体）
 
@@ -105,22 +135,21 @@ GitHub Issue 数の変化:
 - 起票数（Issue）: 0 件
 - **Net（Issue）: 0 件**
 
-理由: M6 PR-D 着手は ADR-0001 Roadmap 既存項目の作業着手であり新規 Issue 起票対象ではない。各 Quality Gate の指摘は全て本 PR 内で反映 (第 1 段階 Critical 4 + 第 2 段階 Critical 4 = Critical 8 件、High 5 件、加えて codex review は High 2 件)、CLAUDE.md triage 基準 (rating ≥ 7 + confidence ≥ 80) を満たさない rating 5-6 提案は PR コメント / TODO 扱い。Issue #49 (M4/M7 follow-up umbrella) は前セッション handoff から状況変化なし、open 維持の monitor 対象。
+理由: 本セッションの 4 PR はすべてユーザー実機確認発の本番運用修正であり、すべて当該 PR 内で解消した。triage 基準 (実害 / 再現バグ / CI 破壊 / rating ≥ 7 / ユーザー明示指示) は満たすが、Issue 化せず PR 直行で完結 (実害が PR 着手 → 修正 → merge → 動作確認の流れで解消するため、Issue ライフサイクルを通す価値が薄い)。Issue #49 は前セッションから状況変化なし、open 維持の monitor 対象。
 
 PR の動き:
 
-- マージ数: 1 件 (#77 PR-D UI)
+- マージ数: 4 件 (#79, #80, #81, #82)
 - 着手中（PR）: 1 件（本 handoff PR）
 
 ## ドキュメント整合性
 
 | 項目 | 状態 | 備考 |
 |---|---|---|
-| `docs/adr/0001-local-first-architecture.md` | ✅ M6 ✅ 化反映済 (本 PR) | M6.5 行は `⏳` 維持 |
-| `CLAUDE.md` Architecture | ✅ M6 反映済 (PR #77 で実施) | E2EE 暗号化バックアップ層セクション + 型定義の `EncryptedBackupV1` / `PendingDecryption` / `PrepareImportResult` / `ModalType` 拡張 |
-| `docs/spec/m6/tasks.md` | ✅ PR-D 全 [x] 化 + Status `✅ PR-A〜D 完了` (PR #77 で実施) | autocomplete 行も `new-password` に整合済 |
-| `docs/spec/m6/acceptance-criteria.md` | ✅ AC-1〜14 確定 (PR #73 で実施) | UI 部分 (AC-5/6/9) は manual E2E で達成確認 |
-| `docs/spec/m6/state-diagram.md` | ✅ T1〜T12 + 不変条件 + ModalManager 統合 (PR #75 で実施) | PR-D 実装は state-diagram.md 通り |
+| `docs/adr/0001-local-first-architecture.md` | ✅ 変更不要 | 本セッションは ADR 範囲の設計判断なし (本番運用修正のみ) |
+| `CLAUDE.md` | ✅ PR #79/#80/#81 で随時追記済 | GCP / デプロイ節に Vite build-time 注入経路、Claude Code 運用ルール §5 に gh auth hook 廃止条件 |
+| `docs/handoff/LATEST.md` | ✅ 本 PR で更新 | 前 LATEST は `docs/handoff/2026-04-29-m6-completion.md` として保存 |
+| `docs/spec/m6/*` | ✅ 変更不要 | M6 完走済、本セッションは M6 範囲外 |
 
 ## 残留プロセス
 
