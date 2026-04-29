@@ -1,6 +1,6 @@
 # M6: E2EE 暗号化バックアップ タスク表
 
-- Status: 🚧 着手中（spec 起こし PR-A、2026-04-29）
+- Status: 🚧 PR-A〜C 完了 (2026-04-29 PR #73/#74/#75)、PR-D (UI 実装) のみ残
 - Owner: yasushi-honda
 - Started: 2026-04-29
 - Related ADR: [ADR-0001](../../adr/0001-local-first-architecture.md) §Decision (Cloud Storage = opt-in 暗号化バックアップ) / §Consequences (XSS 時 E2EE 限界)
@@ -53,9 +53,9 @@ ADR-0001 Roadmap では M6 を「E2EE 暗号化バックアップ（任意機能
 
 | PR | 内容 | 規模 | 工数 | 状態 |
 |---|---|---|---|---|
-| **PR-A** | docs(m6) M6 仕様 + AC + ADR-0001 Roadmap 更新（M6 / M6.5 分割反映） | 小〜中 | 1〜1.5 時間 | 🚧 着手中 |
-| **PR-B** | feat(m6) `utils/backupCrypto.ts` 新設 (deriveKey/encrypt/decrypt) + `utils/backupSchema.ts` に EncryptedBackupV1 型 + parseBackup 分岐 + vitest 単体テスト | 中 | 2〜3 時間 | ⏳ |
-| **PR-C** | feat(m6) `store/backupSlice.ts` に encrypt/decrypt 経路統合 + 統合テスト | 中 | 1.5〜2 時間 | ⏳ |
+| **PR-A** | docs(m6) M6 仕様 + AC + ADR-0001 Roadmap 更新（M6 / M6.5 分割反映） | 小〜中 | 1〜1.5 時間 | ✅ #73 merged |
+| **PR-B** | feat(m6) `utils/backupCrypto.ts` 新設 (deriveKey/encrypt/decrypt) + `utils/backupSchema.ts` に EncryptedBackupV1 型 + parseBackup 分岐 + vitest 単体テスト | 中 | 2〜3 時間 | ✅ #74 merged |
+| **PR-C** | feat(m6) `store/backupSlice.ts` に encrypt/decrypt 経路統合 + 統合テスト | 中 | 1.5〜2 時間 | ✅ #75 merged |
 | **PR-D** | feat(m6) UI 実装 (ExportEncryptModal + ImportPassphraseModal + Export/Import 動線統合) | 大 | 2〜3 時間 | ⏳ |
 
 着手順序: **PR-A → PR-B → PR-C → PR-D**（逐次、各段階で merge 可能な状態を維持）
@@ -68,15 +68,15 @@ ADR-0001 Roadmap では M6 を「E2EE 暗号化バックアップ（任意機能
 
 - [x] `docs/spec/m6/tasks.md` 起こし（本ファイル）
 - [x] `docs/spec/m6/acceptance-criteria.md` 起こし
-- [ ] `docs/adr/0001-local-first-architecture.md` Roadmap を M6 / M6.5 分割に更新
-- [ ] `CLAUDE.md` Architecture に M6 該当時の追記（PR-B 着手前にスケッチ、PR-D 完了時に最終化）
+- [x] `docs/adr/0001-local-first-architecture.md` Roadmap を M6 / M6.5 分割に更新
+- [x] `CLAUDE.md` Architecture に M6 該当時の追記（PR-B 着手前にスケッチ、PR-D 完了時に最終化）
 
 ### 完了条件 (DoD)
 
 - [x] tasks.md / acceptance-criteria.md がレビュー可能な完成度
-- [ ] ADR-0001 Roadmap が M6 / M6.5 分割に整合
-- [ ] PR description に「設計判断 5 件の確定内容」を再掲
-- [ ] code-reviewer + comment-analyzer の Quality Gate 通過
+- [x] ADR-0001 Roadmap が M6 / M6.5 分割に整合
+- [x] PR description に「設計判断 5 件の確定内容」を再掲
+- [x] code-reviewer + comment-analyzer の Quality Gate 通過
 
 ---
 
@@ -84,44 +84,44 @@ ADR-0001 Roadmap では M6 を「E2EE 暗号化バックアップ（任意機能
 
 ### タスク
 
-- [ ] `utils/backupCrypto.ts` 新設
-  - [ ] **constant**: `PBKDF2_ITERATIONS = 600_000` / `MIN_ACCEPTED_ITERATIONS = 100_000` / `MAX_ACCEPTED_ITERATIONS = 10_000_000` / `MAX_CIPHERTEXT_BYTES = 100 * 1024 * 1024` / `DECRYPT_FAILURE_MESSAGE = 'パスフレーズが正しくないか、ファイルが壊れています。'` / `MIN_PASSPHRASE_CODEPOINTS = 12` (Unicode コードポイント単位、Intl.Segmenter は ICU バージョン依存で不採用)
-  - [ ] **API**:
-    - [ ] `randomBytes(len: number): Uint8Array` (`crypto.getRandomValues` ラッパー、test util から import 可能、`exportKey` 経路は持たない)
-    - [ ] `deriveKey(passphrase: string, salt: Uint8Array, iterations: number): Promise<CryptoKey>` (PBKDF2-SHA256, **`extractable: false`** + **`usages: ['encrypt', 'decrypt']`**)
-    - [ ] `encryptBackup(plaintext: BackupV1, passphrase: string, appVersion: string, opts?: { signal?: AbortSignal; now?: Date }): Promise<EncryptedBackupV1>` (AAD で envelope metadata 認証)
-    - [ ] `decryptBackup(envelope: EncryptedBackupV1, passphrase: string, opts?: { signal?: AbortSignal }): Promise<BackupV1>` (catch を 4 cause に分類、broad catch 禁止)
-    - [ ] `validatePassphraseLength(p: string): void` (Unicode コードポイント単位で `[...p].length >= MIN_PASSPHRASE_CODEPOINTS`、不足で BackupValidationError)
-    - [ ] base64 encode/decode helper (test util から import 可能)
-  - [ ] **regularization**: passphrase は `passphrase.normalize('NFC')` してから `TextEncoder.encode` (AC-12)
-  - [ ] **AAD**: `buildAad(meta): Uint8Array` (key-sorted JSON.stringify → encode、含む field は AC-13 参照)
-  - [ ] **try/finally で best-effort zeroize**: encrypt/decrypt 中の `Uint8Array` を `.fill(0)` (AC-14)
-  - [ ] **`crypto.subtle.exportKey` を export しない** (CI grep で検証、AC-14)
-- [ ] `utils/backupSchema.ts` 拡張
-  - [ ] `EncryptedBackupV1` 型定義（types.ts に export、`envelopeVersion: 1` field を `schemaVersion` の代わりに採用）
-  - [ ] `isEncryptedBackup(json: Record<string, unknown>): json is { encrypted: true; ... }` (AC-8 の AND 結合判定、type guard として宣言)
-  - [ ] `parseEncryptedEnvelope(json: Record<string, unknown>): EncryptedBackupV1` (parse-time validation: literal check / iterations floor & ceiling / salt 16 bytes / iv 12 bytes / ciphertext size limit、半壊 envelope は `BackupValidationError ({ cause: { kind: 'envelope-incomplete' } })` で reject)
-  - [ ] `parseAnyBackup(raw: string): BackupV1 | EncryptedBackupV1` 新設 (encrypted detection + 既存 parseBackup の平文 path に dispatch)
-  - [ ] `parseBackup` (既存関数) は **戻り値型 `BackupV1` 不変**、分岐は `parseAnyBackup` に分離 (AC-8 regression 保護)
-- [ ] `types.ts` に `EncryptedBackupV1` interface 追加
-- [ ] **`BackupValidationError` 拡張**: `cause: { kind: 'auth-tag-mismatch' | 'plaintext-corrupted' | 'schema-invalid' | 'kdf-import-failed' | 'envelope-incomplete' | 'no-pending-decryption' | ... }` を保持できる constructor (Error.cause native 使用)
-- [ ] **logger 経路**: `errorIds.ts` (or 新設 `loggerIds.ts`) に `M6_DECRYPT_AUTH_TAG_FAILED` / `M6_DECRYPT_PLAINTEXT_CORRUPTED` / `M6_DECRYPT_SCHEMA_INVALID` / `M6_DECRYPT_KDF_FAILED` を追加。`logger.warn(id, safe_metadata)` 呼出 (passphrase / plaintext / derived key / salt / ciphertext は絶対に含めない)
-- [ ] vitest 追加
-  - [ ] `utils/backupCrypto.test.ts`: AC-1〜4, AC-7, AC-10, AC-11, AC-12, AC-13, AC-14 (合計 ~30 ケース)
-  - [ ] `utils/backupSchema.test.ts` 拡張: AC-8 (encrypted envelope parse / 既存平文 BackupV1 後方互換 regression / 半壊 envelope reject / 6 ケース fixture pin)
-  - [ ] `tests/static/no-error-cause-in-components.test.ts`: components 配下の `error.cause` 参照ゼロ assert (AC-9)
-  - [ ] `tests/static/no-export-key.test.ts`: backupCrypto から `exportKey` の export ゼロ assert (AC-14)
-- [ ] **test fixtures**: `buildSampleBackup()` / `buildLargeBackup(numProjects, perProjectBytes)` / `tamperLastByte(b64)` を `tests/fixtures/backup.ts` に集約 (AC-1, AC-7, AC-10 で再利用)
-- [ ] CLAUDE.md MUST: 境界値テスト (パスフレーズ 0/1/11/12/13/最大長 / iterations 境界 MIN-1, MIN, MAX, MAX+1)
+- [x] `utils/backupCrypto.ts` 新設
+  - [x] **constant**: `PBKDF2_ITERATIONS = 600_000` / `MIN_ACCEPTED_ITERATIONS = 100_000` / `MAX_ACCEPTED_ITERATIONS = 10_000_000` / `MAX_CIPHERTEXT_BYTES = 100 * 1024 * 1024` / `DECRYPT_FAILURE_MESSAGE = 'パスフレーズが正しくないか、ファイルが壊れています。'` / `MIN_PASSPHRASE_CODEPOINTS = 12` (Unicode コードポイント単位、Intl.Segmenter は ICU バージョン依存で不採用)
+  - [x] **API**:
+    - [x] `randomBytes(len: number): Uint8Array` (`crypto.getRandomValues` ラッパー、test util から import 可能、`exportKey` 経路は持たない)
+    - [x] `deriveKey(passphrase: string, salt: Uint8Array, iterations: number): Promise<CryptoKey>` (PBKDF2-SHA256, **`extractable: false`** + **`usages: ['encrypt', 'decrypt']`**)
+    - [x] `encryptBackup(plaintext: BackupV1, passphrase: string, appVersion: string, opts?: { signal?: AbortSignal; now?: Date }): Promise<EncryptedBackupV1>` (AAD で envelope metadata 認証)
+    - [x] `decryptBackup(envelope: EncryptedBackupV1, passphrase: string, opts?: { signal?: AbortSignal }): Promise<BackupV1>` (catch を 4 cause に分類、broad catch 禁止)
+    - [x] `validatePassphraseLength(p: string): void` (Unicode コードポイント単位で `[...p].length >= MIN_PASSPHRASE_CODEPOINTS`、不足で BackupValidationError)
+    - [x] base64 encode/decode helper (test util から import 可能)
+  - [x] **regularization**: passphrase は `passphrase.normalize('NFC')` してから `TextEncoder.encode` (AC-12)
+  - [x] **AAD**: `buildAad(meta): Uint8Array` (key-sorted JSON.stringify → encode、含む field は AC-13 参照)
+  - [x] **try/finally で best-effort zeroize**: encrypt/decrypt 中の `Uint8Array` を `.fill(0)` (AC-14)
+  - [x] **`crypto.subtle.exportKey` を export しない** (CI grep で検証、AC-14)
+- [x] `utils/backupSchema.ts` 拡張
+  - [x] `EncryptedBackupV1` 型定義（types.ts に export、`envelopeVersion: 1` field を `schemaVersion` の代わりに採用）
+  - [x] `isEncryptedBackup(json: Record<string, unknown>): json is { encrypted: true; ... }` (AC-8 の AND 結合判定、type guard として宣言)
+  - [x] `parseEncryptedEnvelope(json: Record<string, unknown>): EncryptedBackupV1` (parse-time validation: literal check / iterations floor & ceiling / salt 16 bytes / iv 12 bytes / ciphertext size limit、半壊 envelope は `BackupValidationError ({ cause: { kind: 'envelope-incomplete' } })` で reject)
+  - [x] `parseAnyBackup(raw: string): BackupV1 | EncryptedBackupV1` 新設 (encrypted detection + 既存 parseBackup の平文 path に dispatch)
+  - [x] `parseBackup` (既存関数) は **戻り値型 `BackupV1` 不変**、分岐は `parseAnyBackup` に分離 (AC-8 regression 保護)
+- [x] `types.ts` に `EncryptedBackupV1` interface 追加
+- [x] **`BackupValidationError` 拡張**: `cause: { kind: 'auth-tag-mismatch' | 'plaintext-corrupted' | 'schema-invalid' | 'kdf-import-failed' | 'envelope-incomplete' | 'no-pending-decryption' | ... }` を保持できる constructor (Error.cause native 使用)
+- [x] **logger 経路**: `errorIds.ts` (or 新設 `loggerIds.ts`) に `M6_DECRYPT_AUTH_TAG_FAILED` / `M6_DECRYPT_PLAINTEXT_CORRUPTED` / `M6_DECRYPT_SCHEMA_INVALID` / `M6_DECRYPT_KDF_FAILED` を追加。`logger.warn(id, safe_metadata)` 呼出 (passphrase / plaintext / derived key / salt / ciphertext は絶対に含めない)
+- [x] vitest 追加
+  - [x] `utils/backupCrypto.test.ts`: AC-1〜4, AC-7, AC-10, AC-11, AC-12, AC-13, AC-14 (合計 ~30 ケース)
+  - [x] `utils/backupSchema.test.ts` 拡張: AC-8 (encrypted envelope parse / 既存平文 BackupV1 後方互換 regression / 半壊 envelope reject / 6 ケース fixture pin)
+  - [x] `tests/static/no-error-cause-in-components.test.ts`: components 配下の `error.cause` 参照ゼロ assert (AC-9)
+  - [x] `tests/static/no-export-key.test.ts`: backupCrypto から `exportKey` の export ゼロ assert (AC-14)
+- [x] **test fixtures**: `buildSampleBackup()` / `buildLargeBackup(numProjects, perProjectBytes)` / `tamperLastByte(b64)` を `tests/fixtures/backup.ts` に集約 (AC-1, AC-7, AC-10 で再利用)
+- [x] CLAUDE.md MUST: 境界値テスト (パスフレーズ 0/1/11/12/13/最大長 / iterations 境界 MIN-1, MIN, MAX, MAX+1)
 
 ### 完了条件 (DoD)
 
-- [ ] AC-1, AC-2, AC-3, AC-4, AC-7, AC-8, AC-10, AC-11, AC-12, AC-13, AC-14 が vitest で PASS
-- [ ] `npm run lint` 0 errors
-- [ ] `npm test` 全 PASS
-- [ ] `/simplify` 3 並列 + `/safe-refactor` 通過
-- [ ] **Evaluator 分離プロトコル発動** (新規機能のため、`rules/quality-gate.md` 準拠)
-- [ ] PR description にパスフレーズ忘却＝データ喪失 + Unicode NFC normalization の forward-locking を明示
+- [x] AC-1, AC-2, AC-3, AC-4, AC-7, AC-8, AC-10, AC-11, AC-12, AC-13, AC-14 が vitest で PASS
+- [x] `npm run lint` 0 errors
+- [x] `npm test` 全 PASS
+- [x] `/simplify` 3 並列 + `/safe-refactor` 通過
+- [x] **Evaluator 分離プロトコル発動** (新規機能のため、`rules/quality-gate.md` 準拠)
+- [x] PR description にパスフレーズ忘却＝データ喪失 + Unicode NFC normalization の forward-locking を明示
 
 ---
 
@@ -129,28 +129,28 @@ ADR-0001 Roadmap では M6 を「E2EE 暗号化バックアップ（任意機能
 
 ### タスク
 
-- [ ] **PR-C 着手前 MUST**: `pendingDecryption` state 遷移図を `docs/spec/m6/state-diagram.md` に作成（CLAUDE.md MUST「statusフィールドで処理状態を管理する設計 → 状態遷移図を先に作成」準拠、`design-diagram` skill 利用）。状態: `idle` / `pendingDecryption` / `decrypting` / `decrypted-conflict-resolution` / `error` / `cancelled` + 遷移条件と禁則
-- [ ] `store/backupSlice.ts` 拡張
-  - [ ] `exportAllData(opts?: { encrypt?: { passphrase: string }; signal?: AbortSignal })` に encrypt option + AbortSignal 追加（or 別 action `exportAllDataEncrypted`）
-  - [ ] `prepareImport` で `EncryptedBackupV1` 検出時に新規 state `pendingDecryption: { rawEnvelope: EncryptedBackupV1; retryCount: number; abortController: AbortController }` を設定
-  - [ ] 新 action `decryptAndPrepareImport(passphrase: string)` 追加:
-    - [ ] 復号成功時に既存 conflict 検出フローへ合流
-    - [ ] 復号失敗時は `retryCount` を increment、5 回超で modal 強制 close + トースト (AC-6)
-    - [ ] `pendingDecryption === null` で呼ばれたら throw (`cause: { kind: 'no-pending-decryption' }`、AC-6)
-    - [ ] `signal.aborted` の場合は state 更新を skip (race-free)
-  - [ ] 新 action `cancelPendingDecryption()` 追加: `abortController.abort()` を呼んでから state 初期化
-  - [ ] `prepareImport` の二重呼び出し対策: 既存 `pendingDecryption` あり時は **先に `cancelPendingDecryption` を呼んでから** new state を set (AC-6 race-free 上書き禁止)
-- [ ] vitest 拡張
-  - [ ] `store/backupSlice.test.ts` 拡張: encrypted export round-trip / pendingDecryption state transition (illegal transition reject / 二重 import / cancel race) / decryptAndPrepareImport 成功・失敗・retry / cancelPendingDecryption + AbortSignal 連動 / 5 回 retry 超過
+- [x] **PR-C 着手前 MUST**: `pendingDecryption` state 遷移図を `docs/spec/m6/state-diagram.md` に作成（CLAUDE.md MUST「statusフィールドで処理状態を管理する設計 → 状態遷移図を先に作成」準拠、`design-diagram` skill 利用）。状態: `idle` / `pendingDecryption` / `decrypting` / `decrypted-conflict-resolution` / `error` / `cancelled` + 遷移条件と禁則
+- [x] `store/backupSlice.ts` 拡張
+  - [x] `exportAllData(opts?: { encrypt?: { passphrase: string }; signal?: AbortSignal })` に encrypt option + AbortSignal 追加（or 別 action `exportAllDataEncrypted`）
+  - [x] `prepareImport` で `EncryptedBackupV1` 検出時に新規 state `pendingDecryption: { rawEnvelope: EncryptedBackupV1; retryCount: number; abortController: AbortController }` を設定
+  - [x] 新 action `decryptAndPrepareImport(passphrase: string)` 追加:
+    - [x] 復号成功時に既存 conflict 検出フローへ合流
+    - [x] 復号失敗時は `retryCount` を increment、5 回超で modal 強制 close + トースト (AC-6)
+    - [x] `pendingDecryption === null` で呼ばれたら throw (`cause: { kind: 'no-pending-decryption' }`、AC-6)
+    - [x] `signal.aborted` の場合は state 更新を skip (race-free)
+  - [x] 新 action `cancelPendingDecryption()` 追加: `abortController.abort()` を呼んでから state 初期化
+  - [x] `prepareImport` の二重呼び出し対策: 既存 `pendingDecryption` あり時は **先に `cancelPendingDecryption` を呼んでから** new state を set (AC-6 race-free 上書き禁止)
+- [x] vitest 拡張
+  - [x] `store/backupSlice.test.ts` 拡張: encrypted export round-trip / pendingDecryption state transition (illegal transition reject / 二重 import / cancel race) / decryptAndPrepareImport 成功・失敗・retry / cancelPendingDecryption + AbortSignal 連動 / 5 回 retry 超過
 
 ### 完了条件 (DoD)
 
-- [ ] AC-5 (export 動線統合の slice 層、AbortSignal 含む) が vitest で PASS（UI 部分は PR-D）
-- [ ] AC-6 (import 動線統合 + state machine 規律) が vitest で PASS
-- [ ] AC-11 (AbortSignal 経路) の slice 層が vitest で PASS
-- [ ] state-diagram.md と AC-6 の transition table が一致
-- [ ] `npm run lint` 0 errors / `npm test` 全 PASS
-- [ ] `/simplify` 3 並列通過
+- [x] AC-5 (export 動線統合の slice 層、AbortSignal 含む) が vitest で PASS（UI 部分は PR-D）
+- [x] AC-6 (import 動線統合 + state machine 規律) が vitest で PASS
+- [x] AC-11 (AbortSignal 経路) の slice 層が vitest で PASS
+- [x] state-diagram.md と AC-6 の transition table が一致
+- [x] `npm run lint` 0 errors / `npm test` 全 PASS
+- [x] `/simplify` 3 並列通過
 
 ---
 
