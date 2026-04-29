@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
     /* 役割ベースの色の定義 */
     --color-bg-app: #09090b;    /* zinc-950 */

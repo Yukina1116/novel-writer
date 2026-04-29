@@ -34,12 +34,11 @@ async function startServer() {
             : {
                 directives: {
                     defaultSrc: ["'self'"],
-                    // cdn.tailwindcss.com: Tailwind runtime (index.html line 7).
                     // aistudiocdn.com: ESM importmap targets (react/zustand/etc.).
+                    // Tailwind は PostCSS で self-host (dist/index.css にバンドル) しているため CDN 不要。
                     scriptSrc: [
                         "'self'",
                         "'unsafe-inline'",
-                        'https://cdn.tailwindcss.com',
                         'https://aistudiocdn.com',
                     ],
                     // fonts.googleapis.com: webfont stylesheets referenced in index.html.
