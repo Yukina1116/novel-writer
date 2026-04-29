@@ -164,7 +164,9 @@ export const ImportPassphraseModal: React.FC = () => {
                     <button
                         type="button"
                         onClick={handleCancel}
-                        disabled={isDecrypting}
+                        // AC-11 / state-diagram.md "Decrypting" 中も cancel ボタン enable
+                        // (cancelPendingDecryption が AbortController.abort() を発火、
+                        // KDF/AES-GCM は完了後 checkpoint で停止)。codex review High-2。
                         className="rounded px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 disabled:opacity-50"
                     >
                         キャンセル

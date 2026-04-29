@@ -125,7 +125,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onExportProject, o
                         type="file"
                         ref={importInputRef}
                         onChange={handleImportFile}
-                        accept=".json,application/json,.enc.json"
+                        accept=".json,application/json"
                         className="hidden"
                     />
                 </div>

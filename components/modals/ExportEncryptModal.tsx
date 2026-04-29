@@ -28,6 +28,9 @@ export const ExportEncryptModal: React.FC = () => {
     const closeButtonRef = useRef<HTMLButtonElement>(null);
     // unmount 時に dangling timeout が発火するのを防ぐ (silent-failure-hunter H2)。
     const timeoutIdRef = useRef<number | null>(null);
+    // 暗号化中の cancel 動線で abort を発火するため、submit 中の controller を ref に保持
+    // (AC-11 「cancel ボタン」要件、codex review High-1)。null なら in-flight なし。
+    const inFlightControllerRef = useRef<AbortController | null>(null);
 
     // 暗号化 ON にしたタイミングでパスフレーズ入力にフォーカスを移す (a11y)。
     // OFF 時は close ボタンに置く (default の dialog focus)。
@@ -83,8 +86,10 @@ export const ExportEncryptModal: React.FC = () => {
             return;
         }
 
-        // 暗号化 export: 30 秒 timeout を AbortController で実装。
+        // 暗号化 export: 30 秒 timeout を AbortController で実装。controller は ref で
+        // 保持し、cancel ボタン (handleCancel) からも abort できるようにする。
         const controller = new AbortController();
+        inFlightControllerRef.current = controller;
         timeoutIdRef.current = window.setTimeout(() => {
             controller.abort();
             showToast(TIMEOUT_TOAST, 'error');
@@ -112,11 +117,26 @@ export const ExportEncryptModal: React.FC = () => {
                 window.clearTimeout(timeoutIdRef.current);
                 timeoutIdRef.current = null;
             }
+            inFlightControllerRef.current = null;
         }
         // 成功時のみ close。失敗 / abort 時は modal を残し再試行を許可 (AC-11 後半)。
         if (succeeded) {
             closeModal();
         }
+    };
+
+    const handleCancel = (): void => {
+        // 暗号化 in-flight の場合は AbortController.abort() で KDF/AES-GCM を即停止。
+        // Web Crypto は mid-execution 中断不可 (acceptance-criteria.md AC-11) のため
+        // KDF 完了後の checkpoint まで待つが、UI 上は即時 modal close で応答する。
+        if (inFlightControllerRef.current) {
+            inFlightControllerRef.current.abort();
+        }
+        if (timeoutIdRef.current !== null) {
+            window.clearTimeout(timeoutIdRef.current);
+            timeoutIdRef.current = null;
+        }
+        handleClose();
     };
 
     return (
@@ -222,8 +242,10 @@ export const ExportEncryptModal: React.FC = () => {
                     <button
                         ref={closeButtonRef}
                         type="button"
-                        onClick={handleClose}
-                        disabled={isExporting}
+                        onClick={handleCancel}
+                        // AC-11: in-flight な暗号化中もキャンセル可能 (handleCancel で
+                        // AbortController.abort() を発火、KDF は完了後 checkpoint で停止)。
+                        // codex review High-1 で disabled=isExporting を撤去。
                         className="rounded px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 disabled:opacity-50"
                     >
                         キャンセル

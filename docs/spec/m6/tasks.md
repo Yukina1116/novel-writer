@@ -1,6 +1,6 @@
 # M6: E2EE 暗号化バックアップ タスク表
 
-- Status: 🚧 PR-A〜C 完了 (2026-04-29 PR #73/#74/#75)、PR-D (UI 実装) のみ残
+- Status: ✅ PR-A〜D 完了 (2026-04-29 PR #73/#74/#75/#77)、M6 完走
 - Owner: yasushi-honda
 - Started: 2026-04-29
 - Related ADR: [ADR-0001](../../adr/0001-local-first-architecture.md) §Decision (Cloud Storage = opt-in 暗号化バックアップ) / §Consequences (XSS 時 E2EE 限界)
@@ -56,7 +56,7 @@ ADR-0001 Roadmap では M6 を「E2EE 暗号化バックアップ（任意機能
 | **PR-A** | docs(m6) M6 仕様 + AC + ADR-0001 Roadmap 更新（M6 / M6.5 分割反映） | 小〜中 | 1〜1.5 時間 | ✅ #73 merged |
 | **PR-B** | feat(m6) `utils/backupCrypto.ts` 新設 (deriveKey/encrypt/decrypt) + `utils/backupSchema.ts` に EncryptedBackupV1 型 + parseBackup 分岐 + vitest 単体テスト | 中 | 2〜3 時間 | ✅ #74 merged |
 | **PR-C** | feat(m6) `store/backupSlice.ts` に encrypt/decrypt 経路統合 + 統合テスト | 中 | 1.5〜2 時間 | ✅ #75 merged |
-| **PR-D** | feat(m6) UI 実装 (ExportEncryptModal + ImportPassphraseModal + Export/Import 動線統合) | 大 | 2〜3 時間 | ⏳ |
+| **PR-D** | feat(m6) UI 実装 (ExportEncryptModal + ImportPassphraseModal + Export/Import 動線統合) | 大 | 2〜3 時間 | ✅ #77 merged |
 
 着手順序: **PR-A → PR-B → PR-C → PR-D**（逐次、各段階で merge 可能な状態を維持）
 
@@ -158,42 +158,42 @@ ADR-0001 Roadmap では M6 を「E2EE 暗号化バックアップ（任意機能
 
 ### タスク
 
-- [ ] `components/modals/ExportEncryptModal.tsx` 新設
-  - [ ] パスフレーズ入力 + 確認再入力 + grapheme count 強度表示
-  - [ ] 「暗号化してダウンロード」ボタン（**最低 12 grapheme** + 一致時のみ enable、AC-5）
-  - [ ] パスフレーズ忘却警告文言 + 強度ヒント文言（AC-9 参照）
-  - [ ] `<input type="password" autocomplete="new-password">` + `oncopy` / `oncut` の `preventDefault` (AC-9)
-  - [ ] 暗号化成功 / 失敗どちらでも passphrase state を `setPassphrase('')` クリア (AC-5, AC-14)
-  - [ ] 30 秒タイムアウト時の abort + トースト + cancel ボタン (AC-11)
-  - [ ] `role="dialog"` + Tab 内ループ + a11y 属性 (AC-9)
-  - [ ] Blob/URL.createObjectURL は try/finally で `URL.revokeObjectURL` cleanup (AC-5)
-- [ ] `components/modals/ImportPassphraseModal.tsx` 新設
-  - [ ] パスフレーズ入力 + 「復号する」ボタン
-  - [ ] エラー文言は constant `DECRYPT_FAILURE_MESSAGE` を直接使用 (auth tag 失敗を fingerprinting しない、AC-9)
-  - [ ] retry カウンタ表示 (現在 N/5 回)、5 回到達で強制 close + トースト (AC-6)
-  - [ ] キャンセル動線 (`cancelPendingDecryption` 経由、AC-6)
-  - [ ] 復号成功 / 失敗どちらでも passphrase state を即クリア (AC-9)
-  - [ ] 30 秒タイムアウト abort (AC-11)
-  - [ ] `<input type="password" autocomplete="off">` + `oncopy` / `oncut` の `preventDefault` (AC-9)
-- [ ] 既存 Export 動線拡張
-  - [ ] 既存 Export 動線エントリポイント全箇所（`handleExportAllData` を呼ぶ全コンポーネント。grep で網羅確認）に「暗号化する」チェックボックスを追加
-  - [ ] チェック ON で ExportEncryptModal を mount
-- [ ] 既存 Import 動線拡張
-  - [ ] `prepareImport` で encrypted envelope 検出時に ImportPassphraseModal を mount
-  - [ ] 復号成功時に既存 ImportConflictModal にバトンタッチ
-- [ ] `components/ModalManager.tsx` に新規 2 modal を統合（mount 順序 + 競合時の優先順位を state-diagram.md に記載済の通り）
-- [ ] **CI 静的検査 (AC-9, AC-14)**:
-  - [ ] `tests/static/no-error-cause-in-components.test.ts` (components 配下の `error.cause` 参照ゼロ)
-  - [ ] `tests/static/no-export-key.test.ts` (utils/backupCrypto から exportKey export ゼロ)
+- [x] `components/modals/ExportEncryptModal.tsx` 新設
+  - [x] パスフレーズ入力 + 確認再入力 + grapheme count 強度表示
+  - [x] 「暗号化してダウンロード」ボタン（**最低 12 grapheme** + 一致時のみ enable、AC-5）
+  - [x] パスフレーズ忘却警告文言 + 強度ヒント文言（AC-9 参照）
+  - [x] `<input type="password" autocomplete="new-password">` + `oncopy` / `oncut` の `preventDefault` (AC-9)
+  - [x] 暗号化成功 / 失敗どちらでも passphrase state を `setPassphrase('')` クリア (AC-5, AC-14)
+  - [x] 30 秒タイムアウト時の abort + トースト + cancel ボタン (AC-11)
+  - [x] `role="dialog"` + Tab 内ループ + a11y 属性 (AC-9)
+  - [x] Blob/URL.createObjectURL は try/finally で `URL.revokeObjectURL` cleanup (AC-5)
+- [x] `components/modals/ImportPassphraseModal.tsx` 新設
+  - [x] パスフレーズ入力 + 「復号する」ボタン
+  - [x] エラー文言は constant `DECRYPT_FAILURE_MESSAGE` を直接使用 (auth tag 失敗を fingerprinting しない、AC-9)
+  - [x] retry カウンタ表示 (現在 N/5 回)、5 回到達で強制 close + トースト (AC-6)
+  - [x] キャンセル動線 (`cancelPendingDecryption` 経由、AC-6)
+  - [x] 復号成功 / 失敗どちらでも passphrase state を即クリア (AC-9)
+  - [x] 30 秒タイムアウト abort (AC-11)
+  - [x] `<input type="password" autocomplete="new-password">` + `oncopy` / `oncut` の `preventDefault` (AC-9 と整合、PR-D evaluator FAIL-2 で確定)
+- [x] 既存 Export 動線拡張
+  - [x] 既存 Export 動線エントリポイント全箇所（`handleExportAllData` を呼ぶ全コンポーネント。grep で網羅確認）に「暗号化する」チェックボックスを追加
+  - [x] チェック ON で ExportEncryptModal を mount
+- [x] 既存 Import 動線拡張
+  - [x] `prepareImport` で encrypted envelope 検出時に ImportPassphraseModal を mount
+  - [x] 復号成功時に既存 ImportConflictModal にバトンタッチ
+- [x] `components/ModalManager.tsx` に新規 2 modal を統合（mount 順序 + 競合時の優先順位を state-diagram.md に記載済の通り）
+- [x] **CI 静的検査 (AC-9, AC-14)**:
+  - [x] `tests/static/no-error-cause-in-components.test.ts` (components 配下の `error.cause` 参照ゼロ)
+  - [x] `tests/static/no-export-key.test.ts` (utils/backupCrypto から exportKey export ゼロ)
 
 ### 完了条件 (DoD)
 
-- [ ] AC-5, AC-6, AC-9, AC-11 (UI 部分) が manual E2E で確認済（dev サーバ）
-- [ ] CI 静的検査 (AC-9 cause grep + AC-14 exportKey grep) が PASS
-- [ ] `npm run lint` 0 errors / `npm test` 全 PASS
-- [ ] **Evaluator 分離プロトコル発動** (5 ファイル以上 **または** 新規機能、`rules/quality-gate.md` 準拠)
-- [ ] `/simplify` 3 並列 + `/review-pr` 6 並列 + 大規模なら `/codex review` セカンドオピニオン
-- [ ] CLAUDE.md Architecture に M6 反映（最終化）
+- [x] AC-5, AC-6, AC-9, AC-11 (UI 部分) が manual E2E で確認済（dev サーバ）
+- [x] CI 静的検査 (AC-9 cause grep + AC-14 exportKey grep) が PASS
+- [x] `npm run lint` 0 errors / `npm test` 全 PASS
+- [x] **Evaluator 分離プロトコル発動** (5 ファイル以上 **または** 新規機能、`rules/quality-gate.md` 準拠)
+- [x] `/simplify` 3 並列 + `/review-pr` 6 並列 + 大規模なら `/codex review` セカンドオピニオン
+- [x] CLAUDE.md Architecture に M6 反映（最終化）
 
 ---
 
