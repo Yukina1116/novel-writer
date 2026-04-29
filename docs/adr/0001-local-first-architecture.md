@@ -90,7 +90,7 @@
 | M3 | AI 認証ゲート + クォータ | ✅ 完了（PR-D テスト基盤 + 持越 #1/#4/#5 PR #37 / PR-E BE 認証ゲート + 起動 probe + handleApiError 共通化 + 持越 #3 PR #39 / PR-F usage クォータ + 持越 + Issue #40 PR #45 / PR-G FE 統合 + Cloud Run public 化 + 持越 #2 2026-04-27） |
 | M4 | Export/Import + バックアップ警告 UI | ✅ 完了（PR #48 2026-04-28） |
 | M5 | Stripe Subscription + Webhook + 法務 Tier 2 | ⏳ |
-| M6 | E2EE 暗号化バックアップ・ローカルファイル範囲（クライアント側 AES-GCM + パスフレーズ派生 + `.enc.json` Export/Import） | 🚧 着手中（2026-04-29 spec PR-A） |
+| M6 | E2EE 暗号化バックアップ・ローカルファイル範囲（クライアント側 AES-GCM + パスフレーズ派生 + `.enc.json` Export/Import） | ✅ 完了（PR-A spec #73 / PR-B crypto core #74 / PR-C slice integration #75 / PR-D UI #77、2026-04-29） |
 | M6.5 | E2EE 暗号化バックアップ・Cloud Storage 連携（signed URL upload/download + uid scope + Tier 2 ゲート、M5 完了後） | ⏳ |
 | M7-α | 公開準備 (Tier 0/1 法務 stub + 観測性 + エラー報告動線、Stripe 不要範囲) | ✅ 完了 (PR-A 観測性 / PR-B エラー報告 / PR-C 法務 stub / PR-D-1 BE accept-terms / PR-D-2 同意 UI、PR #67 で 2026-04-28 締め、本番公開前法務確認 MUST) |
 | M7-β | 公開最終チェック (Tier 2 規約節 + 特商法本文確定、M5 完了後) | ⏳ |
