@@ -852,13 +852,29 @@ describe('M6 PR-C state machine (pendingDecryption)', () => {
         expect(fake.state.pendingDecryption).toBeNull();
     });
 
-    it('T7: cancel during KDF triggers AbortController', async () => {
+    it('T7-pre: cancel from AwaitingPassphrase fires abort()', async () => {
         const fake = createFakeStore();
         const raw = await buildEncryptedRaw();
         await fake.state.prepareImport(raw);
         const controller = fake.state.pendingDecryption!.abortController;
         const abortSpy = vi.spyOn(controller, 'abort');
         fake.state.cancelPendingDecryption();
+        expect(abortSpy).toHaveBeenCalled();
+        expect(fake.state.pendingDecryption).toBeNull();
+    });
+
+    it('T7-real: Decrypting → Idle (cancel mid-decrypt) abort fires AND retryCount stays 0', async () => {
+        const fake = createFakeStore();
+        const raw = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw);
+        const controller = fake.state.pendingDecryption!.abortController;
+        const abortSpy = vi.spyOn(controller, 'abort');
+        // Kick off a real decrypt with WRONG passphrase so a successful retry
+        // increment would otherwise be observable. Cancel synchronously so
+        // the catch arm hits isStaleDecryptSession instead.
+        const decryptPromise = fake.state.decryptAndPrepareImport('wrong-passphrase-12c');
+        fake.state.cancelPendingDecryption();
+        await expect(decryptPromise).rejects.toThrow();
         expect(abortSpy).toHaveBeenCalled();
         expect(fake.state.pendingDecryption).toBeNull();
     });
@@ -985,5 +1001,59 @@ describe('M6 PR-C encrypted exportAllData', () => {
         await fake.state.exportAllData();
         expect(capturedFilename).toMatch(/^novel-writer-backup_.*\.json$/);
         expect(capturedFilename).not.toMatch(/\.enc\.json$/);
+    });
+});
+
+// =============================================================================
+// M6 PR-C review-pr 反映: race-during-decrypt + saveLastExportedAt 失敗 toast
+// =============================================================================
+describe('M6 PR-C race during decrypt + export error branches', () => {
+    beforeEach(() => {
+        readSnapshot.mockResolvedValue({
+            projects: [makeProject({ id: 'p-1' })],
+            tutorialState: {},
+            analysisHistory: [],
+        });
+    });
+
+    it('T9b: Decrypting × prepareImport(2nd) — stale decrypt resolution does NOT clobber new session', async () => {
+        const fake = createFakeStore();
+        const raw1 = await buildEncryptedRaw();
+        const raw2 = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw1);
+        const decryptPromise = fake.state.decryptAndPrepareImport(VALID_PASSPHRASE);
+        // While KDF is running, second prepareImport arrives.
+        await fake.state.prepareImport(raw2);
+        // Session 1's promise must reject (race guard fires) and importPlan
+        // must NOT be set from session 1's plaintext.
+        await expect(decryptPromise).rejects.toThrow();
+        expect(fake.state.importPlan).toBeNull();
+        expect(fake.state.pendingDecryption).not.toBeNull();
+        expect(fake.state.pendingDecryption!.retryCount).toBe(0);
+    });
+
+    it('G1 (encrypted): saveLastExportedAt failure surfaces "saved file but timestamp lost" toast, not generic export failure', async () => {
+        saveLastExportedAt.mockRejectedValue(new Error('IDB write failed'));
+        const fake = createFakeStore();
+        await fake.state.exportAllData({ encrypt: { passphrase: VALID_PASSPHRASE } });
+        const calls = (fake.state.showToast as any).mock.calls;
+        // Last toast should be the timestamp-failure variant (download succeeded).
+        const lastCall = calls[calls.length - 1];
+        expect(lastCall[0]).toMatch(/最終バックアップ日時の記録に失敗/);
+        // Critical negative assertion: NEVER claim the export itself failed.
+        expect(lastCall[0]).not.toMatch(/^エクスポートに失敗/);
+        expect(lastCall[1]).toBe('error');
+        expect(fake.state.backupMetaStatus).toBe('unknown'); // wasn't promoted to loaded
+    });
+
+    it('G1 (plaintext): saveLastExportedAt failure surfaces same contract', async () => {
+        saveLastExportedAt.mockRejectedValue(new Error('IDB write failed'));
+        const fake = createFakeStore();
+        await fake.state.exportAllData();
+        const calls = (fake.state.showToast as any).mock.calls;
+        const lastCall = calls[calls.length - 1];
+        expect(lastCall[0]).toMatch(/最終バックアップ日時の記録に失敗/);
+        expect(lastCall[0]).not.toMatch(/^エクスポートに失敗/);
+        expect(lastCall[1]).toBe('error');
     });
 });

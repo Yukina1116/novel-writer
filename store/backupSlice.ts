@@ -84,7 +84,11 @@ export interface BackupSlice {
     setImportResolution: (incomingId: string, resolution: ImportConflictResolution) => void;
     cancelImport: () => void;
     executeImport: () => Promise<{ upserted: number; created: number; skipped: number }>;
-    decryptAndPrepareImport: (passphrase: string) => Promise<PrepareImportResult>;
+    // decryptAndPrepareImport always resolves with the plaintext arm — the
+    // 'encrypted' arm is only produced by prepareImport when an envelope is
+    // first detected. Narrowing here removes a dead branch in PR-D's modal.
+    decryptAndPrepareImport: (passphrase: string)
+        => Promise<Extract<PrepareImportResult, { kind: 'plaintext' }>>;
     cancelPendingDecryption: () => void;
     isBackupStale: () => boolean;
 }
@@ -177,10 +181,16 @@ export const createBackupSlice = (set, get): BackupSlice => ({
                       await encryptBackup(backup, encryptOpt.passphrase, APP_VERSION, {
                           signal: opts?.signal,
                       }),
-                      null,
-                      2,
                   )
                 : serializeBackup(backup);
+            // Post-encrypt abort: encryptBackup may resolve before the abort
+            // event reaches the WebCrypto handler (KDF cannot be interrupted
+            // mid-execution). Re-check signal here so a cancel that landed
+            // during the await does NOT trigger the file download or update
+            // lastExportedAt — the user explicitly asked to stop.
+            if (opts?.signal?.aborted) {
+                return;
+            }
             const filename = encryptOpt
                 ? buildEncryptedBackupFilename()
                 : buildBackupFilename();
@@ -208,6 +218,12 @@ export const createBackupSlice = (set, get): BackupSlice => ({
                 );
             }
         } catch (e: unknown) {
+            // AbortError from encryptBackup is a deliberate cancel, not a
+            // failure — suppress the failure toast (the user knows they
+            // pressed cancel; surfacing "export failed" would be misleading).
+            if (e instanceof Error && e.name === 'AbortError') {
+                return;
+            }
             console.error('exportAllData failed:', e);
             (get() as WithToast).showToast?.(`エクスポートに失敗しました: ${errorMessage(e)}`, 'error');
         } finally {
@@ -405,9 +421,14 @@ export const createBackupSlice = (set, get): BackupSlice => ({
                 signal: sessionController.signal,
             });
         } catch (e) {
-            // Race guard: if a cancel/overwrite happened mid-decrypt, drop the
-            // result — the new session (or null) already owns the state slot.
+            // Race guard: if a cancel/overwrite happened mid-decrypt, drop
+            // the result — the new session (or null) already owns the state
+            // slot. We log the swallowed error so a real crypto failure that
+            // happens during an overwrite race remains visible to Sentry /
+            // devtools (the UI deliberately shows nothing here because a new
+            // session has already taken the modal).
             if (isStaleDecryptSession(sessionController, get().pendingDecryption)) {
+                console.warn('decryptBackup error on stale session (ignored):', e);
                 throw e;
             }
             const next = get().pendingDecryption!;
@@ -429,13 +450,21 @@ export const createBackupSlice = (set, get): BackupSlice => ({
             throw e;
         }
 
-        // Race guard on success path too: drop the result rather than silently
+        // Race guard on success path: drop the result rather than silently
         // replacing the new session's state with stale plaintext.
         if (isStaleDecryptSession(sessionController, get().pendingDecryption)) {
+            console.warn('decryptBackup success on stale session (dropped)');
             throw new BackupValidationError('復号処理がキャンセルされました。');
         }
 
         const snapshot = await readSnapshot();
+        // Re-check after the second await — a cancel / overwrite during
+        // readSnapshot() (which may take 10s of ms on cold IDB) would
+        // otherwise let stale plaintext clobber the newer session's state.
+        if (isStaleDecryptSession(sessionController, get().pendingDecryption)) {
+            console.warn('decryptBackup success on stale session (dropped)');
+            throw new BackupValidationError('復号処理がキャンセルされました。');
+        }
         const conflicts = detectConflicts(backup.projects, snapshot.projects);
         const plan: ImportPlan = { backup, conflicts };
         // Atomic transition: clear pendingDecryption and set importPlan in
