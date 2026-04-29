@@ -3,6 +3,7 @@ import { createBackupSlice } from './backupSlice';
 import { Project } from '../types';
 import { defaultAiSettings, defaultDisplaySettings } from '../constants';
 import { STALE_BACKUP_DAYS } from '../utils/backupFormat';
+import { BackupCancelledError } from '../utils/backupErrors';
 
 // Mock the db layer so backupSlice can run without a real IndexedDB.
 const readSnapshot = vi.fn();
@@ -67,6 +68,10 @@ const createFakeStore = (): FakeStore => {
     fake.state = {
         ...createBackupSlice(fake.set, fake.get),
         showToast: vi.fn(),
+        // PR-D F3 regression: cancelPendingDecryption / 5 回到達時に slice が
+        // closeModal を呼ばないことを spy で assert するために stub を仕込む。
+        // 過去 closeModal を呼んでいた経路は削除済 (handoff §3 F3 持ち越し fix)。
+        closeModal: vi.fn(),
     } as any;
     return fake;
 };
@@ -863,6 +868,36 @@ describe('M6 PR-C state machine (pendingDecryption)', () => {
         expect(fake.state.pendingDecryption).toBeNull();
     });
 
+    // PR-D F3 regression (handoff §3): ImportPassphraseModal は pendingDecryption 連動の
+    // 自動 unmount。slice は activeModal slot を使わないので closeModal を呼んではいけない
+    // (無関係な help / other modal を巻き込む副作用を防ぐ)。
+    it('F3: cancelPendingDecryption MUST NOT call closeModal (auto-unmount via state)', async () => {
+        const fake = createFakeStore();
+        const raw = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw);
+        fake.state.cancelPendingDecryption();
+        expect((fake.state as any).closeModal).not.toHaveBeenCalled();
+        expect(fake.state.pendingDecryption).toBeNull();
+    });
+
+    it('F3: retry MAX exceedance MUST NOT call closeModal (auto-unmount via state)', async () => {
+        const fake = createFakeStore();
+        const raw = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw);
+        for (let i = 0; i < MAX_DECRYPT_RETRIES; i++) {
+            await expect(
+                fake.state.decryptAndPrepareImport('wrong-passphrase-12c'),
+            ).rejects.toThrow();
+        }
+        expect(fake.state.pendingDecryption).toBeNull();
+        expect((fake.state as any).closeModal).not.toHaveBeenCalled();
+        // toast は引き続き発火する (UX 上の通知は必要)。
+        expect(fake.state.showToast).toHaveBeenCalledWith(
+            DECRYPT_RETRY_EXCEEDED_TOAST,
+            'error',
+        );
+    });
+
     it('T7-real: Decrypting → Idle (cancel mid-decrypt) abort fires AND retryCount stays 0', async () => {
         const fake = createFakeStore();
         const raw = await buildEncryptedRaw();
@@ -874,9 +909,36 @@ describe('M6 PR-C state machine (pendingDecryption)', () => {
         // the catch arm hits isStaleDecryptSession instead.
         const decryptPromise = fake.state.decryptAndPrepareImport('wrong-passphrase-12c');
         fake.state.cancelPendingDecryption();
-        await expect(decryptPromise).rejects.toThrow();
+        // PR-D AC-9: ユーザー意図のキャンセル経路は AbortError (decryptBackup の内部
+        // signal handler から rethrow) で reject する。UI 側 isCancellationError が
+        // この name を見て無音処理する。「ただ throw している」ではなく **AbortError
+        // 限定** であることを pin (silent-failure-hunter B4 contract の半分)。
+        await expect(decryptPromise).rejects.toMatchObject({ name: 'AbortError' });
         expect(abortSpy).toHaveBeenCalled();
         expect(fake.state.pendingDecryption).toBeNull();
+    });
+
+    // PR-D B4 contract pin (silent-failure-hunter):
+    // 復号自体は成功したが、await 中に session ownership が失われた場合、
+    // slice は BackupCancelledError を throw する (BackupValidationError ではない)。
+    // これにより UI の isCancellationError が name で機械判定でき、
+    // DECRYPT_FAILURE_MESSAGE が誤表示される silent-failure を排除する。
+    // この class が変わると ImportPassphraseModal の判定が崩れるため class name で pin。
+    it('PR-D B4: success-path stale-session race rejects with BackupCancelledError', async () => {
+        const fake = createFakeStore();
+        const raw = await buildEncryptedRaw();
+        await fake.state.prepareImport(raw);
+        // Decrypting に遷移させる前に直接 race を作る: KDF + decrypt は実際に走るが、
+        // readSnapshot を遅延させて間に pendingDecryption を null にする。
+        // ここでは readSnapshot を 2 回目に空にする方法ではなく、
+        // 復号結果を slice が受け取った後 (readSnapshot 前) に手動で stale 化する。
+        const decryptPromise = fake.state.decryptAndPrepareImport(VALID_PASSPHRASE);
+        // 同期的に session ownership を喪失させる (cancelPendingDecryption は abort 経由
+        // で AbortError ルートに乗るので使わず、state 直接書き換えで stale を演出)。
+        fake.set({ pendingDecryption: null });
+        await expect(decryptPromise).rejects.toBeInstanceOf(BackupCancelledError);
+        // importPlan が stale plaintext で上書きされない invariant も pin。
+        expect(fake.state.importPlan).toBeNull();
     });
 
     it('T8: Idle → Decrypting direct call throws no-pending-decryption', async () => {
@@ -987,6 +1049,13 @@ describe('M6 PR-C encrypted exportAllData', () => {
         expect(json.envelopeVersion).toBe(1);
         // ciphertext is opaque — must not contain the project name in plaintext
         expect(captured.content).not.toContain('"name":"P"');
+        // PR-D AC-5 toast 文言契約: 暗号化経路は「暗号化バックアップを作成しました」を
+        // 平文経路と区別して表示する (handoff §3 O3 で確定、所在は slice = state-diagram.md
+        // エラー文言契約と同所)。本 assert で文言ドリフトを機械的に検知。
+        expect(fake.state.showToast).toHaveBeenCalledWith(
+            expect.stringMatching(/^暗号化バックアップを作成しました/),
+            'success',
+        );
     });
 
     it('plaintext: filename uses .json (no .enc) and content is a plain BackupV1', async () => {
@@ -1024,9 +1093,10 @@ describe('M6 PR-C race during decrypt + export error branches', () => {
         const decryptPromise = fake.state.decryptAndPrepareImport(VALID_PASSPHRASE);
         // While KDF is running, second prepareImport arrives.
         await fake.state.prepareImport(raw2);
-        // Session 1's promise must reject (race guard fires) and importPlan
-        // must NOT be set from session 1's plaintext.
-        await expect(decryptPromise).rejects.toThrow();
+        // Session 1's promise must reject with AbortError (race guard fires) and
+        // importPlan must NOT be set from session 1's plaintext. AbortError は
+        // decryptBackup の signal handler から rethrow される正規経路。
+        await expect(decryptPromise).rejects.toMatchObject({ name: 'AbortError' });
         expect(fake.state.importPlan).toBeNull();
         expect(fake.state.pendingDecryption).not.toBeNull();
         expect(fake.state.pendingDecryption!.retryCount).toBe(0);

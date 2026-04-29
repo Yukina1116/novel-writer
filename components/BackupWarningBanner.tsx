@@ -7,7 +7,7 @@ export const BackupWarningBanner: React.FC = () => {
     const lastExportedAt = useStore(state => state.lastExportedAt);
     const isStale = useStore(state => state.isBackupStale());
     const isExporting = useStore(state => state.isExporting);
-    const exportAllData = useStore(state => state.exportAllData);
+    const openModal = useStore(state => state.openModal);
 
     if (!isStale) return null;
 
@@ -25,7 +25,7 @@ export const BackupWarningBanner: React.FC = () => {
             </div>
             <button
                 type="button"
-                onClick={() => void exportAllData()}
+                onClick={() => openModal('exportEncrypt')}
                 disabled={isExporting}
                 className="flex items-center gap-1 rounded bg-yellow-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-yellow-500 disabled:opacity-50 btn-pressable"
             >

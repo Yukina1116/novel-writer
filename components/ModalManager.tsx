@@ -21,6 +21,8 @@ import { SyncDialog } from './SyncDialog';
 import { ImportTextModal } from './ImportTextModal';
 import { ImportConflictModal } from './modals/ImportConflictModal';
 import { TermsConsentModal, isTermsDevBypass } from './modals/TermsConsentModal';
+import { ExportEncryptModal } from './modals/ExportEncryptModal';
+import { ImportPassphraseModal } from './modals/ImportPassphraseModal';
 
 interface ModalManagerProps {
     displayMenuButtonRef: React.RefObject<HTMLButtonElement>;
@@ -31,6 +33,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({ displayMenuButtonRef
     const needsTermsAccept = useStore(state => state.needsTermsAccept);
     const authStatus = useStore(state => state.authStatus);
     const activeModal = useStore(state => state.activeModal);
+    const pendingDecryption = useStore(state => state.pendingDecryption);
     const helpTopic = useStore(state => state.helpTopic);
     const setHelpTopic = useStore(state => state.setHelpTopic);
     const modalPayload = useStore(state => state.modalPayload);
@@ -61,6 +64,18 @@ export const ModalManager: React.FC<ModalManagerProps> = ({ displayMenuButtonRef
     // 出て即 throw する経路を閉じる。
     if (authStatus === 'authenticated' && needsTermsAccept && !isTermsDevBypass()) {
         return <TermsConsentModal />;
+    }
+
+    // M6: pendingDecryption は activeModal より優先 (state-diagram.md ModalManager 統合節)。
+    // ProjectSelectionScreen からも発火しうるので activeProjectData early-return より前に置く。
+    if (pendingDecryption !== null) {
+        return <ImportPassphraseModal />;
+    }
+
+    // exportEncrypt も ProjectSelectionScreen からの全データ export を許容するので
+    // activeProjectData early-return より前に置く (Header / BackupWarningBanner 経路)。
+    if (activeModal === 'exportEncrypt') {
+        return <ExportEncryptModal />;
     }
 
     // importConflict can fire from ProjectSelectionScreen (no active project),

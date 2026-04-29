@@ -85,11 +85,19 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 - **永続化**: IndexedDB v2 で `backupMeta` ストア (`{ key: 'current', lastExportedAt: ISO | null }`) 追加 (`db/dexie.ts`、Dexie sequential upgrade で既存データ保持)。
 - **Import 経路**: `db/backupRepository.ts` の `writeImport` が単一 Dexie transaction で `projects` (sanitize chain `validateAndSanitizeProjectData → pickPersistableFields → stripInternalKeys` 適用) / `tutorialState` / `analysisHistory` を atomic 書き込み。完了後 `hooks/refreshFromIndexedDb.ts` で in-memory state を rehydrate (memory ↔ disk の silent overwrite を防止)。
 - **TOCTOU 対策**: `prepareImport` で `flushSave` 先行 + `executeImport` で `existingIds` を再 read (delete/insert の concurrent 変更を吸収)。
-- **UI**: `components/BackupWarningBanner.tsx` (30 日経過で表示、`backupMetaStatus === 'unknown'` 時は suppress) + `components/modals/ImportConflictModal.tsx` (per-project に `overwrite` / `duplicate` / `skip` 選択、`ModalManager` に統合)。
+- **UI**: `components/BackupWarningBanner.tsx` (30 日経過で表示、`backupMetaStatus === 'unknown'` 時は suppress) + `components/modals/ImportConflictModal.tsx` (per-project に `overwrite` / `duplicate` / `skip` 選択、`ModalManager` に統合)。M6 PR-D で Banner / Header / SettingsPanel の 3 export 起点を `openModal('exportEncrypt')` に集約。
+
+### E2EE 暗号化バックアップ層 (M6)
+
+- **Crypto core**: `utils/backupCrypto.ts` — AES-GCM-256 + PBKDF2-SHA256 (600,000 iter., `extractable: false` + AAD で envelope metadata 認証)。`encryptBackup` / `decryptBackup` / `validatePassphraseLength` / `codepointLength` を export。`exportKey` は **export しない** (CI 静的検査 `tests/static/no-export-key.test.ts` で機械的に enforcement)。エラー文言は constant `DECRYPT_FAILURE_MESSAGE` 単一 (fingerprinting 防止)。
+- **Schema**: `EncryptedBackupV1 { envelopeVersion: 1, encrypted: true, algorithm, kdf, kdfParams, iv, ciphertext, appVersion, encryptedAt }` (`utils/backupSchema.ts`)。`isEncryptedBackup` AND 結合 type guard + `parseEncryptedEnvelope` parse-time validation (literal / floor & ceiling / byte-length) + `parseAnyBackup` で encrypted/平文 dispatch。`parseBackup` 戻り値型 `BackupV1` 不変 (AC-8 regression)。
+- **State machine**: `store/backupSlice.ts` の `pendingDecryption: { rawEnvelope, retryCount, abortController, isDecrypting }` で 4 状態 (Idle / AwaitingPassphrase / Decrypting / ImportPlan)。invariant `pendingDecryption !== null ⇒ importPlan === null` を atomic transition で保持。`MAX_DECRYPT_RETRIES = 5` 超で modal 自動 unmount + toast `DECRYPT_RETRY_EXCEEDED_TOAST`。`isStaleDecryptSession` helper で signal.aborted / ownership 喪失を 3 段階 race-free check (`docs/spec/m6/state-diagram.md` T1〜T12)。
+- **UI (M6 PR-D)**: `components/modals/ExportEncryptModal.tsx` (「暗号化する」チェックボックス内蔵、ON 時は 12 codepoint 強度表示 + 確認再入力 + `autocomplete="new-password"` + `oncopy`/`oncut` preventDefault + 30 秒 AbortController timeout) と `components/modals/ImportPassphraseModal.tsx` (DECRYPT_FAILURE_MESSAGE 直接使用 + retry 残回数を `MAX_DECRYPT_RETRIES - retryCount` で UI 側派生 + 30 秒 timeout)。`ModalManager` 先頭分岐で `pendingDecryption !== null` 時に `ImportPassphraseModal` を `activeModal` より優先表示 (TermsConsentModal の先頭分岐パターンと整合)。`cancelPendingDecryption` / retry 5 到達時の slice 経路は `closeModal()` を呼ばない (PR-D F3 fix、auto-unmount で完結)。
+- **規律**: `components/` 配下は `error.cause` を読まない (AC-9、CI 静的検査 `tests/static/no-error-cause-in-components.test.ts` で grep 検証)。passphrase は React state を成功・失敗どちらでも即クリア (AC-9 memory 滞留最小化)。
 
 ### 型定義
 
-`types.ts` に全型を集約。主要型: `Project`, `NovelChunk`, `SettingItem`, `KnowledgeItem`, `PlotItem`, `TimelineEvent`, `AiSettings`, `ChatMessage`, `BackupV1` (M4), `ImportConflict` / `ImportPlan` / `ImportConflictResolution` (M4)
+`types.ts` に全型を集約。主要型: `Project`, `NovelChunk`, `SettingItem`, `KnowledgeItem`, `PlotItem`, `TimelineEvent`, `AiSettings`, `ChatMessage`, `BackupV1` (M4), `ImportConflict` / `ImportPlan` / `ImportConflictResolution` (M4), `EncryptedBackupV1` (M6), `PendingDecryption` / `PrepareImportResult` (M6 backupSlice export)。`ModalType` に `'exportEncrypt'` 追加 (M6 PR-D)。
 
 ### パスエイリアス
 

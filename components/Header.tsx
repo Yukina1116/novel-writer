@@ -100,8 +100,7 @@ export const Header: React.FC<HeaderProps> = ({ displayMenuButtonRef, isMobile =
         URL.revokeObjectURL(link.href);
     };
 
-    const exportAllData = useStore(state => state.exportAllData);
-    const handleExportAll = () => void exportAllData();
+    const handleExportAll = () => openModal('exportEncrypt');
 
     if (!activeProjectData) return null;
 
