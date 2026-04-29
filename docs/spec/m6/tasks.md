@@ -85,13 +85,13 @@ ADR-0001 Roadmap では M6 を「E2EE 暗号化バックアップ（任意機能
 ### タスク
 
 - [ ] `utils/backupCrypto.ts` 新設
-  - [ ] **constant**: `PBKDF2_ITERATIONS = 600_000` / `MIN_ACCEPTED_ITERATIONS = 100_000` / `MAX_ACCEPTED_ITERATIONS = 10_000_000` / `MAX_CIPHERTEXT_BYTES = 100 * 1024 * 1024` / `MAX_ENVELOPE_FILE_BYTES = 150 * 1024 * 1024` / `DECRYPT_FAILURE_MESSAGE = 'パスフレーズが正しくないか、ファイルが壊れています。'` / `MIN_PASSPHRASE_GRAPHEMES = 12`
+  - [ ] **constant**: `PBKDF2_ITERATIONS = 600_000` / `MIN_ACCEPTED_ITERATIONS = 100_000` / `MAX_ACCEPTED_ITERATIONS = 10_000_000` / `MAX_CIPHERTEXT_BYTES = 100 * 1024 * 1024` / `DECRYPT_FAILURE_MESSAGE = 'パスフレーズが正しくないか、ファイルが壊れています。'` / `MIN_PASSPHRASE_CODEPOINTS = 12` (Unicode コードポイント単位、Intl.Segmenter は ICU バージョン依存で不採用)
   - [ ] **API**:
     - [ ] `randomBytes(len: number): Uint8Array` (`crypto.getRandomValues` ラッパー、test util から import 可能、`exportKey` 経路は持たない)
     - [ ] `deriveKey(passphrase: string, salt: Uint8Array, iterations: number): Promise<CryptoKey>` (PBKDF2-SHA256, **`extractable: false`** + **`usages: ['encrypt', 'decrypt']`**)
     - [ ] `encryptBackup(plaintext: BackupV1, passphrase: string, appVersion: string, opts?: { signal?: AbortSignal; now?: Date }): Promise<EncryptedBackupV1>` (AAD で envelope metadata 認証)
     - [ ] `decryptBackup(envelope: EncryptedBackupV1, passphrase: string, opts?: { signal?: AbortSignal }): Promise<BackupV1>` (catch を 4 cause に分類、broad catch 禁止)
-    - [ ] `validatePassphraseLength(p: string): void` (grapheme 単位で `[...p].length >= MIN_PASSPHRASE_GRAPHEMES`、不足で BackupValidationError)
+    - [ ] `validatePassphraseLength(p: string): void` (Unicode コードポイント単位で `[...p].length >= MIN_PASSPHRASE_CODEPOINTS`、不足で BackupValidationError)
     - [ ] base64 encode/decode helper (test util から import 可能)
   - [ ] **regularization**: passphrase は `passphrase.normalize('NFC')` してから `TextEncoder.encode` (AC-12)
   - [ ] **AAD**: `buildAad(meta): Uint8Array` (key-sorted JSON.stringify → encode、含む field は AC-13 参照)

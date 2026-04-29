@@ -210,12 +210,15 @@ export const isEncryptedBackup = (
     && json.kdfParams !== null
     && typeof (json.kdfParams as Record<string, unknown>).salt === 'string';
 
+// Strict base64 byte-length check that mirrors atob's accept set.
+// Length must be a multiple of 4 and `=` may only appear as 0/1/2 trailing
+// padding. Avoids materializing huge buffers just for size validation, and
+// keeps decryptBackup from receiving "passes parser, fails atob" inputs.
 const decodedByteLength = (b64: string): number => {
-    // Approximate decoded byte length without allocating: 3 bytes per 4 chars,
-    // minus padding. Avoids materializing huge buffers just for size checks.
-    if (!/^[A-Za-z0-9+/=]+$/.test(b64)) return -1;
+    if (b64.length === 0 || b64.length % 4 !== 0) return -1;
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) return -1;
     const padding = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
-    return Math.floor((b64.length / 4) * 3) - padding;
+    return (b64.length / 4) * 3 - padding;
 };
 
 export const parseEncryptedEnvelope = (
@@ -275,10 +278,15 @@ export const parseEncryptedEnvelope = (
             `ciphertext の長さが不正です（最大 ${MAX_CIPHERTEXT_BYTES} bytes）。`,
         );
     }
-    const appVersion = typeof json.appVersion === 'string' ? json.appVersion : 'unknown';
-    const encryptedAt = typeof json.encryptedAt === 'string'
-        ? json.encryptedAt
-        : new Date().toISOString();
+    // appVersion / encryptedAt are AAD-bound (see buildAad) so silently
+    // defaulting them would let parser-synthesized values reach the decrypt
+    // step. Reject at parse time instead.
+    if (typeof json.appVersion !== 'string') {
+        throw new BackupValidationError('appVersion が文字列ではありません。');
+    }
+    if (typeof json.encryptedAt !== 'string') {
+        throw new BackupValidationError('encryptedAt が文字列ではありません。');
+    }
 
     return {
         envelopeVersion: 1,
@@ -288,8 +296,8 @@ export const parseEncryptedEnvelope = (
         kdfParams: { salt: kdfParams.salt, iterations: kdfParams.iterations },
         iv: json.iv,
         ciphertext: json.ciphertext,
-        appVersion,
-        encryptedAt,
+        appVersion: json.appVersion,
+        encryptedAt: json.encryptedAt,
     };
 };
 

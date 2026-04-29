@@ -19,11 +19,14 @@ export interface BackupErrorCause {
 }
 
 export class BackupValidationError extends Error {
-    public readonly cause?: BackupErrorCause;
+    // Override the lib.es2022.error type (cause: unknown) with our structured
+    // cause shape. `declare` skips a runtime field initializer; the actual
+    // value lands via `super(message, options)` per ES2022 semantics, so
+    // DevTools / Sentry / util.inspect see the cause chain natively.
+    declare public readonly cause?: BackupErrorCause;
     constructor(message: string, options?: { cause?: BackupErrorCause }) {
-        super(message);
+        super(message, options);
         this.name = 'BackupValidationError';
-        if (options?.cause) this.cause = options.cause;
     }
 }
 

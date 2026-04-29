@@ -12,7 +12,7 @@ import {
     IV_BYTES,
     MAX_ACCEPTED_ITERATIONS,
     MIN_ACCEPTED_ITERATIONS,
-    MIN_PASSPHRASE_GRAPHEMES,
+    MIN_PASSPHRASE_CODEPOINTS,
     PBKDF2_ITERATIONS,
     randomBytes,
     SALT_BYTES,
@@ -322,9 +322,9 @@ describe('backupCrypto / AC-12 passphrase normalization + grapheme length', () =
     });
 
     it('AC-12: boundary 11/12/13 graphemes', () => {
-        expect(() => validatePassphraseLength('a'.repeat(MIN_PASSPHRASE_GRAPHEMES - 1))).toThrow(/12 文字/);
-        expect(() => validatePassphraseLength('a'.repeat(MIN_PASSPHRASE_GRAPHEMES))).not.toThrow();
-        expect(() => validatePassphraseLength('a'.repeat(MIN_PASSPHRASE_GRAPHEMES + 1))).not.toThrow();
+        expect(() => validatePassphraseLength('a'.repeat(MIN_PASSPHRASE_CODEPOINTS - 1))).toThrow(/12 文字/);
+        expect(() => validatePassphraseLength('a'.repeat(MIN_PASSPHRASE_CODEPOINTS))).not.toThrow();
+        expect(() => validatePassphraseLength('a'.repeat(MIN_PASSPHRASE_CODEPOINTS + 1))).not.toThrow();
     });
 
     it('AC-12: 1000 character passphrase accepted (no upper limit)', async () => {

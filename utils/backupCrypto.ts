@@ -25,7 +25,10 @@ export const PBKDF2_ITERATIONS = 600_000;
 export const MIN_ACCEPTED_ITERATIONS = 100_000;
 export const MAX_ACCEPTED_ITERATIONS = 10_000_000;
 export const MAX_CIPHERTEXT_BYTES = 100 * 1024 * 1024;
-export const MIN_PASSPHRASE_GRAPHEMES = 12;
+// Counted in Unicode code points (`[...s].length`), not true grapheme clusters
+// — Intl.Segmenter results vary by ICU version so we pin code-point semantics
+// for forward stability across engines. Naming reflects implementation.
+export const MIN_PASSPHRASE_CODEPOINTS = 12;
 export const SALT_BYTES = 16;
 export const IV_BYTES = 12;
 export const DECRYPT_FAILURE_MESSAGE = 'パスフレーズが正しくないか、ファイルが壊れています。';
@@ -56,12 +59,12 @@ export const fromBase64 = (b64: string): Uint8Array => {
     return out;
 };
 
-const graphemeLength = (s: string): number => [...s].length;
+const codepointLength = (s: string): number => [...s].length;
 
 export const validatePassphraseLength = (passphrase: string): void => {
-    if (graphemeLength(passphrase) < MIN_PASSPHRASE_GRAPHEMES) {
+    if (codepointLength(passphrase) < MIN_PASSPHRASE_CODEPOINTS) {
         throw new BackupValidationError(
-            `パスフレーズは ${MIN_PASSPHRASE_GRAPHEMES} 文字以上にしてください。`,
+            `パスフレーズは ${MIN_PASSPHRASE_CODEPOINTS} 文字以上にしてください。`,
         );
     }
 };
@@ -211,6 +214,16 @@ const wrapAsBackupError = (
 ): BackupValidationError =>
     new BackupValidationError(DECRYPT_FAILURE_MESSAGE, { cause: { kind, original: cause } });
 
+/**
+ * Decrypt an `EncryptedBackupV1` envelope to its inner `BackupV1` payload.
+ *
+ * **Contract**: `envelope` is expected to come from `parseEncryptedEnvelope`
+ * (or `parseAnyBackup`). Direct hand-constructed envelopes that bypass parse-time
+ * guards (length / range / literal checks) may surface envelope corruption
+ * as `auth-tag-mismatch` or `kdf-import-failed` instead of `envelope-incomplete`,
+ * which is harmless for end users (UI shows the same `DECRYPT_FAILURE_MESSAGE`)
+ * but degrades log-triage signal quality.
+ */
 export const decryptBackup = async (
     envelope: EncryptedBackupV1,
     passphrase: string,
@@ -218,9 +231,27 @@ export const decryptBackup = async (
 ): Promise<BackupV1> => {
     checkAborted(opts.signal);
 
-    const salt = fromBase64(envelope.kdfParams.salt);
-    const iv = fromBase64(envelope.iv);
-    const ciphertext = fromBase64(envelope.ciphertext);
+    // Base64 decode failures (atob InvalidCharacterError) need to be classified
+    // — otherwise callers that bypass parseEncryptedEnvelope (tests, future
+    // direct-decrypt paths) get a raw DOMException instead of a typed
+    // BackupValidationError.
+    let salt: Uint8Array;
+    let iv: Uint8Array;
+    let ciphertext: Uint8Array;
+    try {
+        salt = fromBase64(envelope.kdfParams.salt);
+        iv = fromBase64(envelope.iv);
+        ciphertext = fromBase64(envelope.ciphertext);
+    } catch (e) {
+        console.warn('M6_DECRYPT_KDF_FAILED', {
+            envelopeVersion: envelope.envelopeVersion,
+            algorithm: envelope.algorithm,
+            kdf: envelope.kdf,
+            iterations: envelope.kdfParams.iterations,
+            encryptedAt: envelope.encryptedAt,
+        });
+        throw wrapAsBackupError('kdf-import-failed', e);
+    }
 
     let key: CryptoKey;
     try {
@@ -280,11 +311,21 @@ export const decryptBackup = async (
         plaintextBytes.fill(0);
     }
 
-    if (
-        !parsed
-        || typeof parsed !== 'object'
-        || (parsed as { schemaVersion?: unknown }).schemaVersion !== 1
-    ) {
+    // Shape check the decrypted payload — schemaVersion alone is too weak
+    // (a crafted authenticated payload could pass with `projects: "not-array"`
+    // and surface as a runtime crash later).
+    const obj = parsed as Record<string, unknown>;
+    const isValidShape =
+        !!parsed
+        && typeof parsed === 'object'
+        && obj.schemaVersion === 1
+        && Array.isArray(obj.projects)
+        && typeof obj.tutorialState === 'object'
+        && obj.tutorialState !== null
+        && Array.isArray(obj.analysisHistory)
+        && typeof obj.exportedAt === 'string'
+        && typeof obj.appVersion === 'string';
+    if (!isValidShape) {
         console.warn('M6_DECRYPT_SCHEMA_INVALID', {
             envelopeVersion: envelope.envelopeVersion,
             encryptedAt: envelope.encryptedAt,
