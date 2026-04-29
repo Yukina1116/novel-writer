@@ -109,8 +109,15 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 - **本番**: `novel-writer-prod`（課金クォータ引き上げ待ち）
 - **ランタイム**: Cloud Run + Vertex AI（Workload Identity認証）
 - **CI/CD**: GitHub Actions → WIF → Cloud Run自動デプロイ（mainブランチ）
-- **Docker**: マルチステージビルド（`Dockerfile`）
-- **direnv**: `.envrc` で `CLOUDSDK_ACTIVE_CONFIG_NAME=novel-writer-dev` 自動設定
+- **Docker**: マルチステージビルド（`Dockerfile`）。Vite の build-time 静的置換のため、`VITE_FIREBASE_*` 6 変数は `docker build --build-arg` で注入する必要があり、GitHub Secrets → workflow の `env:` ブロック → shell 変数の順で受け渡す（直接 `${{ secrets.* }}` を `run:` に展開しない、command injection 回避）
+- **direnv**: `.envrc` で `CLOUDSDK_ACTIVE_CONFIG_NAME=novel-writer-dev` 自動設定 + `gh auth switch --user yasushi-honda` 自動実行（ただし Claude Code Bash ツールでは direnv hook が発火しないため、補助として下記 `.claude/hooks/` で吸収）
+
+### GitHub アカウント自動切替
+
+`gh auth` の active account はマシン全体で共有される (`~/.config/gh/hosts.yml`)。本プロジェクトの GitHub identity は `yasushi-honda` だが、別 claude セッションや別ターミナルで `gh auth switch` が走ると active account が他ユーザー（例: `yasushihonda-acg`）になり、`gh pr create`/`gh pr merge` が GraphQL の collaborator チェックで失敗する。`.envrc` での自動 switch は Claude Code Bash ツール（毎回サブシェル起動 → direnv 不発火）では機能しないため、プロジェクトローカルの PreToolUse hook で吸収する。
+
+- **`.claude/hooks/ensure-gh-account.sh`**: Bash ツール実行直前に `tool_input.command` を検査し、`gh ` を独立したコマンド語として含む場合は `gh auth switch --user yasushi-honda` を実行（既に同ユーザーなら no-op）。`git push`/`git pull` 等は token 埋込み URL 経由なので対象外
+- **`.claude/settings.json`**: 上記 hook を `PreToolUse` × `Bash` matcher に登録
 
 ## Claude Code 運用ルール（本プロジェクト固有の規律）
 
