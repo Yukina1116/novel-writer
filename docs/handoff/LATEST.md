@@ -7,11 +7,13 @@
 
 ## 今セッションの完了内容
 
-| PR | 内容 | 状態 | 規模 |
+| PR | 内容 | 状態 | 規模 (merge 時 squash diff) |
 |---|---|---|---|
-| #73 | docs(m6): M6 spec 起こし (tasks.md + acceptance-criteria.md AC-1〜14) + ADR-0001 Roadmap M6/M6.5 分割 | ✅ merged | 3 file +1167/-2 (1 commit blocker fix 含む) |
-| #74 | feat(m6): PR-B crypto core (utils/backupCrypto.ts + utils/backupErrors.ts + isEncryptedBackup/parseEncryptedEnvelope/parseAnyBackup + 33 ケース vitest + 静的検査 2 件) | ✅ merged | 10 file +1311/-56 (2 commits blocker fix 含む) |
-| #75 | feat(m6): PR-C slice integration (state-diagram.md + backupSlice.ts に encrypt/decrypt 経路 + 14 ケース vitest) | ✅ merged | 6 file +639/-23 (2 commits blocker fix 含む) |
+| #73 | docs(m6): M6 spec 起こし (tasks.md + acceptance-criteria.md AC-1〜14) + ADR-0001 Roadmap M6/M6.5 分割 | ✅ merged | 3 files +724/-1 |
+| #74 | feat(m6): PR-B crypto core (utils/backupCrypto.ts + utils/backupErrors.ts + isEncryptedBackup/parseEncryptedEnvelope/parseAnyBackup + 33 ケース vitest + 静的検査 2 件) | ✅ merged | 11 files +1282/-27 |
+| #75 | feat(m6): PR-C slice integration (state-diagram.md + backupSlice.ts に encrypt/decrypt 経路 + 14 ケース vitest) | ✅ merged | 6 files +632/-16 |
+
+(各 PR は本体 commit + blocker fix follow-up commit の squash 結果)
 
 **M6 進捗**: PR-A (spec) / PR-B (crypto core) / PR-C (slice integration) 完了 = 75%。残り **PR-D (UI 実装)** のみ。
 
@@ -19,14 +21,14 @@
 
 各 PR で CLAUDE.md MUST に従い段階的に実施:
 
-- **PR #73 (doc-only, 3 file +443 行)**:
+- **PR #73 (doc-only)**:
   1. **第 1 段階** code-reviewer + comment-analyzer 並列 → 重要指摘 7 件反映 (AC-3 KDF コスト過大 / AC-10 Node vs Browser 性能差 / AC-1 byte-equivalence / I-1 ファイル行数固定 / I-3 caller 列挙 / I-7 Tier ゲート整合 / AC-4 literal 型)
   2. **第 2 段階 (大規模 PR)** /review-pr 4 並列 (pr-test-analyzer / silent-failure-hunter / type-design-analyzer) + /codex review → blocker 13 件 (B1〜B13) 反映 (state-machine AC / AC-8 regression / Unicode normalization / logger 分離 / catch 4 cause 分類 / AbortSignal AC-11 / extractable=false / isEncryptedBackup AND 結合 / MIN_ACCEPTED_ITERATIONS floor / envelopeVersion rename / Error.cause / AAD metadata binding / 12 grapheme passphrase 強度)
-- **PR #74 (新規機能, 10 file +1228 行)**:
+- **PR #74 (新規機能 crypto core)**:
   1. **Evaluator 分離プロトコル**: 3 周目 (REQUEST_CHANGES → REQUEST_CHANGES → APPROVE)。FAIL 4 件 (AC-1 KDF determinism / AC-2 event id assert / AC-7 4 cause / AC-14 extractable spy) + HIGH 1 件 (循環 import) を順次反映
   2. **/simplify 3 並列** (reuse / quality / efficiency) → C1 (test copy-paste -> helper) / C2 (BackupValidationError constructor options) / I1/I3 dead code 削除 / I-1 (toBase64 chunked, AC-10 35% 短縮) / §2 (buildSampleBackup を buildBackupV1 経由)
   3. **/review-pr 4 並列 + /codex review** (大規模 PR) → blocker 4 件 + Polish 1 件反映 (Error.cause native chain / decryptBackup の payload shape validation / base64 strict / graphemeLength → codepointLength rename / appVersion / encryptedAt fallback)
-- **PR #75 (新規機能 + state machine, 6 file +533 行)**:
+- **PR #75 (新規機能 + state machine)**:
   1. CLAUDE.md MUST「statusフィールド設計 → 状態遷移図先行作成」に従い `docs/spec/m6/state-diagram.md` を **実装前に作成** (T1〜T12 遷移 + 禁則 + 不変条件 + ModalManager 統合 + エラー文言契約)
   2. **Evaluator 分離プロトコル**: REQUEST_CHANGES → APPROVE (MEDIUM 2: retry 残回数の責務 / AC-11 KDF mid-execution 不可 を反映)
   3. **/simplify 3 並列** → C1 (BackupErrorCauseKind 拡張 + as never 削除) / I1 (toast 文字列 constant 化) / I2/M1 (retry 残回数の責務 comment + spec) / R1 (buildEncryptedBackupFilename 集約) / R2 (isStaleDecryptSession helper) / M2 (AC-11 spec 実装限界明記)
@@ -48,7 +50,7 @@
 | envelope schema | `EncryptedBackupV1` 新設 (`envelopeVersion` と payload `BackupV1.schemaVersion` を独立) + AES-GCM AAD で metadata 認証 |
 | UI 統合 | 既存 Export モーダルに「暗号化する」option 追加 (PR-D で UI 化) |
 
-#### 暗号 invariant (PR #74 で実装、Codex 評価で OWASP 2023 準拠と確認)
+#### 暗号 invariant (PR #74 で実装、Codex review で「OWASP Password Storage Cheat Sheet (2023) の PBKDF2-HMAC-SHA256 600,000 iter 推奨に整合 + AES-GCM-256 + 12 byte IV + 16 byte salt の標準構成、追加指摘なし」と判定。出典 URL は PR #74 codex review コメント)
 - **AES-GCM-256** + **PBKDF2-SHA256 600,000 iter.** + **IV 12 bytes** + **salt 16 bytes**
 - **AAD canonical form**: key-sorted JSON.stringify(`{algorithm, appVersion, encryptedAt, envelopeVersion, iv, kdf, kdfParams}`) で metadata 改竄を auth tag で検知
 - **DECRYPT_FAILURE_MESSAGE = '...'** 単一文言で fingerprinting 防止 + `error.cause: { kind }` で 4 段階内部分類 (auth-tag-mismatch / plaintext-corrupted / schema-invalid / kdf-import-failed)
@@ -67,7 +69,7 @@
 
 - ブランチ: 本 handoff PR merge 後は `main` clean
 - Open Issue: 1 件（#49 M4/M7 follow-up umbrella、rating ≥ 7 全消化済、rating ≤ 6 follow-up + USER_DOC_MISSING UX 課題で open 維持・能動作業不要・monitor 対象、本セッションで状況変化なし）
-- 自動テスト (snapshot): vitest **425/425 PASS**（前 339 → +86: M6 PR-A 0 / PR-B 68 / PR-C 18）。次セッション開始時は `npm test` で実数を再確認すること
+- 自動テスト (snapshot): vitest **425/425 PASS**（前 357 → +68、内訳: PR-A 0 / PR-B ~50 (backupCrypto 33 + backupSchema 拡張 ~14 + 静的検査 2) / PR-C ~18）。次セッション開始時は `npm test` で実数を再確認すること
 - 型チェック (snapshot): `tsc --noEmit` 0 errors / build OK / Cloud Run deploy CI は PR #75 merge で再実行済 (status は次セッション `/catchup` で確認)
 
 ## 次のアクション（推奨順）
@@ -93,7 +95,7 @@ P4 (M7-α) の本番公開前法務確認は前セッション handoff から変
   - retry カウンタ表示「(あと N 回)」を `pendingDecryption.retryCount` から `MAX_DECRYPT_RETRIES - retryCount` で導出 (slice は文言生成しない、PR-C で責務分担済)
   - キャンセル動線 (`cancelPendingDecryption()` 経由)
 - [ ] 既存 Export 動線拡張: Header / App / App.mobile の `handleExportAllData` に「暗号化する」チェックボックス追加 (callers grep で網羅確認)
-- [ ] 既存 Import 動線拡張: `prepareImport` の戻り値 `{ kind: 'encrypted' }` を **caller 側で分岐** (現状 `store/projectSlice.ts:122` / `components/panels/SettingsPanel.tsx:31` が常に `importConflict` を開く実装、PR-D で encrypted 分岐追加)
+- [ ] 既存 Import 動線拡張: `prepareImport` の戻り値 `{ kind: 'encrypted' }` を **caller 側で分岐** (PR-D 着手時に `grep -rn "prepareImport(" components/ store/` で全 caller を再列挙し、現状常に `importConflict` を開いている箇所に encrypted 分岐を追加)
 - [ ] `components/ModalManager.tsx` に新規 2 modal を統合 (`pendingDecryption !== null` 時は `ImportPassphraseModal` を `importPlan` より優先表示)
 - [ ] CI 静的検査 2 件 (PR-B で導入済): `no-error-cause-in-components.test.ts` と `no-export-key.test.ts` が PASS 維持
 
@@ -195,9 +197,9 @@ PR の動き:
 
 進捗の質: **M6 PR-A〜C 完走 (75%、PR-D のみ残)**。各 PR で **CLAUDE.md MUST の Quality Gate 全段階発動** (Evaluator 分離 + /simplify 3 並列 + /review-pr 6 並列 + /codex review):
 
-- PR #73: 7 reviewer + codex で blocker 20 件反映 (spec 段階で実装 trap を先に潰す効果が顕著、特に B12 AAD 採用は Codex の暗号設計指摘が決定的)
-- PR #74: Evaluator 3 周 (REQUEST_CHANGES → REQUEST_CHANGES → APPROVE) で循環 import まで含めて構造的な debt を消化、/simplify で 35% perf 改善 (toBase64 chunked)
-- PR #75: state-diagram.md 先行作成 (CLAUDE.md MUST) + readSnapshot 後の race を codex セカンドオピニオンで検出 (specialized agents が見落とした blocker)
+- PR #73: 7 reviewer + codex で blocker 20 件反映 (spec 段階で実装 trap を先に検出、B12 AAD 採用は codex 指摘で確定)
+- PR #74: Evaluator 3 周 (REQUEST_CHANGES → REQUEST_CHANGES → APPROVE)、循環 import を解消、/simplify で AC-10 perf 35% 短縮 (toBase64 chunked)
+- PR #75: state-diagram.md 先行作成 (CLAUDE.md MUST) + readSnapshot 後の race を codex セカンドオピニオンで検出 (specialized agents は見落とした blocker)
 
 CLAUDE.md 4 原則遵守:
 1. AI executor として decision-maker 越権なし (設計判断 5 件は impl-plan 段階でユーザー A 確定承認)
