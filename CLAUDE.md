@@ -99,6 +99,16 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 
 `types.ts` に全型を集約。主要型: `Project`, `NovelChunk`, `SettingItem`, `KnowledgeItem`, `PlotItem`, `TimelineEvent`, `AiSettings`, `ChatMessage`, `BackupV1` (M4), `ImportConflict` / `ImportPlan` / `ImportConflictResolution` (M4), `EncryptedBackupV1` (M6), `PendingDecryption` / `PrepareImportResult` (M6 backupSlice export)。`ModalType` に `'exportEncrypt'` 追加 (M6 PR-D)。
 
+### 開発者ポータル `/dev/` (PR #84)
+
+`public/dev/index.html` を Vite の publicDir 経由で `dist/dev/index.html` として配信する単一 HTML ポータル。本番 Cloud Run の `/dev/` で公開（認証ゲートなし、`<meta robots="noindex,nofollow">`）。本体アプリの SPA fallback より先に `express.static(distPath)` が解決するため非干渉。
+
+- **目的**: 目視動作確認チェックリスト（50 項目 / 10 カテゴリ、`localStorage` 永続化）+ Mermaid 図 8 枚によるアーキテクチャ俯瞰 + エンドユーザー向け簡易マニュアル + 開発者情報を 1 ページで提供
+- **依存**: Mermaid を CDN (`https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs`) からロード。本番 FE bundle には未同梱（`/dev/` 専用、bundle サイズ影響ゼロ）
+- **CSP**: `server/index.ts` の helmet `scriptSrc` に `https://cdn.jsdelivr.net` を追加（`styleSrc` 等は変更なし、最小権限）
+- **更新運用**: マイルストーン進捗・テスト件数・Last Updated はファイル内に固定文字列で埋め込み。grep で機械的に書き換える（`v0.0.0 (M7-α)` / `2026-05-01` / `Tests · 435 / 435 PASS` / `<div class="milestone-row">` ブロックの状態）
+- **規律**: 動的描画は `createElement` + `textContent` のみ（`innerHTML` 禁止、security_reminder hook 指摘を構造的に閉じる）
+
 ### パスエイリアス
 
 `@/` → プロジェクトルート（tsconfig + vite.config.ts）
