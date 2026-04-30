@@ -1,0 +1,1597 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex,nofollow" />
+<title>小説らいたー — Developer Atlas</title>
+<meta name="description" content="novel-writer プロジェクトの開発者向けポータル。アーキテクチャ俯瞰・目視チェックリスト・簡易マニュアル。" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+<style>
+:root{
+  --paper: #f3ecdb;
+  --paper-2: #ece3cd;
+  --paper-edge: #d8caa9;
+  --ink: #1b2535;
+  --ink-soft: #3a455a;
+  --rule: #b8a780;
+  --rule-soft: #d6c9ab;
+  --accent: #9a3520;
+  --accent-soft: #c2614a;
+  --accent2: #2a5762;
+  --shade: rgba(27,37,53,0.06);
+  --shade-strong: rgba(27,37,53,0.12);
+
+  --font-display: "Cormorant Garamond", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --font-body: "EB Garamond", "Hiragino Mincho ProN", "Yu Mincho", "Hiragino Kaku Gothic ProN", serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  --space-xs: clamp(0.25rem, 0.6vw, 0.5rem);
+  --space-sm: clamp(0.5rem, 1vw, 0.85rem);
+  --space-md: clamp(1rem, 2vw, 1.6rem);
+  --space-lg: clamp(1.6rem, 4vw, 3rem);
+  --space-xl: clamp(2.4rem, 6vw, 5rem);
+  --rule-w: 1px;
+  --content-max: 78rem;
+}
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body{
+  font-family: var(--font-body);
+  font-size: clamp(1rem, 0.4vw + 0.95rem, 1.125rem);
+  line-height: 1.65;
+  color: var(--ink);
+  background:
+    repeating-linear-gradient(0deg, transparent, transparent 31px, rgba(27,37,53,0.035) 31px, rgba(27,37,53,0.035) 32px),
+    radial-gradient(ellipse at top left, #f5eedd 0%, #efe6cf 60%, #ece2c8 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.shell{
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 clamp(1rem, 4vw, 3rem);
+}
+
+.masthead{
+  border-bottom: 2px double var(--rule);
+  padding: var(--space-lg) 0 var(--space-md);
+  position: relative;
+}
+.masthead::before{
+  content: "";
+  position: absolute;
+  inset: auto 0 -2px 0;
+  height: 1px;
+  background: var(--rule-soft);
+}
+.masthead-row{
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+.eyebrow{
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 var(--space-xs);
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+}
+.eyebrow::before,
+.eyebrow::after{
+  content: "";
+  flex: 0 0 1.6em;
+  height: 1px;
+  background: var(--accent);
+  opacity: 0.6;
+}
+.eyebrow::after{ flex: 1; }
+
+.title-block h1{
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(2.3rem, 6vw + 0.5rem, 4.6rem);
+  line-height: 0.98;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.title-block h1 em{
+  font-style: italic;
+  color: var(--accent);
+  font-weight: 500;
+}
+.subtitle{
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--ink-soft);
+  font-size: clamp(1.1rem, 1.5vw + 0.6rem, 1.5rem);
+  margin: var(--space-xs) 0 0;
+  max-width: 50ch;
+}
+.meta-stack{
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-align: right;
+  color: var(--ink-soft);
+  letter-spacing: 0.05em;
+}
+.meta-stack b{
+  display: block;
+  color: var(--ink);
+  font-weight: 500;
+  font-size: 0.95rem;
+  letter-spacing: 0;
+  font-family: var(--font-display);
+}
+
+.tab-nav{
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: linear-gradient(to bottom, rgba(243,236,219,0.97) 0%, rgba(243,236,219,0.92) 100%);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: var(--space-lg);
+}
+.tab-nav-inner{
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 clamp(1rem, 4vw, 3rem);
+  display: flex;
+  gap: clamp(0.4rem, 1.5vw, 1.5rem);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.tab-btn{
+  background: none;
+  border: 0;
+  padding: 0.95rem 0.2rem;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  transition: color 0.18s ease, border-color 0.18s ease;
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+.tab-btn:hover{ color: var(--ink); }
+.tab-btn[aria-current="page"]{
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.tab-btn .num{
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 1.05em;
+  margin-right: 0.4em;
+  color: var(--accent);
+  opacity: 0.65;
+}
+.tab-btn[aria-current="page"] .num{ opacity: 1; }
+
+section.panel{
+  display: none;
+  padding: var(--space-md) 0 var(--space-xl);
+  animation: fade 0.45s ease both;
+}
+section.panel.is-active{ display: block; }
+@keyframes fade{
+  from{ opacity: 0; transform: translateY(0.6rem); }
+  to{ opacity: 1; transform: none; }
+}
+
+.section-header{
+  margin: 0 0 var(--space-lg);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 1.2rem;
+  align-items: end;
+}
+.section-num{
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: clamp(3.5rem, 8vw, 6rem);
+  color: var(--accent);
+  line-height: 0.85;
+  letter-spacing: -0.04em;
+  grid-row: 1 / span 2;
+}
+.section-header h2{
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.7rem, 2.5vw + 0.8rem, 2.6rem);
+  margin: 0;
+  line-height: 1.05;
+  letter-spacing: -0.005em;
+}
+.section-header p{
+  margin: 0.25rem 0 0;
+  color: var(--ink-soft);
+  font-style: italic;
+  max-width: 60ch;
+}
+
+h3.h-rule{
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, 1vw + 0.95rem, 1.55rem);
+  font-weight: 600;
+  margin: var(--space-lg) 0 var(--space-sm);
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+}
+h3.h-rule::after{
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+h3.h-rule .small{
+  font-family: var(--font-mono);
+  font-size: 0.6em;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.grid-auto{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--space-md);
+}
+.card{
+  background: rgba(255,250,238,0.55);
+  border: 1px solid var(--rule);
+  padding: var(--space-md);
+  position: relative;
+}
+.card::before{
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px solid var(--rule-soft);
+  pointer-events: none;
+}
+.card h4{
+  margin: 0 0 0.4rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.2rem;
+}
+.card .kicker{
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 var(--space-xs);
+}
+.card p{ margin: 0; color: var(--ink-soft); }
+
+.stack-table{
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+.stack-table th,
+.stack-table td{
+  padding: 0.7rem 0.85rem;
+  text-align: left;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+}
+.stack-table th{
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border-bottom: 2px solid var(--rule);
+}
+.stack-table tr:hover td{ background: var(--shade); }
+.stack-table .v{ color: var(--accent2); font-weight: 500; }
+
+.diagram{
+  border: 1px solid var(--rule);
+  background: rgba(255,250,238,0.4);
+  padding: var(--space-md);
+  margin: var(--space-md) 0 var(--space-lg);
+  position: relative;
+  overflow-x: auto;
+}
+.diagram::after{
+  content: attr(data-fig);
+  position: absolute;
+  top: 0.55rem;
+  right: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.diagram .mermaid{ min-width: 100%; }
+
+.milestone-row{
+  display: grid;
+  grid-template-columns: minmax(3rem, auto) 1fr auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.milestone-row:last-child{ border-bottom: 0; }
+.milestone-row .ms-tag{
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+}
+.milestone-row .ms-name{ font-family: var(--font-display); font-size: 1.1rem; }
+.milestone-row .ms-state{
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.65rem;
+  border: 1px solid currentColor;
+}
+.ms-state.done{ color: var(--accent2); }
+.ms-state.hold{ color: var(--accent); }
+.ms-state.plan{ color: var(--ink-soft); }
+
+.cl-toolbar{
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0 0 var(--space-md);
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--rule);
+  background: rgba(255,250,238,0.55);
+}
+.cl-progress{
+  flex: 1 1 16rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.cl-progress-bar{
+  flex: 1;
+  height: 6px;
+  background: var(--shade);
+  position: relative;
+  overflow: hidden;
+}
+.cl-progress-bar > i{
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(to right, var(--accent2), var(--accent));
+  transition: width 0.4s ease;
+}
+.cl-btn{
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--ink-soft);
+  padding: 0.55rem 0.85rem;
+  cursor: pointer;
+  min-height: 40px;
+}
+.cl-btn:hover{ background: var(--ink); color: var(--paper); }
+.cl-btn.warn:hover{ background: var(--accent); border-color: var(--accent); }
+
+.cl-cat{
+  margin: var(--space-md) 0;
+  border: 1px solid var(--rule);
+  background: rgba(255,250,238,0.4);
+}
+.cl-cat-head{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--rule-soft);
+  background: rgba(232,221,194,0.45);
+  cursor: pointer;
+  user-select: none;
+}
+.cl-cat-head h4{
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+.cl-cat-head .count{
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
+}
+.cl-cat-body{ padding: 0.5rem 1rem 0.9rem; }
+.cl-item{
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.85rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px dashed var(--rule-soft);
+  align-items: flex-start;
+}
+.cl-item:last-child{ border-bottom: 0; }
+.cl-item input[type="checkbox"]{
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 1.5px solid var(--ink-soft);
+  background: var(--paper);
+  cursor: pointer;
+  position: relative;
+  margin: 0.15rem 0 0 0;
+  flex: 0 0 auto;
+}
+.cl-item input[type="checkbox"]:checked{
+  border-color: var(--accent);
+}
+.cl-item input[type="checkbox"]:checked::after{
+  content: "✓";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+}
+.cl-item input[type="checkbox"]:focus-visible{
+  outline: 2px solid var(--accent2);
+  outline-offset: 2px;
+}
+.cl-item .body label{
+  display: block;
+  font-weight: 500;
+  cursor: pointer;
+  font-size: 1.02rem;
+}
+.cl-item .expect{
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  font-style: italic;
+}
+.cl-item .how{
+  display: block;
+  margin-top: 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--accent2);
+}
+.cl-item.is-done .body label{ text-decoration: line-through; color: var(--ink-soft); }
+
+.help-grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--space-md);
+}
+.step{
+  border: 1px solid var(--rule);
+  background: rgba(255,250,238,0.55);
+  padding: var(--space-md);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.6rem 1rem;
+  position: relative;
+}
+.step .num{
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: 3rem;
+  line-height: 0.9;
+  color: var(--accent);
+  grid-row: 1 / span 2;
+}
+.step h4{
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+}
+.step p{
+  margin: 0.3rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.96rem;
+}
+
+.qa{ border-top: 1px solid var(--rule-soft); }
+.qa details{
+  border-bottom: 1px solid var(--rule-soft);
+  padding: 0.85rem 0.4rem;
+}
+.qa details > summary{
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 32px;
+}
+.qa details > summary::-webkit-details-marker{ display: none; }
+.qa details > summary::before{
+  content: "Q";
+  font-style: italic;
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.qa details > summary::after{
+  content: "+";
+  margin-left: auto;
+  font-family: var(--font-mono);
+  color: var(--ink-soft);
+  font-size: 1.3rem;
+}
+.qa details[open] > summary::after{ content: "−"; color: var(--accent); }
+.qa details > div{
+  padding: 0.6rem 0 0.3rem 1.5rem;
+  color: var(--ink-soft);
+}
+.qa details > div p{ margin: 0.4rem 0; }
+.qa details > div code{
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--shade);
+  padding: 0.05em 0.35em;
+}
+
+.keys{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+.keys b{
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+.kbd{
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+  padding: 0.1rem 0.5rem;
+  margin: 0 0.15em;
+  border-radius: 2px;
+  box-shadow: 0 1px 0 var(--rule);
+}
+
+footer{
+  margin-top: var(--space-xl);
+  padding: var(--space-md) 0 var(--space-lg);
+  border-top: 2px double var(--rule);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+footer a{
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-soft);
+}
+footer a:hover{ color: var(--ink); border-bottom-color: var(--ink); }
+
+.pullquote{
+  margin: var(--space-md) 0;
+  padding: var(--space-md) clamp(1rem, 4vw, 2.5rem);
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: clamp(1.1rem, 1vw + 1rem, 1.5rem);
+  line-height: 1.4;
+  border-left: 3px solid var(--accent);
+  color: var(--ink);
+  background: rgba(255,250,238,0.4);
+}
+
+.callout{
+  border: 1px dashed var(--accent);
+  padding: var(--space-md);
+  margin: var(--space-md) 0;
+  background: rgba(154,53,32,0.05);
+}
+.callout > p{ margin: 0.2rem 0; }
+.callout strong{ font-family: var(--font-display); color: var(--accent); }
+
+@media print{
+  .tab-nav, .cl-toolbar, .cl-btn, .meta-stack { display: none !important; }
+  section.panel{ display: block !important; break-inside: avoid; page-break-after: always; }
+  body{ background: white; }
+}
+
+@media (max-width: 540px){
+  .section-header{ grid-template-columns: 1fr; }
+  .section-num{ grid-row: auto; font-size: 3rem; }
+  .masthead-row{ flex-direction: column; align-items: flex-start; }
+  .meta-stack{ text-align: left; }
+  .stack-table{ font-size: 0.78rem; }
+  .stack-table th, .stack-table td{ padding: 0.5rem 0.55rem; }
+  .milestone-row{ grid-template-columns: 1fr auto; }
+  .milestone-row .ms-tag{ grid-column: 1 / -1; }
+}
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <header class="masthead">
+    <div class="masthead-row">
+      <div class="title-block">
+        <p class="eyebrow">Developer Atlas / 開発者向け俯瞰書</p>
+        <h1>小説<em>らいたー</em></h1>
+        <p class="subtitle">アーキテクチャ、目視チェックリスト、簡易マニュアル — 公開動作確認のための単一ページ。</p>
+      </div>
+      <div class="meta-stack">
+        <b>v0.0.0 (M7-α)</b>
+        Last updated · 2026-05-01<br />
+        Branch · main / clean<br />
+        Tests · 435 / 435 PASS
+      </div>
+    </div>
+  </header>
+</div>
+
+<nav class="tab-nav" aria-label="セクション">
+  <div class="tab-nav-inner">
+    <button class="tab-btn" data-target="p-overview" aria-current="page"><span class="num">i.</span>概要</button>
+    <button class="tab-btn" data-target="p-arch"><span class="num">ii.</span>アーキテクチャ</button>
+    <button class="tab-btn" data-target="p-flows"><span class="num">iii.</span>フロー図</button>
+    <button class="tab-btn" data-target="p-milestones"><span class="num">iv.</span>マイルストーン</button>
+    <button class="tab-btn" data-target="p-checklist"><span class="num">v.</span>目視チェック</button>
+    <button class="tab-btn" data-target="p-manual"><span class="num">vi.</span>マニュアル</button>
+    <button class="tab-btn" data-target="p-dev"><span class="num">vii.</span>開発者情報</button>
+  </div>
+</nav>
+
+<main class="shell">
+
+<section id="p-overview" class="panel is-active" aria-labelledby="h-overview">
+  <header class="section-header">
+    <div class="section-num">I.</div>
+    <h2 id="h-overview">本書の役割と現在地</h2>
+    <p>このページは、目視で「設計どおりに動いているか」を確認するための単一ハブです。図表は本ページ内で完結し、認証なしで誰でも参照できます。</p>
+  </header>
+
+  <p style="max-width: 65ch;">
+    <strong>小説らいたー</strong> は AI を補助とした小説執筆支援アプリです。
+    執筆者が主役、AI は「後輩・パートナー」的な立ち位置で、続きの提案・キャラ生成・世界観構築・画像生成を担当します。
+    プロジェクトデータは <em>local-first</em>（IndexedDB）で保存され、Firebase Auth でログインすると AI 機能とサーバー側のクォータ計算が利用できます。
+  </p>
+
+  <blockquote class="pullquote">
+    主役はあなた。AI はあなたの創作を手伝う「後輩」や「パートナー」のような存在。
+  </blockquote>
+
+  <h3 class="h-rule">技術スタック <span class="small">/ Stack</span></h3>
+  <table class="stack-table" aria-label="技術スタック">
+    <thead>
+      <tr><th style="width:28%">層</th><th style="width:32%">採用</th><th>備考</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>UI</td><td class="v">React 19 + TypeScript</td><td>Desktop は 3 パネル / Mobile は別エントリ <code>App.mobile.tsx</code></td></tr>
+      <tr><td>ビルド</td><td class="v">Vite + Tailwind v3 (PostCSS)</td><td>PR #81 で CDN → PostCSS plugin に移行済</td></tr>
+      <tr><td>状態管理</td><td class="v">Zustand 11 slices</td><td>persist 不使用、メモリ + IndexedDB 二層</td></tr>
+      <tr><td>ローカル DB</td><td class="v">Dexie.js (IndexedDB v2)</td><td>projects / tutorialState / analysisHistory / backupMeta</td></tr>
+      <tr><td>サーバー</td><td class="v">Express 5 + Helmet + rate-limit</td><td>Vite middleware (dev) / 静的配信 (prod)</td></tr>
+      <tr><td>AI</td><td class="v">Vertex AI gemini-2.5-flash + Imagen</td><td>Workload Identity Federation、API キー fallback</td></tr>
+      <tr><td>認証</td><td class="v">Firebase Auth</td><td>verifyIdToken middleware で全 /api/ai/* を保護</td></tr>
+      <tr><td>クォータ</td><td class="v">withUsageQuota (3-phase)</td><td>reserve → handler → commit/cancel、requestId 冪等</td></tr>
+      <tr><td>暗号化</td><td class="v">AES-GCM-256 + PBKDF2 600k</td><td>M6 完成、export-key 禁止 (静的検査)</td></tr>
+      <tr><td>デプロイ</td><td class="v">Cloud Run (asia-northeast1)</td><td>main push → GitHub Actions WIF → 自動 deploy</td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="h-rule">マイルストーン進捗 <span class="small">/ Snapshot</span></h3>
+  <div class="grid-auto">
+    <div class="card">
+      <p class="kicker">完了範囲</p>
+      <h4>無料機能フルセット</h4>
+      <p>M0 → M4 / M6 / M7-α が完成。本番 Cloud Run で動作確認済（Firebase 初期化・Tailwind・UI 重なりすべて解消）。</p>
+    </div>
+    <div class="card">
+      <p class="kicker">テスト</p>
+      <h4>435 / 435 PASS</h4>
+      <p>vitest 全グリーン。tsc --noEmit 0 errors。CI は Deploy to Cloud Run 成功 (3m15s)。</p>
+    </div>
+    <div class="card">
+      <p class="kicker">保留</p>
+      <h4>法務本文確定待ち</h4>
+      <p>M5 (Stripe) / M7-β (公開最終チェック) は法務同期作業の完了が前提。AI セッション外。</p>
+    </div>
+    <div class="card">
+      <p class="kicker">監視中</p>
+      <h4>Issue #49 monitor</h4>
+      <p>rating ≥ 7 全消化済。本番障害として再現した時点で再開。</p>
+    </div>
+  </div>
+</section>
+
+<section id="p-arch" class="panel" aria-labelledby="h-arch">
+  <header class="section-header">
+    <div class="section-num">II.</div>
+    <h2 id="h-arch">アーキテクチャ俯瞰</h2>
+    <p>3 つの図で全体像を捉えます。①コンポーネント配置、②Zustand スライスと永続化レイヤー、③主要型の関係。</p>
+  </header>
+
+  <h3 class="h-rule">① コンポーネント配置 <span class="small">/ System Map</span></h3>
+  <div class="diagram" data-fig="Fig. II-1">
+    <div class="mermaid">
+flowchart TB
+  subgraph BR["Browser (React 19 + TypeScript)"]
+    direction TB
+    UI["UI Layer<br/>App.tsx (Desktop 3-pane)<br/>App.mobile.tsx"]
+    STORE["Zustand 11 slices<br/>project / data / ai / ui /<br/>history / sync / tutorial /<br/>analysisHistory / form /<br/>auth / backup"]
+    IDB[("IndexedDB v2<br/>(Dexie)<br/>projects / tutorialState /<br/>analysisHistory / backupMeta")]
+    APIC["apiClient.ts<br/>(Bearer + requestId 自動付与)"]
+    UI --> STORE
+    STORE -.persist.-> IDB
+    STORE --> APIC
+  end
+
+  subgraph CR["Cloud Run (Express 5)"]
+    direction TB
+    MW["Helmet · CORS · rate-limit<br/>verifyIdToken middleware"]
+    AIROUTE["/api/ai/* routes<br/>(novel / character / world /<br/>image / utility / analysis)"]
+    USERROUTE["/api/users/init<br/>/api/users/accept-terms"]
+    QUOTA["withUsageQuota<br/>reserve → handler → commit/cancel"]
+    SVC["services<br/>novelService / characterService /<br/>worldService / imageService /<br/>utilityService / analysisService"]
+    MW --> AIROUTE
+    MW --> USERROUTE
+    AIROUTE --> QUOTA
+    QUOTA --> SVC
+  end
+
+  subgraph GCP["Google Cloud"]
+    VTX[["Vertex AI<br/>gemini-2.5-flash + Imagen"]]
+    FBA[["Firebase Auth"]]
+    FS[("Firestore<br/>users/uid (init / terms /<br/>usage reservations)")]
+  end
+
+  APIC -- "fetch (Bearer ID Token)" --> MW
+  SVC --> VTX
+  MW -.verify.-> FBA
+  USERROUTE --> FS
+  QUOTA -.reserve / commit.-> FS
+  UI -. signIn .-> FBA
+
+  classDef box fill:#fbf3dc,stroke:#1b2535,stroke-width:1.5px,color:#1b2535
+  classDef gcp fill:#e8e0c8,stroke:#9a3520,stroke-width:1.5px,color:#1b2535
+  classDef ds fill:#f3ecdb,stroke:#2a5762,stroke-width:1.5px,color:#1b2535,stroke-dasharray:4 3
+  class UI,STORE,APIC,MW,AIROUTE,USERROUTE,QUOTA,SVC box
+  class VTX,FBA gcp
+  class IDB,FS ds
+    </div>
+  </div>
+
+  <h3 class="h-rule">② 状態管理と永続化レイヤー <span class="small">/ State Stratigraphy</span></h3>
+  <div class="diagram" data-fig="Fig. II-2">
+    <div class="mermaid">
+flowchart LR
+  subgraph SLICES["Zustand store/index.ts"]
+    direction TB
+    PR[projectSlice]
+    DT[dataSlice]
+    AI[aiSlice]
+    UI2[uiSlice]
+    HIST["historySlice<br/>(memory only)"]
+    SY[syncSlice]
+    AU[authSlice]
+    BK[backupSlice]
+    TU[tutorialSlice]
+    AH[analysisHistorySlice]
+    FM[formSlice]
+  end
+
+  HOOK["useLocalSync<br/>2s debounce + flush"]
+  REPO["db/projectRepository.ts<br/>db/backupRepository.ts"]
+  IDB[("IndexedDB v2<br/>4 stores")]
+
+  PR --> SY
+  DT --> SY
+  TU --> SY
+  AH --> SY
+  SY --> HOOK
+  HOOK --> REPO
+  REPO --> IDB
+  HIST -. never persisted .- SY
+
+  AU -. signal .-> PR
+  BK -. import plan .-> PR
+  BK --> REPO
+
+  classDef s fill:#fbf3dc,stroke:#1b2535
+  classDef m fill:#f3ecdb,stroke:#9a3520,stroke-dasharray:4 3
+  classDef ds fill:#e8e0c8,stroke:#2a5762
+  class PR,DT,AI,UI2,SY,AU,BK,TU,AH,FM s
+  class HIST m
+  class IDB,REPO,HOOK ds
+    </div>
+  </div>
+
+  <h3 class="h-rule">③ 主要型の関係 <span class="small">/ Type Map</span></h3>
+  <div class="diagram" data-fig="Fig. II-3">
+    <div class="mermaid">
+classDiagram
+  class Project {
+    +id: string
+    +title: string
+    +novelChunks: NovelChunk[]
+    +settings: SettingItem[]
+    +knowledge: KnowledgeItem[]
+    +plots: PlotItem[]
+    +timeline: TimelineEvent[]
+    +aiSettings: AiSettings
+    +chatHistory: ChatMessage[]
+  }
+  class BackupV1 {
+    +schemaVersion: 1
+    +exportedAt: ISO
+    +appVersion: string
+    +projects: Project[]
+    +tutorialState: TutorialState
+    +analysisHistory: AnalysisRecord[]
+  }
+  class EncryptedBackupV1 {
+    +envelopeVersion: 1
+    +encrypted: true
+    +algorithm: AES-GCM-256
+    +kdf: PBKDF2-SHA256
+    +kdfParams 600000_iter
+    +iv ciphertext base64
+  }
+  class PendingDecryption {
+    +rawEnvelope: EncryptedBackupV1
+    +retryCount: 0..5
+    +abortController
+    +isDecrypting: bool
+  }
+  class ImportPlan {
+    +backup: BackupV1
+    +conflicts: ImportConflict[]
+  }
+  BackupV1 "1" -- "*" Project : contains
+  EncryptedBackupV1 ..> BackupV1 : decrypt yields
+  PendingDecryption ..> EncryptedBackupV1 : holds
+  ImportPlan ..> BackupV1 : derived
+    </div>
+  </div>
+
+  <div class="callout">
+    <p><strong>不変条件:</strong> <code>pendingDecryption !== null</code> ⇒ <code>importPlan === null</code> （atomic transition で保持）。M6 PR-A の検証ポイント。</p>
+  </div>
+</section>
+
+<section id="p-flows" class="panel" aria-labelledby="h-flows">
+  <header class="section-header">
+    <div class="section-num">III.</div>
+    <h2 id="h-flows">フロー図</h2>
+    <p>典型シナリオ 4 つ。①ログイン〜users/init、②AI 生成（クォータ消費）、③暗号化バックアップ Import、④利用規約同意。</p>
+  </header>
+
+  <h3 class="h-rule">① ログインから users/init <span class="small">/ Auth Bootstrap</span></h3>
+  <div class="diagram" data-fig="Fig. III-1">
+    <div class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as ユーザー
+  participant FE as React (App.tsx)
+  participant FB as Firebase Auth
+  participant API as Express<br/>verifyIdToken
+  participant FS as Firestore<br/>users uid
+
+  U->>FE: 「Google でログイン」
+  FE->>FB: signInWithPopup
+  FB-->>FE: User + ID Token
+  FE->>FE: authSlice: status=authenticated<br/>needsUserInit=true
+  FE->>API: POST /api/users/init<br/>(Bearer ID Token)
+  API->>FB: verifyIdToken
+  alt token OK
+    FB-->>API: decoded uid
+    API->>FS: txn: read users uid
+    alt 初回
+      API->>FS: txn: create<br/>(termsAcceptedAt=null など)
+    else 既存
+      API->>FS: 何もしない (冪等)
+    end
+    FS-->>API: termsAcceptedAt /<br/>termsVersion / currentTermsVersion
+    API-->>FE: 200 OK + terms 状態
+    FE->>FE: needsTermsAccept 派生
+  else token NG (transient)
+    API-->>FE: 503
+    FE->>FE: retryUserInit() で再試行
+  else token NG (permanent)
+    API-->>FE: 401 → サインアウト誘導
+  end
+    </div>
+  </div>
+
+  <h3 class="h-rule">② AI 生成 — withUsageQuota 3-phase <span class="small">/ Quota Lifecycle</span></h3>
+  <div class="diagram" data-fig="Fig. III-2">
+    <div class="mermaid">
+sequenceDiagram
+  autonumber
+  participant FE as apiClient
+  participant API as /api/ai/novel/generate
+  participant Q as withUsageQuota
+  participant SVC as novelService
+  participant VTX as Vertex AI
+  participant FS as Firestore<br/>usage uid
+
+  FE->>API: POST + Bearer + requestId
+  API->>Q: wrap(handler)
+  Q->>FS: txn: reserve(200 sen, requestId)
+  alt 残量不足
+    FS-->>Q: 不足
+    Q-->>FE: 429 quota_exceeded
+  else 予約成功
+    FS-->>Q: ok
+    Q->>SVC: handler(req)
+    SVC->>VTX: gemini-2.5-flash 呼出
+    VTX-->>SVC: 続き本文
+    SVC-->>Q: 200 + body
+    Q->>FS: txn: commit(reservation)
+    Q-->>FE: 200 + 残量ヘッダ
+  end
+  alt 例外
+    Q->>FS: txn: cancel(reservation)
+    Q-->>FE: 5xx
+  end
+    </div>
+  </div>
+
+  <h3 class="h-rule">③ 暗号化バックアップ Import 状態遷移 <span class="small">/ M6 State Machine</span></h3>
+  <div class="diagram" data-fig="Fig. III-3">
+    <div class="mermaid">
+stateDiagram-v2
+  [*] --> Idle
+  Idle --> AwaitingPassphrase: parseAnyBackup<br/>(encrypted=true)
+  AwaitingPassphrase --> Decrypting: ユーザーが<br/>パスフレーズ送信
+  Decrypting --> AwaitingPassphrase: 失敗 / retry < 5<br/>(DECRYPT_FAILURE_MESSAGE)
+  Decrypting --> Idle: cancel / abort /<br/>retry == 5
+  Decrypting --> ImportPlan: 復号成功
+  ImportPlan --> Idle: ユーザー解決<br/>(overwrite / duplicate / skip / cancel)
+
+  note right of Decrypting
+    AbortController 30s timeout
+    isStaleDecryptSession 3-step check
+  end note
+  note left of AwaitingPassphrase
+    pendingDecryption not null
+    implies importPlan is null
+    (atomic invariant)
+  end note
+    </div>
+  </div>
+
+  <h3 class="h-rule">④ 利用規約同意 — TERMS_VERSION_MISMATCH <span class="small">/ M7-α</span></h3>
+  <div class="diagram" data-fig="Fig. III-4">
+    <div class="mermaid">
+sequenceDiagram
+  autonumber
+  participant FE as TermsConsentModal
+  participant API as /api/users/<br/>accept-terms
+  participant FS as Firestore<br/>users uid
+  participant CFG as TERMS_VERSION<br/>(server config)
+
+  FE->>API: POST {acceptedVersion}
+  API->>CFG: 現行 TERMS_VERSION 取得
+  alt acceptedVersion === current
+    API->>FS: txn: termsAcceptedAt=now<br/>termsVersion=accepted
+    API-->>FE: 200
+    FE->>FE: authSlice: needsTermsAccept=false
+  else version drift
+    API-->>FE: 409 + code: TERMS_VERSION_MISMATCH
+    FE->>FE: refreshCurrentTermsVersion()<br/>(users/init を再 fetch)
+    FE->>FE: currentTermsVersion 更新
+  end
+    </div>
+  </div>
+</section>
+
+<section id="p-milestones" class="panel" aria-labelledby="h-ms">
+  <header class="section-header">
+    <div class="section-num">IV.</div>
+    <h2 id="h-ms">マイルストーン進捗</h2>
+    <p>local-first → 認証 → 課金前提整備 → バックアップ E2EE → 規約同意の順でレイヤーを積み上げてきた。</p>
+  </header>
+
+  <div class="diagram" data-fig="Fig. IV-1 / Timeline">
+    <div class="mermaid">
+gantt
+  title マイルストーン推移
+  dateFormat YYYY-MM-DD
+  axisFormat %m/%d
+  section M0
+  scaffolding & UI 移植 :done, m0, 2026-01-20, 14d
+  section M1〜M2
+  M1 local-first / Firebase 初期化 :done, m1, after m0, 21d
+  M2 PR-A〜C 認証基盤 (verifyIdToken) :done, m2, after m1, 14d
+  section M3
+  M3 PR-D〜G AI ルート集約 + クォータ + apiClient :done, m3, after m2, 14d
+  section M4
+  M4 バックアップ平文 (export / import / conflict) :done, m4, after m3, 10d
+  section M6
+  M6 PR-A〜D E2EE (AES-GCM + PBKDF2 600k) :done, m6, after m4, 14d
+  section M7-α
+  M7-α PR-D-1〜2 規約同意 + 共有 termsCodes :done, m7a, after m6, 7d
+  section 保留
+  M5 Stripe Tier 2 :crit, m5, after m7a, 14d
+  M7-β 公開最終チェック :crit, m7b, after m5, 7d
+    </div>
+  </div>
+
+  <div style="margin-top: var(--space-md)">
+    <div class="milestone-row"><span class="ms-tag">M0</span><div><span class="ms-name">スキャフォールディング・UI 移植</span></div><span class="ms-state done">完了</span></div>
+    <div class="milestone-row"><span class="ms-tag">M1</span><div><span class="ms-name">Local-first 永続化 + Firebase 初期化</span></div><span class="ms-state done">完了</span></div>
+    <div class="milestone-row"><span class="ms-tag">M2</span><div><span class="ms-name">PR-A/B/C 認証基盤 — verifyIdToken / authSlice / users/init</span></div><span class="ms-state done">完了</span></div>
+    <div class="milestone-row"><span class="ms-tag">M3</span><div><span class="ms-name">PR-D〜G AI ルート集約 + withUsageQuota + apiClient 共通化</span></div><span class="ms-state done">完了</span></div>
+    <div class="milestone-row"><span class="ms-tag">M4</span><div><span class="ms-name">バックアップ層（平文 BackupV1 + Import Conflict UI）</span></div><span class="ms-state done">完了</span></div>
+    <div class="milestone-row"><span class="ms-tag">M6</span><div><span class="ms-name">E2EE 暗号化バックアップ — PR-A schema / PR-B state / PR-C UI / PR-D 統合</span></div><span class="ms-state done">完了</span></div>
+    <div class="milestone-row"><span class="ms-tag">M7-α</span><div><span class="ms-name">利用規約同意フロー — TermsConsentModal + TERMS_VERSION_MISMATCH</span></div><span class="ms-state done">完了</span></div>
+    <div class="milestone-row"><span class="ms-tag">M5</span><div><span class="ms-name">Stripe Subscription Tier 2 — 法務本文確定が前提</span></div><span class="ms-state hold">保留</span></div>
+    <div class="milestone-row"><span class="ms-tag">M7-β</span><div><span class="ms-name">公開最終チェック（規約 Tier 2 節 + 特商法本文）</span></div><span class="ms-state hold">保留</span></div>
+  </div>
+</section>
+
+<section id="p-checklist" class="panel" aria-labelledby="h-cl">
+  <header class="section-header">
+    <div class="section-num">V.</div>
+    <h2 id="h-cl">目視チェックリスト</h2>
+    <p>本番 Cloud Run URL（または <code>npm run dev</code>）で順に確認する。チェック状態は端末ごとに <code>localStorage</code> で保存される。</p>
+  </header>
+
+  <div class="cl-toolbar" role="region" aria-label="チェックリストツールバー">
+    <div class="cl-progress">
+      <span><b id="cl-count">0</b> / <span id="cl-total">0</span> 完了</span>
+      <span class="cl-progress-bar"><i id="cl-bar"></i></span>
+      <span id="cl-pct">0%</span>
+    </div>
+    <button class="cl-btn" id="cl-collapse">すべて折りたたむ</button>
+    <button class="cl-btn" id="cl-expand">すべて展開</button>
+    <button class="cl-btn warn" id="cl-reset">リセット</button>
+    <button class="cl-btn" id="cl-print">印刷用に展開</button>
+  </div>
+
+  <div id="checklist-root"></div>
+</section>
+
+<section id="p-manual" class="panel" aria-labelledby="h-man">
+  <header class="section-header">
+    <div class="section-num">VI.</div>
+    <h2 id="h-man">かんたんマニュアル</h2>
+    <p>はじめて触る人が「ログインからAI続き生成まで」をたどれる最短ガイド。詳細は <code>manual/</code> 配下の章別ドキュメント参照。</p>
+  </header>
+
+  <h3 class="h-rule">5 ステップで物語を始める</h3>
+  <div class="help-grid">
+    <div class="step"><div class="num">1</div><div><h4>ログインする</h4><p>右上の「ログイン」から Google アカウントで入る。初回は利用規約に同意が必要。</p></div></div>
+    <div class="step"><div class="num">2</div><div><h4>プロジェクト作成</h4><p>「新規プロジェクト」を押し、タイトルを入れる。データは自動でブラウザ内に保存される。</p></div></div>
+    <div class="step"><div class="num">3</div><div><h4>本文を書く</h4><p>中央の原稿用紙パネルにそのまま入力。<span class="kbd">Alt</span>+<span class="kbd">I</span> で直接入力欄を開閉できる。</p></div></div>
+    <div class="step"><div class="num">4</div><div><h4>AI に続きを頼む</h4><p>右パネル「アシスタント」で「続きを書く」を押す。生成は数秒〜十数秒、複数候補が並ぶ。</p></div></div>
+    <div class="step"><div class="num">5</div><div><h4>定期的にバックアップ</h4><p>ヘッダーの「エクスポート」で全データを JSON 化。30日経つと警告バナーが出るので、暗号化（推奨）でローカル保存しておく。</p></div></div>
+  </div>
+
+  <h3 class="h-rule">画面の見方</h3>
+  <div class="grid-auto">
+    <div class="card">
+      <p class="kicker">左パネル</p>
+      <h4>資料の棚 — Library</h4>
+      <p>キャラクター、世界観、ナレッジ（用語事典）、プロット、年表。書き込むほど AI があなたの作品に詳しくなる。</p>
+    </div>
+    <div class="card">
+      <p class="kicker">中央パネル</p>
+      <h4>原稿用紙 — Editor</h4>
+      <p>本文の執筆エリア。太字・下線・見出し・ルビ・色指定はツールバーまたは <span class="kbd">Ctrl/⌘</span> + <span class="kbd">B</span>/<span class="kbd">U</span>/<span class="kbd">H</span>/<span class="kbd">R</span>。</p>
+    </div>
+    <div class="card">
+      <p class="kicker">右パネル</p>
+      <h4>アシスタント — Assistant</h4>
+      <p>AI と対話。「続きを書く」「アイデア出し」「壁打ち」が選べる。生成モードや雰囲気は左下のアイコンから設定。</p>
+    </div>
+    <div class="card">
+      <p class="kicker">画像生成</p>
+      <h4>立ち絵・場面絵</h4>
+      <p>キャラクターパネルから「画像生成」を押すと、設定文から Imagen でビジュアルを作る。1 回 1000 sen 消費。</p>
+    </div>
+  </div>
+
+  <h3 class="h-rule">主なショートカット</h3>
+  <div class="keys">
+    <span><b>太字</b> <span class="kbd">Ctrl/⌘</span>+<span class="kbd">B</span></span>
+    <span><b>下線</b> <span class="kbd">Ctrl/⌘</span>+<span class="kbd">U</span></span>
+    <span><b>見出し</b> <span class="kbd">Ctrl/⌘</span>+<span class="kbd">H</span></span>
+    <span><b>ルビ</b> <span class="kbd">Ctrl/⌘</span>+<span class="kbd">R</span></span>
+    <span><b>カラー</b> <span class="kbd">Ctrl/⌘</span>+<span class="kbd">⇧</span>+<span class="kbd">C</span></span>
+    <span><b>直接入力</b> <span class="kbd">Alt</span>+<span class="kbd">I</span></span>
+    <span><b>設定</b> <span class="kbd">Alt</span>+<span class="kbd">S</span></span>
+    <span><b>検索</b> <span class="kbd">Ctrl/⌘</span>+<span class="kbd">K</span></span>
+  </div>
+
+  <h3 class="h-rule">よくある質問</h3>
+  <div class="qa">
+    <details>
+      <summary>データはどこに保存される？</summary>
+      <div>
+        <p>あなたのブラウザ内（IndexedDB）に保存されます。サーバーには本文を送らない設計です（AI 生成リクエスト時のみ必要な抜粋を送ります）。</p>
+        <p>機種変・ブラウザ変更時は <strong>必ずエクスポート</strong>してください。30 日エクスポートしないと警告バナーが出ます。</p>
+      </div>
+    </details>
+    <details>
+      <summary>パスフレーズを忘れた場合、復元できる？</summary>
+      <div>
+        <p>暗号化バックアップ（M6）はクライアント側完結（PBKDF2 600,000 iter / AES-GCM-256）です。<strong>パスフレーズを失うと復号できません。</strong> サーバーにも鍵を置いていません（<code>exportKey</code> 禁止を静的検査で機械的に保証）。</p>
+        <p>5 回連続で誤入力するとモーダルが自動で閉じ、バックアップは破棄されます。安全に保管してください。</p>
+      </div>
+    </details>
+    <details>
+      <summary>AI が「リクエストが多すぎます」と言う</summary>
+      <div>
+        <p>1 分間に 20 リクエストを超えると <code>express-rate-limit</code> がブロックします。少し待ってから再試行してください（dev は 1000/min に緩和）。</p>
+      </div>
+    </details>
+    <details>
+      <summary>「クォータが足りません」と出る</summary>
+      <div>
+        <p>Tier 1 は月あたり 100 円相当（sen 単位）の割当です。route ごとの単価は概ね：小説生成 200 sen、キャラ・世界観 100 sen、画像生成 1000 sen、ユーティリティ 50–100 sen。</p>
+      </div>
+    </details>
+    <details>
+      <summary>モバイル Safari でうまく動かない場面がある</summary>
+      <div>
+        <p>iOS Safari は <em>best-effort</em> サポートです。バックグラウンド遷移後の AbortController throttle など、既知の制約があります。Chrome / Edge / Firefox の利用を推奨します。</p>
+      </div>
+    </details>
+    <details>
+      <summary>履歴（undo/redo）はバックアップに含まれる？</summary>
+      <div>
+        <p>含まれません。ADR-0001 の <em>memory-only</em> 方針で <code>historyTree</code> は永続化対象外です。リロードでクリアされる仕様。</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<section id="p-dev" class="panel" aria-labelledby="h-dev">
+  <header class="section-header">
+    <div class="section-num">VII.</div>
+    <h2 id="h-dev">開発者情報</h2>
+    <p>環境変数、デプロイ、主要ファイル位置、品質ゲートの依存関係。</p>
+  </header>
+
+  <h3 class="h-rule">環境変数 <span class="small">/ ENV</span></h3>
+  <table class="stack-table" aria-label="環境変数">
+    <thead><tr><th>変数</th><th>値の例</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><code>NODE_ENV</code></td><td class="v">production / development</td><td>helmet CSP / Vite middleware 切替</td></tr>
+      <tr><td><code>PORT</code></td><td class="v">3000</td><td>Express listen ポート</td></tr>
+      <tr><td><code>USE_VERTEX_AI</code></td><td class="v">true</td><td>true = Vertex AI (WIF), false = APIキー</td></tr>
+      <tr><td><code>VITE_FIREBASE_*</code> ×6</td><td class="v">apiKey / authDomain / projectId / appId / storageBucket / messagingSenderId</td><td>build-time 注入。Dockerfile <code>--build-arg</code> 経由（PR #79）</td></tr>
+      <tr><td><code>VITE_USE_AUTH_EMULATOR</code></td><td class="v">true（emulator用）</td><td>dev:emu スクリプトで Auth/Firestore Emulator 接続</td></tr>
+      <tr><td><code>FIREBASE_AUTH_EMULATOR_HOST</code></td><td class="v">localhost:9099</td><td>サーバー側 verifyIdToken の宛先切替</td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="h-rule">主要ファイル <span class="small">/ Files of Interest</span></h3>
+  <div class="grid-auto">
+    <div class="card"><p class="kicker">Server entry</p><h4><code>server/index.ts</code></h4><p>Express 起動・helmet CSP・Vite middleware・SPA fallback。CSP 変更はここ。</p></div>
+    <div class="card"><p class="kicker">Auth middleware</p><h4><code>server/middleware/verifyIdToken.ts</code></h4><p>Bearer 検証・transient (503) / permanent (401) 分類。</p></div>
+    <div class="card"><p class="kicker">Quota wrapper</p><h4><code>server/middleware/withUsageQuota.ts</code></h4><p>reserve → handler → commit/cancel の高階関数。requestId 冪等。</p></div>
+    <div class="card"><p class="kicker">Backup core</p><h4><code>utils/backupCrypto.ts</code></h4><p>AES-GCM + PBKDF2。<code>exportKey</code> 禁止を <code>tests/static/no-export-key.test.ts</code> で機械検査。</p></div>
+    <div class="card"><p class="kicker">Shared codes</p><h4><code>shared/termsCodes.ts</code></h4><p>FE/BE 共有定数。<code>TERMS_VERSION_MISMATCH</code> リテラル drift 防止。</p></div>
+    <div class="card"><p class="kicker">FE API client</p><h4><code>apiClient.ts</code></h4><p>Bearer 自動付与・requestId 自動生成・401/429/503/409 共通分類。</p></div>
+    <div class="card"><p class="kicker">Persistence</p><h4><code>db/dexie.ts</code> / <code>db/projectRepository.ts</code></h4><p>IndexedDB v2、4 stores。Sequential upgrade で既存データ保持。</p></div>
+    <div class="card"><p class="kicker">Modals</p><h4><code>components/ModalManager.tsx</code></h4><p>規約 → 復号 → 通常モーダル の優先順。M6 PR-D / M7-α PR-D-2 で先頭分岐。</p></div>
+  </div>
+
+  <h3 class="h-rule">デプロイ <span class="small">/ CI/CD</span></h3>
+  <div class="diagram" data-fig="Fig. VII-1">
+    <div class="mermaid">
+flowchart LR
+  PR[PR merge to main] --> GHA[GitHub Actions]
+  GHA -->|Workload Identity Federation| GCP[Google Cloud]
+  GHA --> DCK["docker build<br/>--build-arg VITE_FIREBASE_*"]
+  DCK --> AR[("Artifact Registry<br/>asia-northeast1")]
+  AR --> CR["Cloud Run<br/>novel-writer-446321146441"]
+  CR --> URL["public URL<br/>https://...run.app"]
+  classDef ok fill:#e8e0c8,stroke:#2a5762
+  class GHA,DCK,AR,CR,URL ok
+    </div>
+  </div>
+
+  <h3 class="h-rule">品質ゲート <span class="small">/ Quality Gate</span></h3>
+  <ul style="line-height:1.85">
+    <li><strong>3 ファイル以上</strong>: <code>/simplify</code> → <code>/safe-refactor</code></li>
+    <li><strong>5 ファイル以上 / 新機能</strong>: 上記 + <code>evaluator</code> 別コンテキスト評価（自己評価バイアス排除）</li>
+    <li><strong>大規模 PR (3+ files / 200+ LOC)</strong>: <code>/codex review</code> でセカンドオピニオン</li>
+    <li><strong>セキュリティ</strong>: <code>/differential-review</code> + <code>/insecure-defaults</code> + <code>/supply-chain-risk-auditor</code></li>
+    <li><strong>全 PR</strong>: <code>npm run lint</code> + <code>npm run test</code> + Test plan 全項目実行</li>
+  </ul>
+
+  <h3 class="h-rule">参照ドキュメント <span class="small">/ See also</span></h3>
+  <ul>
+    <li><code>CLAUDE.md</code> — プロジェクト固有ルール（main 直 push 禁止、gh auth hook 等）</li>
+    <li><code>docs/handoff/LATEST.md</code> — 直近セッションのハンドオフ</li>
+    <li><code>docs/adr/</code> — Architecture Decision Records</li>
+    <li><code>docs/spec/m3/usage-cost-config.md</code> — クォータ単価詳細</li>
+    <li><code>docs/spec/m6/state-diagram.md</code> — M6 状態遷移詳細 (T1〜T12)</li>
+    <li><code>manual/</code> — エンドユーザー向け章別マニュアル</li>
+  </ul>
+</section>
+
+</main>
+
+<footer class="shell">
+  <div>小説らいたー Developer Atlas · 開発者向け俯瞰書</div>
+  <div><a href="/">アプリへ戻る</a></div>
+</footer>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    fontFamily: '"EB Garamond", "Hiragino Mincho ProN", serif',
+    themeVariables: {
+      background: 'transparent',
+      primaryColor: '#fbf3dc',
+      primaryTextColor: '#1b2535',
+      primaryBorderColor: '#1b2535',
+      secondaryColor: '#e8e0c8',
+      tertiaryColor: '#f3ecdb',
+      lineColor: '#1b2535',
+      noteBkgColor: '#fbf3dc',
+      noteTextColor: '#1b2535',
+      noteBorderColor: '#9a3520',
+      mainBkg: '#fbf3dc',
+      altBackground: '#e8e0c8',
+      activationBkgColor: '#9a3520',
+      sequenceNumberColor: '#9a3520',
+      labelBoxBkgColor: '#fbf3dc',
+      labelBoxBorderColor: '#1b2535',
+      actorBkg: '#fbf3dc',
+      actorBorder: '#1b2535',
+      actorTextColor: '#1b2535',
+      actorLineColor: '#1b2535',
+      signalColor: '#1b2535',
+      signalTextColor: '#1b2535'
+    },
+    securityLevel: 'strict',
+    flowchart: { curve: 'basis', padding: 14 },
+    sequence: { actorMargin: 60, messageMargin: 38, mirrorActors: false },
+    gantt: { fontSize: 13, sectionFontSize: 13 }
+  });
+</script>
+
+<script>
+(function(){
+  var tabs = document.querySelectorAll('.tab-btn');
+  var panels = document.querySelectorAll('section.panel');
+
+  function activate(id, push){
+    tabs.forEach(function(b){
+      b.setAttribute('aria-current', b.dataset.target === id ? 'page' : 'false');
+    });
+    panels.forEach(function(p){
+      p.classList.toggle('is-active', p.id === id);
+    });
+    if (push && history && history.replaceState){
+      history.replaceState(null, '', '#' + id);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  tabs.forEach(function(b){
+    b.addEventListener('click', function(){ activate(b.dataset.target, true); });
+  });
+  if (location.hash){
+    var id = location.hash.slice(1);
+    if (document.getElementById(id)) activate(id, false);
+  }
+
+  var CHECKLIST = [
+    {
+      id: 'boot',
+      title: '起動・認証',
+      items: [
+        { id: 'b1', label: 'トップ URL でアプリが描画される', expect: 'Firebase 初期化エラーなし。Tailwind 警告なし。AuthButton と BackupWarningBanner が重ならない。', how: 'DevTools Console を開いた状態でリロード → エラー 0 件を目視。' },
+        { id: 'b2', label: '「ログイン」ボタンが視認できる', expect: '右上に AuthButton が表示。Banner があっても重ならない。', how: '初回訪問または signOut 後に確認。' },
+        { id: 'b3', label: 'Google ログインで認証が完了する', expect: 'authStatus が initializing → unauthenticated → authenticated に遷移。', how: 'Network タブで /api/users/init が 200 OK で返ることを確認。' },
+        { id: 'b4', label: '初回ログイン時に利用規約モーダルが出る', expect: 'role=alertdialog の TermsConsentModal が他モーダルより先に表示。', how: 'Firestore で users/uid.termsAcceptedAt を null にして再読込。' },
+        { id: 'b5', label: '規約同意後はモーダルが二度と出ない', expect: 'リロード後に表示されない。authSlice.needsTermsAccept = false。', how: '同意 → リロード。' },
+        { id: 'b6', label: 'ログアウトでスタート画面に戻る', expect: 'authStatus = unauthenticated。プロジェクト一覧は残る（ローカル）。', how: 'ヘッダーからログアウト。' }
+      ]
+    },
+    {
+      id: 'project',
+      title: 'プロジェクト管理',
+      items: [
+        { id: 'p1', label: 'プロジェクトを新規作成できる', expect: 'タイトル入力 → 作成。3 パネルレイアウトに遷移。', how: 'Project Selection 画面の「新規」から。' },
+        { id: 'p2', label: '別プロジェクトに切り替えられる', expect: '左上のメニューから他プロジェクトを開く。本文・設定が切り替わる。', how: '2 つ作って切替。' },
+        { id: 'p3', label: '「最近開いた」が永続化されている', expect: 'リロードしても直近のプロジェクトが復元する（IndexedDB）。', how: 'Cmd+R / F5 でリロード。' },
+        { id: 'p4', label: '削除確認モーダルが出る', expect: 'ダイアログでタイトル明記。誤操作で消えない。', how: 'プロジェクト一覧の削除アイコンを押す。' }
+      ]
+    },
+    {
+      id: 'editor',
+      title: '執筆機能（中央パネル）',
+      items: [
+        { id: 'e1', label: '本文を入力できる', expect: '日本語 IME 動作。改行・空白が想定どおり。', how: '中央パネルに直接入力。' },
+        { id: 'e2', label: '太字・下線・見出し・ルビが効く', expect: 'Ctrl/⌘+B/U/H/R で Markdown 記法が挿入される。', how: '範囲選択してショートカット。' },
+        { id: 'e3', label: '色指定が効く', expect: 'パレットで選んだ色がインラインタグとして挿入される。', how: 'Shift+C で適用。' },
+        { id: 'e4', label: '直接入力欄の開閉', expect: 'Alt+I でインラインエディタが開閉。', how: 'ショートカットで切替。' },
+        { id: 'e5', label: 'undo/redo が機能する', expect: '直近 10 ノードまでツリー型で戻る。', how: 'Cmd+Z / Cmd+Shift+Z。' }
+      ]
+    },
+    {
+      id: 'ai',
+      title: 'AI 生成（小説・キャラ・世界観・画像）',
+      items: [
+        { id: 'a1', label: '小説の続きを生成できる', expect: '右パネルから生成 → 候補が複数返る。/api/ai/novel/generate が 200 OK。', how: 'DevTools Network で確認。' },
+        { id: 'a2', label: 'クォータ消費がレスポンスヘッダで返る', expect: 'X-Usage-Remaining 等、残量が確認できる。', how: 'Network タブの Response Headers。' },
+        { id: 'a3', label: 'キャラクターを生成・更新できる', expect: '/api/ai/character/* が 200 OK。設定欄に反映。', how: 'キャラパネルから「自動生成」。' },
+        { id: 'a4', label: '世界観を生成・更新できる', expect: '/api/ai/world/* が 200 OK。', how: '世界観パネルから「AI に相談」。' },
+        { id: 'a5', label: '画像生成（Imagen）が動く', expect: '/api/ai/image/generate が 200 OK で base64 PNG を返す。', how: 'キャラクターから「画像生成」。1000 sen 消費。' },
+        { id: 'a6', label: 'テキストインポート分析ができる', expect: '/api/ai/analysis/import が 200 OK。analysisHistory に記録。', how: '「他作品から取り込む」モーダルで貼付。' },
+        { id: 'a7', label: 'rate-limit 超過で 429 が出る', expect: '本番 20 req/min 超で「リクエストが多すぎます」表示。', how: '連打して確認（dev は 1000/min なので難しい）。' },
+        { id: 'a8', label: 'クォータ枯渇で 429 quota_exceeded', expect: 'Tier 1 月割当を超えたらユーザー向けメッセージ表示。', how: 'Firestore で usage を上限近くに調整。' }
+      ]
+    },
+    {
+      id: 'backup',
+      title: 'バックアップ機能（M4 + M6）',
+      items: [
+        { id: 'k1', label: '平文エクスポートができる', expect: '「エクスポート」→ JSON ダウンロード。schemaVersion=1 ヘッダ。', how: 'ヘッダーまたはバナーから。' },
+        { id: 'k2', label: '暗号化エクスポートができる', expect: '「暗号化する」チェックで 12 codepoint 強度バー表示。', how: 'パスフレーズ入力で encryptedBackup-*.json をダウンロード。' },
+        { id: 'k3', label: 'パスフレーズの再入力欄がある', expect: '一致しないと出力ボタン disabled。autocomplete=new-password。', how: '異なる文字列を入力して確認。' },
+        { id: 'k4', label: 'コピー&カット禁止が機能する', expect: 'パスフレーズ欄でコピー / カットができない。', how: 'Cmd+C / Cmd+X を試す。' },
+        { id: 'k5', label: '平文バックアップを Import できる', expect: 'ImportConflictModal で per-project に解決方法を選べる。', how: '「インポート」→ JSON 選択。' },
+        { id: 'k6', label: '暗号化バックアップを Import できる', expect: 'ImportPassphraseModal が ModalManager 先頭で出る。', how: '暗号化 JSON を読み込ませる。' },
+        { id: 'k7', label: '誤パスフレーズで失敗するが本文は変わらない', expect: 'DECRYPT_FAILURE_MESSAGE が一意。残回数が減る。', how: 'わざと違うパスフレーズで試す。' },
+        { id: 'k8', label: '5 回連続失敗でモーダルが閉じる', expect: 'DECRYPT_RETRY_EXCEEDED_TOAST 表示、pendingDecryption=null。', how: '5 回連続誤入力。' },
+        { id: 'k9', label: '30 秒タイムアウトで失敗扱い', expect: 'AbortController で timeout、retry できる。', how: '極端に遅い CPU 環境で確認（または devtools throttle）。' },
+        { id: 'k10', label: '30 日経過で警告バナー', expect: 'BackupWarningBanner 表示。Banner 起点でも export モーダルへ遷移。', how: 'IndexedDB の backupMeta.lastExportedAt を 31 日前に書き換え。' }
+      ]
+    },
+    {
+      id: 'terms',
+      title: '規約同意（M7-α）',
+      items: [
+        { id: 't1', label: '初回は規約モーダルが必須', expect: '同意するまで他のモーダルは出ない（ModalManager 先頭分岐）。', how: 'termsAcceptedAt=null 状態で確認。' },
+        { id: 't2', label: 'TERMS_VERSION_MISMATCH が再 fetch する', expect: 'サーバーの TERMS_VERSION を更新 → users/init 再 fetch、currentTermsVersion 更新。', how: 'サーバー側 termsConfig を変更してテスト。' },
+        { id: 't3', label: 'フッターに法務 3 リンクが配置されている', expect: 'Desktop / Mobile / ProjectSelection 全画面で表示。', how: '画面サイズを変えて確認。' },
+        { id: 't4', label: 'dev bypass が PROD で効かない', expect: '?skip-terms=1 が production で無効。', how: 'NODE_ENV=production の build で URL を指定。' }
+      ]
+    },
+    {
+      id: 'responsive',
+      title: 'レスポンシブ・端末別',
+      items: [
+        { id: 'r1', label: 'Mobile (320–540px) で操作できる', expect: 'App.mobile.tsx に切替、フッターに法務リンク。', how: 'DevTools の Mobile プリセット。' },
+        { id: 'r2', label: 'タッチターゲットが 44px 以上', expect: 'ボタン・チェック・リンクが指でタップ可能。', how: '実機もしくは inspector の box 確認。' },
+        { id: 'r3', label: 'Tablet (768–1023px) で 3 パネル', expect: 'パネルがスクロール内で破綻しない。', how: '横向き iPad 等で確認。' },
+        { id: 'r4', label: 'Desktop (1024px+) で 3 パネル', expect: 'リサイズハンドルが効く。', how: 'パネル境界をドラッグ。' },
+        { id: 'r5', label: 'iOS Safari は best-effort', expect: 'バックグラウンド復帰後の AbortController throttle に注意。', how: 'バックグラウンドにして 5 分後に復帰。' }
+      ]
+    },
+    {
+      id: 'errors',
+      title: 'エラー処理・回復',
+      items: [
+        { id: 'x1', label: 'ネットワーク切断時に AI 呼出が失敗する', expect: 'fetch エラー → ユーザー向け文言表示。', how: 'DevTools Network → Offline に切替。' },
+        { id: 'x2', label: '401 でサインアウト誘導', expect: 'apiClient で 401 → AuthGateErrorCode に分類、再ログイン促し。', how: '期限切れトークンで /api/ai/* を叩く。' },
+        { id: 'x3', label: '503 で transient retry が走る', expect: 'verifyIdToken transient 判定 → users/init は retryUserInit() で再試行。', how: 'Firebase Auth Emulator を停止して再開。' },
+        { id: 'x4', label: 'CSP 違反が出ない', expect: '本来許可されない CDN を読まない。本ページは jsdelivr のみ。', how: 'DevTools Console で violation 表示なしを確認。' }
+      ]
+    },
+    {
+      id: 'perf',
+      title: 'パフォーマンス・健全性',
+      items: [
+        { id: 'f1', label: '初回ロード LCP が 3 秒以内（4G想定）', expect: 'Lighthouse Performance スコア > 70。', how: 'Lighthouse モバイル測定。' },
+        { id: 'f2', label: 'IndexedDB 書込が 2 秒 debounce で抑制', expect: '連続入力でも書込が 2 秒に 1 回。', how: 'DevTools の Application → IndexedDB を観察。' },
+        { id: 'f3', label: 'beforeunload で flushSave が走る', expect: 'タブ閉じ時に直近の変更が保存される。', how: 'タイプ → 即タブを閉じる → 別タブで開いて確認。' },
+        { id: 'f4', label: 'historyTree がリロードでクリア', expect: 'undo スタックが空になる（ADR-0001 仕様）。', how: 'undo を 5 回 → リロード → undo 不可確認。' }
+      ]
+    },
+    {
+      id: 'devops',
+      title: '運用・監視',
+      items: [
+        { id: 'd1', label: '/health が 200 OK を返す', expect: 'Cloud Run health check が緑。', how: 'curl https://...run.app/health' },
+        { id: 'd2', label: '不明な /api/* が 404 JSON を返す', expect: '{ success:false, error: Not Found }', how: 'curl /api/xxx' },
+        { id: 'd3', label: 'main push で auto deploy が完走する', expect: 'GitHub Actions 緑、Cloud Run 新 revision。', how: 'main にマージ後 Actions タブ。' },
+        { id: 'd4', label: 'CSP が production で有効', expect: 'helmet の contentSecurityPolicy が effective。', how: 'DevTools Network → Response Headers の Content-Security-Policy。' },
+        { id: 'd5', label: '/dev/ ページが認証なしで開く', expect: '本ポータルがログイン不要で見られる（noindex,nofollow 付き）。', how: '匿名ウィンドウで /dev/ にアクセス。' }
+      ]
+    }
+  ];
+
+  var root = document.getElementById('checklist-root');
+  var STORAGE_KEY = 'novel-writer.dev-portal.checklist.v1';
+  var state = {};
+  try { state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {}; }
+  catch(e){ state = {}; }
+
+  function persist(){
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e){}
+  }
+
+  function totalCounts(){
+    var total = 0, done = 0;
+    CHECKLIST.forEach(function(cat){
+      cat.items.forEach(function(it){
+        total++;
+        if (state[cat.id + '/' + it.id]) done++;
+      });
+    });
+    return { total: total, done: done };
+  }
+
+  function refreshProgress(){
+    var c = totalCounts();
+    document.getElementById('cl-count').textContent = String(c.done);
+    document.getElementById('cl-total').textContent = String(c.total);
+    var pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
+    document.getElementById('cl-bar').style.width = pct + '%';
+    document.getElementById('cl-pct').textContent = pct + '%';
+    CHECKLIST.forEach(function(cat){
+      var d = 0;
+      cat.items.forEach(function(it){ if (state[cat.id + '/' + it.id]) d++; });
+      var el = document.querySelector('.cl-cat[data-cid="' + cat.id + '"] .count');
+      if (el) el.textContent = d + ' / ' + cat.items.length;
+    });
+  }
+
+  function clearChildren(node){
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  function render(){
+    clearChildren(root);
+    CHECKLIST.forEach(function(cat){
+      var cdiv = document.createElement('div');
+      cdiv.className = 'cl-cat';
+      cdiv.dataset.cid = cat.id;
+
+      var head = document.createElement('div');
+      head.className = 'cl-cat-head';
+      var headTitle = document.createElement('h4');
+      headTitle.textContent = cat.title;
+      var headCount = document.createElement('span');
+      headCount.className = 'count';
+      headCount.textContent = '0 / ' + cat.items.length;
+      head.appendChild(headTitle);
+      head.appendChild(headCount);
+
+      var body = document.createElement('div');
+      body.className = 'cl-cat-body';
+
+      cat.items.forEach(function(it){
+        var row = document.createElement('div');
+        row.className = 'cl-item';
+        var key = cat.id + '/' + it.id;
+        if (state[key]) row.classList.add('is-done');
+
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.id = 'cb-' + cat.id + '-' + it.id;
+        cb.checked = !!state[key];
+        cb.addEventListener('change', function(){
+          state[key] = cb.checked;
+          row.classList.toggle('is-done', cb.checked);
+          persist();
+          refreshProgress();
+        });
+
+        var bodyDiv = document.createElement('div');
+        bodyDiv.className = 'body';
+
+        var lbl = document.createElement('label');
+        lbl.htmlFor = cb.id;
+        lbl.textContent = it.label;
+
+        var exp = document.createElement('span');
+        exp.className = 'expect';
+        exp.textContent = '期待: ' + it.expect;
+
+        var how = document.createElement('span');
+        how.className = 'how';
+        how.textContent = '確認: ' + it.how;
+
+        bodyDiv.appendChild(lbl);
+        bodyDiv.appendChild(exp);
+        bodyDiv.appendChild(how);
+
+        row.appendChild(cb);
+        row.appendChild(bodyDiv);
+        body.appendChild(row);
+      });
+
+      head.addEventListener('click', function(ev){
+        if (ev.target && (ev.target.tagName === 'INPUT' || ev.target.tagName === 'LABEL')) return;
+        body.style.display = body.style.display === 'none' ? '' : 'none';
+      });
+
+      cdiv.appendChild(head);
+      cdiv.appendChild(body);
+      root.appendChild(cdiv);
+    });
+    refreshProgress();
+  }
+
+  document.getElementById('cl-reset').addEventListener('click', function(){
+    if (!confirm('チェック状態をすべてリセットします。よろしいですか？')) return;
+    state = {};
+    persist();
+    render();
+  });
+  document.getElementById('cl-collapse').addEventListener('click', function(){
+    document.querySelectorAll('.cl-cat-body').forEach(function(b){ b.style.display = 'none'; });
+  });
+  document.getElementById('cl-expand').addEventListener('click', function(){
+    document.querySelectorAll('.cl-cat-body').forEach(function(b){ b.style.display = ''; });
+  });
+  document.getElementById('cl-print').addEventListener('click', function(){
+    document.querySelectorAll('.cl-cat-body').forEach(function(b){ b.style.display = ''; });
+    panels.forEach(function(p){ p.classList.add('is-active'); });
+    setTimeout(function(){ window.print(); }, 200);
+  });
+
+  render();
+})();
+</script>
+
+</body>
+</html>

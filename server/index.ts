@@ -42,6 +42,10 @@ async function startServer() {
                         "'self'",
                         "'unsafe-inline'",
                         'https://aistudiocdn.com',
+                        // cdn.jsdelivr.net: /dev/ 開発者ポータルが Mermaid ESM を CDN から
+                        // 読み込むため。本番アプリ本体 (FE bundle) は jsdelivr を使わないので
+                        // 影響なし。/dev/ ページは認証ゲートなしの公開ドキュメント (M7-α 完了時点)。
+                        'https://cdn.jsdelivr.net',
                     ],
                     // fonts.googleapis.com: webfont stylesheets referenced in index.html.
                     styleSrc: [
