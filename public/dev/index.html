@@ -1281,7 +1281,7 @@ flowchart LR
 <script type="module">
   import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
   mermaid.initialize({
-    startOnLoad: true,
+    startOnLoad: false,
     theme: 'base',
     fontFamily: '"EB Garamond", "Hiragino Mincho ProN", serif',
     themeVariables: {
@@ -1313,6 +1313,30 @@ flowchart LR
     sequence: { actorMargin: 60, messageMargin: 38, mirrorActors: false },
     gantt: { fontSize: 13, sectionFontSize: 13 }
   });
+
+  // パネルが display:none の状態で mermaid.run() するとレイアウト測定が NaN になり
+  // 「Syntax error in text」フォールバックが描画される。アクティブなパネル内の
+  // 未処理ノードだけを順次レンダリングする。
+  window.__renderMermaidIn = async function(panel){
+    if (!panel) return;
+    var nodes = panel.querySelectorAll('.mermaid:not([data-processed="true"])');
+    if (!nodes.length) return;
+    try {
+      await mermaid.run({ nodes: Array.prototype.slice.call(nodes) });
+    } catch (e) {
+      console.error('mermaid.run failed', e);
+    }
+  };
+  // 初期アクティブパネルを最初に描画
+  document.addEventListener('DOMContentLoaded', function(){
+    var active = document.querySelector('section.panel.is-active');
+    if (active) window.__renderMermaidIn(active);
+  });
+  // DOMContentLoaded が既に発火済みのケース（module scriptは defer 相当）
+  if (document.readyState !== 'loading'){
+    var active0 = document.querySelector('section.panel.is-active');
+    if (active0) window.__renderMermaidIn(active0);
+  }
 </script>
 
 <script>
@@ -1329,6 +1353,11 @@ flowchart LR
     });
     if (push && history && history.replaceState){
       history.replaceState(null, '', '#' + id);
+    }
+    // 切替先パネルの未描画 mermaid を遅延レンダリング（display:block 反映後）
+    var target = document.getElementById(id);
+    if (target && typeof window.__renderMermaidIn === 'function'){
+      requestAnimationFrame(function(){ window.__renderMermaidIn(target); });
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -1586,7 +1615,11 @@ flowchart LR
   document.getElementById('cl-print').addEventListener('click', function(){
     document.querySelectorAll('.cl-cat-body').forEach(function(b){ b.style.display = ''; });
     panels.forEach(function(p){ p.classList.add('is-active'); });
-    setTimeout(function(){ window.print(); }, 200);
+    // 全パネル可視化後に未描画 mermaid をまとめて描画してから印刷
+    var renderAll = typeof window.__renderMermaidIn === 'function'
+      ? Promise.all(Array.prototype.map.call(panels, window.__renderMermaidIn))
+      : Promise.resolve();
+    renderAll.then(function(){ setTimeout(function(){ window.print(); }, 200); });
   });
 
   render();
