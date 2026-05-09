@@ -46,6 +46,11 @@ async function startServer() {
                         // 読み込むため。本番アプリ本体 (FE bundle) は jsdelivr を使わないので
                         // 影響なし。/dev/ ページは認証ゲートなしの公開ドキュメント (M7-α 完了時点)。
                         'https://cdn.jsdelivr.net',
+                        // apis.google.com: Firebase Auth signInWithPopup が gapi iframe loader
+                        // (`/js/api.js`) を親ページの script として読み込むため必要。frameSrc の
+                        // accounts.google.com / *.firebaseapp.com とセットで初めて popup フローが
+                        // 完成する (auth/internal-error 回避)。
+                        'https://apis.google.com',
                     ],
                     // fonts.googleapis.com: webfont stylesheets referenced in index.html.
                     styleSrc: [
