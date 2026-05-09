@@ -9,6 +9,7 @@ import { mountAiRoutes } from './aiRoutes';
 import { logger, serializeError } from './utils/logger';
 
 import usersRoutes from './routes/users';
+import diagRoutes from './routes/diag';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -119,6 +120,9 @@ async function startServer() {
     mountAiRoutes(app, { rateLimit: aiLimiter });
 
     app.use('/api/users', usersRoutes);
+
+    // 認証フロー診断ログ (no-auth, rate-limited, 1KB cap)。詳細: server/routes/diag.ts
+    app.use('/api/diag', diagRoutes);
 
     // Any unmatched /api/* path must 404 instead of falling through to the
     // SPA fallback (dev: Vite middleware / prod: index.html static). Without
