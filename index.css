@@ -457,7 +457,12 @@ kbd {
 .btn-invert-orange { background-color: #ea580c; color: white; }
 .btn-invert-orange:hover { background-color: white; color: #ea580c; }
 
-@media (max-width: 1200px) {
+/* Header の検索/表示/モード toggle のテキストラベルを viewport 幅で抑制する。
+   3 panel layout (ActivityBar 56 + LeftPanel 280 + Main + RightPanel 400 ≈ 1280) で
+   Main column 内 Header の右側群 (検索/表示/モード/AuthButton/RightSidebar toggle) が
+   AuthButton (アバター + email 最大 218px) を含むと、1280-1400 viewport で overflow し
+   AuthButton が見切れるため。1400+ では label 表示でも余裕がある。 */
+@media (max-width: 1400px) {
   .hide-on-small {
     display: none;
   }
