@@ -27,7 +27,7 @@ export const BackupWarningBanner: React.FC = () => {
                 type="button"
                 onClick={() => openModal('exportEncrypt')}
                 disabled={isExporting}
-                className="flex items-center gap-1 rounded bg-yellow-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-yellow-500 disabled:opacity-50 btn-pressable"
+                className="flex flex-shrink-0 items-center gap-1 whitespace-nowrap rounded bg-yellow-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-yellow-500 disabled:opacity-50 btn-pressable"
             >
                 <Icons.DownloadIcon className="h-3 w-3" />
                 {isExporting ? 'エクスポート中…' : '今すぐエクスポート'}

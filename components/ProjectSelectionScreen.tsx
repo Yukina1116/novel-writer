@@ -46,7 +46,7 @@ export function ProjectSelectionScreen({ projects, onCreateProject, onDeleteProj
                 <div className="bg-gray-800/50 p-6 rounded-lg shadow-lg mb-8">
                     <div className="flex justify-between items-center mb-4">
                         <h2 className="text-xl font-semibold">新しい物語を始める</h2>
-                        <button onClick={() => importInputRef.current.click()} className="flex items-center px-4 py-2 text-sm rounded-md btn-pressable btn-invert-green"><Icons.DownloadIcon />プロジェクトをインポート</button>
+                        <button onClick={() => importInputRef.current.click()} className="flex flex-shrink-0 items-center whitespace-nowrap px-4 py-2 text-sm rounded-md btn-pressable btn-invert-green"><Icons.DownloadIcon />プロジェクトをインポート</button>
                         <input type="file" ref={importInputRef} onChange={onImportProject} accept=".json" className="hidden"/>
                     </div>
                     <form onSubmit={handleCreate}>
@@ -70,7 +70,7 @@ export function ProjectSelectionScreen({ projects, onCreateProject, onDeleteProj
                                 </label>
                                 <input id="new-project-name" type="text" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="タイトル..." className="w-full bg-gray-900 border border-gray-600 rounded-md px-4 py-2 text-sm"/>
                             </div>
-                            <button type="submit" className="px-6 py-2 h-[42px] rounded-md font-semibold disabled:bg-gray-500 btn-pressable btn-invert-indigo" disabled={!newProjectName.trim()}>作成</button>
+                            <button type="submit" className="flex-shrink-0 whitespace-nowrap px-6 py-2 h-[42px] rounded-md font-semibold disabled:bg-gray-500 btn-pressable btn-invert-indigo" disabled={!newProjectName.trim()}>作成</button>
                         </div>
                     </form>
                 </div>
