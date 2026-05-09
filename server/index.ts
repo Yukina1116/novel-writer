@@ -79,6 +79,14 @@ async function startServer() {
                 },
             },
         crossOriginEmbedderPolicy: false,
+        // Firebase Auth signInWithPopup は popup → 親への window.opener 経由で
+        // 認証結果を postMessage する。helmet のデフォルト 'same-origin' は
+        // cross-origin popup から window.opener 参照を遮断するため、popup が
+        // 認証完了しても親が結果を受け取れず Firebase が auth/popup-closed-by-user と
+        // 誤検知する (PR #89 の diag log で 10 秒タイムアウト + reject を観測)。
+        // 'same-origin-allow-popups' は **自分が開いた popup** とのみ通信を許可し、
+        // 自分を開いた他オリジンとは引き続き隔離する (XS-Leaks の主要保護を維持)。
+        crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
     }));
 
     // Same-origin requests (Origin host === request host) are always allowed:
