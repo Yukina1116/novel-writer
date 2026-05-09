@@ -1,0 +1,119 @@
+/* 法務文書 (利用規約 / プライバシーポリシー / 特定商取引法) の self-host 配信用スタイル。
+   /legal/{terms-of-service,privacy-policy,tokushou}.html から読み込まれる。
+   小説らいたー本体 FE bundle とは独立 (本ファイル + legal.js のみで自己完結)。 */
+
+:root {
+    --bg: #ffffff;
+    --fg: #1b2535;
+    --fg-soft: #3a455a;
+    --rule: #d8caa9;
+    --accent: #9a3520;
+    --warn-bg: #fff7e6;
+    --warn-border: #b8841a;
+    --warn-fg: #6b4d05;
+    --code-bg: #f3ecdb;
+    --link: #2a5762;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+        "Yu Gothic", "Meiryo", sans-serif;
+    line-height: 1.7;
+    font-size: 16px;
+}
+
+.legal-shell {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 24px 20px 80px;
+}
+
+.legal-header {
+    padding: 16px 0 24px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.legal-header a.back-link {
+    color: var(--link);
+    text-decoration: none;
+    font-size: 14px;
+}
+.legal-header a.back-link:hover { text-decoration: underline; }
+
+.legal-content h1 {
+    font-size: 24px;
+    margin: 0 0 16px;
+    line-height: 1.4;
+}
+.legal-content h2 {
+    font-size: 19px;
+    margin: 32px 0 12px;
+    padding-top: 8px;
+    border-top: 1px solid var(--rule);
+}
+.legal-content h3 {
+    font-size: 17px;
+    margin: 20px 0 8px;
+    color: var(--fg-soft);
+}
+.legal-content p { margin: 0 0 12px; }
+.legal-content ul, .legal-content ol { padding-left: 1.4em; margin: 0 0 12px; }
+.legal-content li { margin-bottom: 4px; }
+.legal-content a { color: var(--link); }
+.legal-content code {
+    background: var(--code-bg);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.92em;
+}
+.legal-content pre {
+    background: var(--code-bg);
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+}
+.legal-content blockquote {
+    margin: 12px 0;
+    padding: 10px 14px;
+    background: var(--warn-bg);
+    border-left: 4px solid var(--warn-border);
+    color: var(--warn-fg);
+    border-radius: 4px;
+}
+.legal-content blockquote p:last-child { margin-bottom: 0; }
+.legal-content hr {
+    border: 0;
+    border-top: 1px solid var(--rule);
+    margin: 24px 0;
+}
+
+.legal-loading, .legal-error {
+    color: var(--fg-soft);
+    text-align: center;
+    padding: 32px 0;
+}
+.legal-error { color: var(--accent); }
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #1b2230;
+        --fg: #e7eaf0;
+        --fg-soft: #a6adbb;
+        --rule: #353f55;
+        --warn-bg: #3a2f15;
+        --warn-border: #c2954a;
+        --warn-fg: #f0d59c;
+        --code-bg: #2a3243;
+        --link: #79b8c7;
+    }
+}
