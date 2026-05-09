@@ -11,7 +11,6 @@ import {
     isKnownAcceptTerms409Code,
     type KnownAcceptTerms409Code,
 } from '../shared/termsCodes';
-import { postAuthDiag } from '../utils/authDiag';
 
 export type AuthStatus = 'initializing' | 'unauthenticated' | 'authenticated';
 
@@ -340,10 +339,6 @@ export const createAuthSlice = (set, get): AuthSlice => ({
         const unsubscribe = onAuthStateChanged(
             auth,
             (user) => {
-                postAuthDiag('auth:state-changed', {
-                    hasUser: !!user,
-                    uid: user?.uid,
-                });
                 set({
                     currentUser: toCurrentUser(user),
                     authStatus: user ? 'authenticated' : 'unauthenticated',
@@ -373,9 +368,6 @@ export const createAuthSlice = (set, get): AuthSlice => ({
                 })();
             },
             (error) => {
-                const code = (error as { code?: string }).code;
-                const errMsg = error instanceof Error ? error.message : String(error);
-                postAuthDiag('auth:state-error', { code, message: errMsg });
                 console.error('onAuthStateChanged error:', error);
                 const message = reportAuthError(get, '認証状態の取得に失敗しました', error);
                 set({ currentUser: null, authStatus: 'unauthenticated', authError: message });
@@ -385,42 +377,23 @@ export const createAuthSlice = (set, get): AuthSlice => ({
     },
 
     signInWithGoogle: async () => {
-        const startTs = Date.now();
-        postAuthDiag('signin:start');
         try {
             set({ authError: null });
             const provider = new GoogleAuthProvider();
             const result = await signInWithPopup(auth, provider);
-            postAuthDiag('signin:popup-resolve', {
-                uid: result.user.uid,
-                providerId: result.providerId ?? undefined,
-                durationMs: Date.now() - startTs,
-            });
             // currentUser update flows through onAuthStateChanged listener.
 
             // Server-side transaction creates/refreshes users/{uid} metadata
             // and preserves createdAt across re-logins. transient (503) は
             // needsUserInit=true で残し、AI 呼出時に retry させる。permanent
             // (4xx) はトーストのみで残す（再 init しても直らないため）。
-            postAuthDiag('signin:users-init-start', { uid: result.user.uid });
             try {
                 const termsState = await callUsersInit(result.user);
-                postAuthDiag('signin:users-init-success', {
-                    uid: result.user.uid,
-                    hasCurrentTermsVersion: !!termsState?.currentTermsVersion,
-                });
                 set({ needsUserInit: false });
                 if (termsState) {
                     applyTermsState(set, termsState);
                 }
             } catch (initError: unknown) {
-                const status = isUserInitError(initError) ? initError.status : undefined;
-                const errMsg = initError instanceof Error ? initError.message : String(initError);
-                postAuthDiag('signin:users-init-error', {
-                    uid: result.user.uid,
-                    status,
-                    message: errMsg,
-                });
                 console.error('users/init failed:', initError);
                 reportAuthError(get, 'ユーザー初期化に失敗しました', initError);
                 // type guard 経由で UserInitError の status を読む。foreign error
@@ -431,16 +404,10 @@ export const createAuthSlice = (set, get): AuthSlice => ({
                 }
             }
         } catch (error: unknown) {
-            const code = (error as { code?: string }).code;
-            const errMsg = error instanceof Error ? error.message : String(error);
-            postAuthDiag('signin:popup-reject', {
-                code,
-                message: errMsg,
-                durationMs: Date.now() - startTs,
-            });
             // User-intent cancels (closed popup, double-clicked sign-in) are
             // not errors — silence them so the toast stays for actual problems
             // (network failure, popup blocker, provider config).
+            const code = (error as { code?: string }).code;
             if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
                 return;
             }
