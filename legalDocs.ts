@@ -1,15 +1,18 @@
-// 暫定で GitHub repo md 直 link、本番公開時 (M7-β) に self-hosted /legal/*.html へ置換予定。
-// 置換時は url 値のみ書き換え、参照側は無変更で済む。
+// self-host された静的 HTML ページ (public/legal/*.html) を指す。
+// md 本体は public/legal/*.md に配置され、legal.js が CDN 経由 marked + DOMPurify で
+// fetch + sanitize + render する。LEGAL_REVIEW_REQUIRED 警告は md 内に保持される。
+//
+// docs/legal/*.md は履歴用に残置 (handoff 文書等の参照を壊さない)。
+// 編集時は **public/legal/*.md** を正本とし、必要に応じて docs/legal にも反映する
+// (運用ルール: CLAUDE.md「## 法務文書」項を参照)。
 
 export interface LegalDoc {
     label: string;
     url: string;
 }
 
-const REPO_BASE = 'https://github.com/Yukina1116/novel-writer/blob/main/docs/legal';
-
 export const LEGAL_DOCS: ReadonlyArray<LegalDoc> = [
-    { label: '利用規約', url: `${REPO_BASE}/terms-of-service.md` },
-    { label: 'プライバシーポリシー', url: `${REPO_BASE}/privacy-policy.md` },
-    { label: '特定商取引法に基づく表記', url: `${REPO_BASE}/tokushou.md` },
+    { label: '利用規約', url: '/legal/terms-of-service.html' },
+    { label: 'プライバシーポリシー', url: '/legal/privacy-policy.html' },
+    { label: '特定商取引法に基づく表記', url: '/legal/tokushou.html' },
 ];
