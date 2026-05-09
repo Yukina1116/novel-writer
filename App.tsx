@@ -89,17 +89,21 @@ export default function App() {
     const isSwapped = displaySettings?.swapSidebars ?? false;
 
     // Mobile Detection with Threshold Stability
-    // 1024px 未満は AppMobile レイアウト (1 panel) にフォールバック。3 panel の
-    // ActivityBar + LeftPanel + Main + RightPanel は最小幅 ~1024px ないと Main が
-    // ほぼ zero-width に潰れるため、タブレット (iPad portrait 768 / 古い iPad 1024)
-    // も mobile レイアウトに倒す。1024 ↔ 1100 の 76px ヒステリシスで境界の chatter を防ぐ。
+    // 1280px 未満は AppMobile レイアウト (1 panel) にフォールバック。3 panel
+    // (ActivityBar 56 + LeftPanel ~280 + Main 必要 400+ + RightPanel ~400) の合計が
+    // ~1136px、padding/gap 込みで実用には ~1280px が必要。1024 で試した結果、
+    // Main editor が 150px 程度に潰れて backup banner が縦書き化する致命的な崩れが
+    // 確認できたため (PR #94 で 1024/1100 に上げたが不十分だった)。
+    // タブレット (iPad portrait 810 / iPad Air landscape 1180 / iPad Pro 13-inch portrait 1024)
+    // は全て mobile 倒し、13-inch ノート PC (MacBook Air 1280x800) からデスクトップ。
+    // 1280 ↔ 1340 の 60px ヒステリシスで境界の chatter を防ぐ。
     const [isMobile, setIsMobile] = useState(false);
     useEffect(() => {
         const checkMobile = () => {
             const width = window.innerWidth;
             setIsMobile(prev => {
-                if (prev) return width < 1100; // mobile 維持 (上端): 1100px 未満は mobile
-                return width < 1024; // mobile 切替 (下端): 1024px 未満は mobile
+                if (prev) return width < 1340; // mobile 維持 (上端): 1340px 未満は mobile
+                return width < 1280; // mobile 切替 (下端): 1280px 未満は mobile
             });
         };
         checkMobile();
