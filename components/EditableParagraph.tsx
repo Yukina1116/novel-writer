@@ -43,7 +43,9 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
 
-    // 選択範囲を保持するためのRef
+    // Cached textarea selection updated by `syncSelection` on focus/select/keyup/mouseup/change.
+    // `applyMarkdown` reads selection directly from `textareaRef` (race fix, PR #108) and does
+    // not depend on this ref; kept here so future imperative reads have a single accessor.
     const selectionRef = useRef({ start: 0, end: 0 });
 
     const aiSettings = useStore(state => state.allProjectsData[state.activeProjectId]?.aiSettings);
@@ -209,10 +211,14 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
             setTimeout(() => {
                 if (!textareaRef.current) return;
                 textareaRef.current.focus({ preventScroll: true });
-                textareaRef.current.setSelectionRange(result.newSelectionStart, result.newSelectionEnd);
+                // Clear the document selection BEFORE applying the textarea selection.
+                // Some browsers tie textarea selection to window.getSelection(); calling
+                // removeAllRanges() after setSelectionRange() resets the cursor to [0, 0]
+                // (Codex review on PR #108).
                 if (options.shouldClearSelection) {
                     window.getSelection()?.removeAllRanges();
                 }
+                textareaRef.current.setSelectionRange(result.newSelectionStart, result.newSelectionEnd);
                 syncSelection();
             }, 0);
 
