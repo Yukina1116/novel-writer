@@ -80,7 +80,15 @@ export interface BackupSlice {
     isImporting: boolean;
 
     initBackupState: () => Promise<void>;
-    exportAllData: (opts?: { encrypt?: { passphrase: string }; signal?: AbortSignal }) => Promise<void>;
+    // `projectIds` (issue #104): when provided, export only the listed projects
+    // and drop `tutorialState` / `analysisHistory` (which are inherently
+    // all-data side stores). When omitted, the export contains the full
+    // snapshot — preserving the M6 PR-D contract.
+    exportAllData: (opts?: {
+        encrypt?: { passphrase: string };
+        signal?: AbortSignal;
+        projectIds?: string[];
+    }) => Promise<void>;
     prepareImport: (raw: string) => Promise<PrepareImportResult>;
     setImportResolution: (incomingId: string, resolution: ImportConflictResolution) => void;
     cancelImport: () => void;
@@ -169,10 +177,30 @@ export const createBackupSlice = (set, get): BackupSlice => ({
         set({ isExporting: true });
         try {
             const snapshot = await readSnapshot();
+
+            // Scope filter (issue #104). When `projectIds` is provided we
+            // export only those projects, and the side stores (tutorial
+            // progress / analysis history) are intentionally NOT included —
+            // both are user-global state that does not belong in a
+            // per-project export. The full-scope path is unchanged.
+            const scope: 'full' | 'subset' = opts?.projectIds ? 'subset' : 'full';
+            const scopedProjects = scope === 'subset'
+                ? snapshot.projects.filter(p => opts!.projectIds!.includes(p.id))
+                : snapshot.projects;
+            // Refuse empty subset early so an accidental `projectIds: []`
+            // does not silently produce a backup with zero projects.
+            if (scope === 'subset' && scopedProjects.length === 0) {
+                (get() as WithToast).showToast?.(
+                    'エクスポート対象のプロジェクトが見つかりませんでした。',
+                    'error',
+                );
+                return;
+            }
+
             const backup: BackupV1 = buildBackupV1({
-                projects: snapshot.projects,
-                tutorialState: snapshot.tutorialState,
-                analysisHistory: snapshot.analysisHistory,
+                projects: scopedProjects,
+                tutorialState: scope === 'full' ? snapshot.tutorialState : {},
+                analysisHistory: scope === 'full' ? snapshot.analysisHistory : [],
                 appVersion: APP_VERSION,
             });
 
@@ -210,12 +238,27 @@ export const createBackupSlice = (set, get): BackupSlice => ({
             // AC-5: 暗号化経路は専用 toast「暗号化バックアップを作成しました」を表示
             // (平文 export と区別、ユーザーに encrypt 成功を伝える)。文言契約は slice 側に
             // 集約 (state-diagram.md エラー文言契約と同じ所在)。
-            const successMsg = encryptOpt
-                ? `暗号化バックアップを作成しました（${count} 件）`
-                : `${count} 件のプロジェクトをエクスポートしました`;
+            // Issue #104: subset scope は別文言。full scope の文言は M6 PR-D contract で
+            // pinned されているため変更しない。
+            let successMsg: string;
+            if (scope === 'subset') {
+                successMsg = encryptOpt
+                    ? `選択したプロジェクトを暗号化してエクスポートしました（${count} 件）`
+                    : `選択したプロジェクトをエクスポートしました（${count} 件）`;
+            } else {
+                successMsg = encryptOpt
+                    ? `暗号化バックアップを作成しました（${count} 件）`
+                    : `${count} 件のプロジェクトをエクスポートしました`;
+            }
             try {
-                await saveLastExportedAt(backup.exportedAt);
-                set({ lastExportedAt: backup.exportedAt, backupMetaStatus: 'loaded' });
+                // `lastExportedAt` represents the most-recent FULL backup. A
+                // subset export does not satisfy the "I have a backup" promise
+                // for the rest of the data, so we deliberately do not move
+                // the banner timestamp forward in that case.
+                if (scope === 'full') {
+                    await saveLastExportedAt(backup.exportedAt);
+                    set({ lastExportedAt: backup.exportedAt, backupMetaStatus: 'loaded' });
+                }
                 (get() as WithToast).showToast?.(successMsg, 'success');
             } catch (e: unknown) {
                 console.error('saveLastExportedAt failed (download succeeded):', e);

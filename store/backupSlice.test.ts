@@ -142,6 +142,85 @@ describe('exportAllData (AC-1, AC-6)', () => {
     });
 });
 
+describe('exportAllData scope (#104)', () => {
+    // Captures the latest Blob payload (the JSON string handed to triggerDownload).
+    let blobParts: any[] = [];
+
+    beforeEach(() => {
+        blobParts = [];
+        (globalThis as any).Blob = class {
+            constructor(parts: any[]) {
+                blobParts = parts;
+            }
+        } as any;
+    });
+
+    const lastBackup = () => JSON.parse(blobParts[0]) as {
+        projects: { id: string }[];
+        tutorialState: Record<string, boolean>;
+        analysisHistory: unknown[];
+    };
+
+    it('full scope (projectIds undefined): includes all projects + tutorialState + analysisHistory', async () => {
+        readSnapshot.mockResolvedValue({
+            projects: [makeProject({ id: 'p-1' }), makeProject({ id: 'p-2' })],
+            tutorialState: { hasCompletedGlobalTutorial: true },
+            analysisHistory: [{ characters: { match: [], similar: [], new: [], extractedDetails: [] }, worldContext: { worldKeywords: [], genre: 'g', tone: 't' }, worldTerms: { match: [], similar: [], new: [] }, dialogues: [], notes: [] }],
+        });
+        const fake = createFakeStore();
+        await fake.state.exportAllData();
+        const b = lastBackup();
+        expect(b.projects.map(p => p.id)).toEqual(['p-1', 'p-2']);
+        expect(b.tutorialState.hasCompletedGlobalTutorial).toBe(true);
+        expect(b.analysisHistory).toHaveLength(1);
+        // Full scope advances the banner timestamp.
+        expect(saveLastExportedAt).toHaveBeenCalledOnce();
+        expect(fake.state.lastExportedAt).toBeTruthy();
+    });
+
+    it('subset scope (projectIds: ["p-2"]): includes only p-2, drops tutorialState + analysisHistory', async () => {
+        readSnapshot.mockResolvedValue({
+            projects: [makeProject({ id: 'p-1' }), makeProject({ id: 'p-2', name: 'Two' })],
+            tutorialState: { hasCompletedGlobalTutorial: true },
+            analysisHistory: [{ characters: { match: [], similar: [], new: [], extractedDetails: [] }, worldContext: { worldKeywords: [], genre: 'g', tone: 't' }, worldTerms: { match: [], similar: [], new: [] }, dialogues: [], notes: [] }],
+        });
+        const fake = createFakeStore();
+        await fake.state.exportAllData({ projectIds: ['p-2'] });
+        const b = lastBackup();
+        expect(b.projects.map(p => p.id)).toEqual(['p-2']);
+        expect(b.tutorialState).toEqual({});
+        expect(b.analysisHistory).toEqual([]);
+    });
+
+    it('subset scope does NOT advance lastExportedAt (banner stays based on full backup)', async () => {
+        readSnapshot.mockResolvedValue({
+            projects: [makeProject({ id: 'p-1' })],
+            tutorialState: {},
+            analysisHistory: [],
+        });
+        const fake = createFakeStore();
+        await fake.state.exportAllData({ projectIds: ['p-1'] });
+        expect(saveLastExportedAt).not.toHaveBeenCalled();
+        expect(fake.state.lastExportedAt).toBeNull();
+    });
+
+    it('subset scope with no matching id: aborts with error toast and no download', async () => {
+        readSnapshot.mockResolvedValue({
+            projects: [makeProject({ id: 'p-1' })],
+            tutorialState: {},
+            analysisHistory: [],
+        });
+        const fake = createFakeStore();
+        await fake.state.exportAllData({ projectIds: ['nonexistent'] });
+        expect(saveLastExportedAt).not.toHaveBeenCalled();
+        expect(blobParts).toEqual([]);
+        const toast = fake.state.showToast as any;
+        const calls = toast.mock.calls as any[][];
+        const lastCall = calls[calls.length - 1];
+        expect(lastCall[1]).toBe('error');
+    });
+});
+
 describe('prepareImport / executeImport (AC-3, AC-5)', () => {
     it('detects conflicts against existing IndexedDB ids', async () => {
         readSnapshot.mockResolvedValue({
