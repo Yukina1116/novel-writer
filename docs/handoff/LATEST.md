@@ -54,7 +54,7 @@
 | `/review-pr` 6 並列 (code/test/error/type/comment + 略 simplify) | ✅ Critical 0 / Important 0、low-cost 4 件適用 |
 | Playwright 実機検証 mobile 375px + desktop 1440px | ✅ AC-1〜AC-5 全達成 |
 
-## 起票 Issue (2 件、本セッションで発見、次セッション着手候補)
+## 起票 Issue (3 件、本セッションで発見、次セッション着手候補)
 
 ### #101 [P1, bug + enhancement] ショートカット ⌘+Shift+C 重複 + 全網羅調査と直感的再割当
 
@@ -68,6 +68,14 @@ PR #100 検証中、ツールチップで `⌘+Shift+C` が「文字色を適用
 
 `#101` と `#102` は両方 `components/EditableParagraph.tsx` の `applyMarkdown` を touch するため、修正順序の依存あり (#102 で signature 変更 → #101 で C 撤去 が自然)
 
+### #104 [P2, enhancement] 全データバックアップの配置 + 粒度の UX 改善
+
+ユーザー指摘:
+1. 「全データバックアップ」セクションが個別プロジェクト設定画面 (SettingsPanel) に同居 → コンテキストミスマッチ
+2. M6 PR-D で暗号化導入したが粒度は「全データ一括」のみ、個別 / 複数選択 export 経路が欠如
+
+提案: **A-1** (プロジェクト一覧画面に「データ管理」セクション新設) + **B-1** (`exportAllData(opts)` に `projectIds?: string[]` 追加) の組合せ。BackupV1 schema は `projects: Project[]` 配列なので技術的に小規模変更で実現可能
+
 ## 残課題 (本セッション外)
 
 1. **法務確認 (継続)**: 顧問弁護士確認 → md 文言確定 + LEGAL_REVIEW_REQUIRED + `<!-- TODO -->` 一斉削除 PR (M7-β)
@@ -79,10 +87,11 @@ PR #100 検証中、ツールチップで `⌘+Shift+C` が「文字色を適用
 ## 次セッション開始時の状態
 
 - ブランチ: `main` clean (`4712f61` = PR #100 マージ後)
-- Open Issue: 3 件
+- Open Issue: 4 件
   - #49 [M4 follow-up] PR #48 持越 5 件（monitor、変化なし）
   - **#101 [P1] ショートカット ⌘+Shift+C 重複**（本セッション起票）
   - **#102 [P2] マークダウン placeholder 改善**（本セッション起票）
+  - **#104 [P2] 全データバックアップの配置 + 粒度 UX 改善**（本セッション起票）
 - 自動テスト: vitest **445 / 445 PASS** (前 434 → +11: MobileAuthSection.test.ts 4 + Header.bentomenu.test.ts 5 + LeftPanel.mount.test.ts 2)
 - 型チェック: `tsc --noEmit` 0 errors
 - CI/CD: PR #100 反映の Cloud Run デプロイ完了 (run 25978923192, 3m00s)
@@ -125,6 +134,11 @@ H ボタンの両端 # 挿入 (Issue #98 で修正) を発見した流れで、p
 ## Issue Net 変化
 
 - Close 数: 1 件 (#98)
-- 起票数: 2 件 (#101, #102)
-- Net: **-1 件**
-- 備考: Net マイナスだが、**両起票ともユーザー明示指示** (CLAUDE.md triage 基準 #5 該当)。#101 は PR #100 検証中の重複発見、#102 はユーザーが PR マージ承認の流れで追加指摘した UX 課題。`/review-pr` agent の rating 5-6 提案を機械的に Issue 化したものは含まれていない (低 rating 提案はすべて「不採用」として PR 内で言語化済み)。**過剰起票ではなく、ユーザー駆動の新規課題発見**として記録
+- 起票数: 3 件 (#101, #102, #104)
+- Net: **-2 件**
+- 備考: Net マイナスだが、**全 3 起票がユーザー明示指示** (CLAUDE.md triage 基準 #5 該当)。
+  - #101: PR #100 検証中、ツールチップで ⌘+Shift+C 重複を発見 → ユーザーが「issue化対応」と指示
+  - #102: PR #100 マージ承認の流れで、ユーザーが追加で UX 課題を指摘
+  - #104: handoff 締めの段階で、ユーザーが「全データバックアップ」セクションの違和感を指摘
+  - `/review-pr` agent の rating 5-6 提案を機械的に Issue 化したものは**含まれていない** (低 rating 提案はすべて「不採用」として PR 内で言語化済み)
+- **過剰起票ではなく、ユーザー駆動の新規課題発見**として記録。次セッションで #101/#102/#104 着手で Net 改善見込み
