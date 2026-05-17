@@ -7,6 +7,7 @@ import { renderMarkdown } from '../utils/sanitizeHtml';
 import * as Icons from '../icons';
 import { useStore } from '../store/index';
 import { Tooltip } from './Tooltip';
+import { applyMarkdown as applyMarkdownPure } from './applyMarkdown';
 
 // 執筆の世界観に合うプリセットカラー
 const PRESET_COLORS = [
@@ -42,7 +43,9 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
 
-    // 選択範囲を保持するためのRef
+    // Cached textarea selection updated by `syncSelection` on focus/select/keyup/mouseup/change.
+    // `applyMarkdown` reads selection directly from `textareaRef` (race fix, PR #108) and does
+    // not depend on this ref; kept here so future imperative reads have a single accessor.
     const selectionRef = useRef({ start: 0, end: 0 });
 
     const aiSettings = useStore(state => state.allProjectsData[state.activeProjectId]?.aiSettings);
@@ -176,42 +179,50 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
                 case 'u': e.preventDefault(); applyMarkdown('__'); break;
                 case 'h': e.preventDefault(); applyMarkdown('# ', ''); break;
                 case 'r': e.preventDefault(); applyMarkdown('{', '|ふりがな}'); break;
-                case 'c': if(e.shiftKey) { e.preventDefault(); applyMarkdown(`<c:${brushColor}>`, '</c>', 'テキスト', true); } break;
+                case 'c': if(e.shiftKey) { e.preventDefault(); applyMarkdown(`<c:${brushColor}>`, '</c>', { placeholder: 'テキスト', shouldClearSelection: true }); } break;
                 default: break;
             }
         }
     };
     
-    const applyMarkdown = (prefix: string, suffix: string = prefix, placeholder: string = 'テキスト', shouldClearSelection: boolean = false) => {
+    const applyMarkdown = (
+        prefix: string,
+        suffix: string = prefix,
+        options: { placeholder?: string; shouldClearSelection?: boolean } = {}
+    ) => {
         if (!textareaRef.current) return;
-        
-        // Refから保存済みの選択範囲を取得
-        const { start, end } = selectionRef.current;
-        
+
+        // Read selection directly from the textarea to avoid stale `selectionRef`
+        // when keyboard shortcuts fire before `onSelect` has propagated (issue #102).
+        const selectionStart = textareaRef.current.selectionStart;
+        const selectionEnd = textareaRef.current.selectionEnd;
+
         setEditText(prev => {
-            const selectedText = prev.substring(start, end);
-            const newText = selectedText || placeholder;
-            const replacement = `${prefix}${newText}${suffix}`;
-            const newEditText = prev.substring(0, start) + replacement + prev.substring(end);
-            
-            // ステート反映後のカーソル制御
+            const result = applyMarkdownPure({
+                text: prev,
+                selectionStart,
+                selectionEnd,
+                prefix,
+                suffix,
+                placeholder: options.placeholder,
+                shouldClearSelection: options.shouldClearSelection,
+            });
+
             setTimeout(() => {
                 if (!textareaRef.current) return;
                 textareaRef.current.focus({ preventScroll: true });
-                
-                if (shouldClearSelection) {
-                    const newPos = start + replacement.length;
-                    textareaRef.current.setSelectionRange(newPos, newPos);
+                // Clear the document selection BEFORE applying the textarea selection.
+                // Some browsers tie textarea selection to window.getSelection(); calling
+                // removeAllRanges() after setSelectionRange() resets the cursor to [0, 0]
+                // (Codex review on PR #108).
+                if (options.shouldClearSelection) {
                     window.getSelection()?.removeAllRanges();
-                } else if (selectedText) {
-                    textareaRef.current.setSelectionRange(start + prefix.length, end + prefix.length);
-                } else {
-                    textareaRef.current.setSelectionRange(start + prefix.length, start + prefix.length + placeholder.length);
                 }
+                textareaRef.current.setSelectionRange(result.newSelectionStart, result.newSelectionEnd);
                 syncSelection();
             }, 0);
 
-            return newEditText;
+            return result.newText;
         });
     };
 
@@ -249,9 +260,9 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
                                         <button 
                                             onMouseDown={preventFocusLoss}
                                             onClick={() => {
-                                                applyMarkdown(`<c:${brushColor}>`, '</c>', 'テキスト', true);
+                                                applyMarkdown(`<c:${brushColor}>`, '</c>', { placeholder: 'テキスト', shouldClearSelection: true });
                                                 setIsApplyPulseActive(false);
-                                            }} 
+                                            }}
                                             className={`p-1.5 rounded hover:bg-gray-600 transition-all duration-300 flex items-center justify-center ${isApplyPulseActive ? 'animate-pulse-prompt' : ''}`}
                                             style={{ color: brushColor }}
                                         >
@@ -294,7 +305,7 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
                                                     onMouseDown={preventFocusLoss}
                                                     onClick={() => {
                                                         setBrushColor(color);
-                                                        applyMarkdown(`<c:${color}>`, '</c>', 'テキスト', true);
+                                                        applyMarkdown(`<c:${color}>`, '</c>', { placeholder: 'テキスト', shouldClearSelection: true });
                                                         setIsColorPaletteOpen(false);
                                                         setIsApplyPulseActive(false);
                                                     }}
@@ -315,7 +326,7 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
                                                         onMouseDown={preventFocusLoss}
                                                         onClick={() => {
                                                             setBrushColor(char.themeColor!);
-                                                            applyMarkdown(`<c:${char.themeColor}>`, '</c>', 'テキスト', true);
+                                                            applyMarkdown(`<c:${char.themeColor}>`, '</c>', { placeholder: 'テキスト', shouldClearSelection: true });
                                                             setIsColorPaletteOpen(false);
                                                             setIsApplyPulseActive(false);
                                                         }}
