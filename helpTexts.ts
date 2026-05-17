@@ -39,13 +39,13 @@ export const helpTexts: Record<string, Record<UserMode, HelpContent>> = {
     },
     ruby: {
         simple: { title: 'ふりがな', desc: '漢字の上に読みがなをつけます。' },
-        standard: { title: 'ルビを振る', desc: '選択範囲にふりがなを設定。', shortcut: 'R' },
-        pro: { title: 'ルビ構文の挿入', desc: '{漢字|よみ} 形式を挿入。', shortcut: 'R', tech: 'ruby要素として描画' }
+        standard: { title: 'ルビを振る', desc: '選択範囲にふりがなを設定。' },
+        pro: { title: 'ルビ構文の挿入', desc: '{漢字|よみ} 形式を挿入。', tech: 'ruby要素として描画' }
     },
     palette: {
         simple: { title: '色をぬる', desc: '文字に色をつけます。' },
-        standard: { title: '文字色を適用', desc: '選んでいるブラシの色で塗ります。', shortcut: 'Shift+C' },
-        pro: { title: 'カラータグの挿入', desc: '独自拡張タグ (<c:#hex>) を挿入。', shortcut: 'Shift+C', tech: 'Inline Style Injection' }
+        standard: { title: '文字色を適用', desc: '選んでいるブラシの色で塗ります。' },
+        pro: { title: 'カラータグの挿入', desc: '独自拡張タグ (<c:#hex>) を挿入。', tech: 'Inline Style Injection' }
     },
     palette_select: {
         simple: { title: '色をえらぶ', desc: 'ぬる色を変えます。' },
@@ -199,8 +199,8 @@ export const helpTexts: Record<string, Record<UserMode, HelpContent>> = {
     },
     plot_plus: {
         simple: { title: 'プロット追加', desc: '話を足します。' },
-        standard: { title: '新規カード作成', desc: 'プロットを追加。', shortcut: 'Shift+P' },
-        pro: { title: 'New Plot Card', desc: 'Ctrl+Shift+P', shortcut: 'Shift+P' }
+        standard: { title: '新規カード作成', desc: 'プロットを追加。', shortcut: 'Shift+L' },
+        pro: { title: 'New Plot Card', desc: 'Ctrl+Shift+L (storyLine)', shortcut: 'Shift+L' }
     },
     plotBoard: {
         simple: { title: 'プロットボードの使い方', desc: '物語の構成をカードで整理する方法です。' },

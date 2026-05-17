@@ -175,11 +175,13 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
         if (e.key === 'Escape') { e.preventDefault(); handleCancel(); }
         if ((e.ctrlKey || e.metaKey)) {
             switch (e.key) {
+                // Editor shortcut keys must NOT collide with global keybindings (hooks/useKeybindings.ts)
+                // or browser-reserved keys. See issue #101 for the audit.
+                // - Ctrl+R (ruby) was dropped: collided with browser Reload. Use the toolbar ルビ button.
+                // - Ctrl+Shift+C (color) was dropped: collided with global Ctrl+Shift+C (相関図). Use the palette button.
                 case 'b': e.preventDefault(); applyMarkdown('**'); break;
                 case 'u': e.preventDefault(); applyMarkdown('__'); break;
                 case 'h': e.preventDefault(); applyMarkdown('# ', ''); break;
-                case 'r': e.preventDefault(); applyMarkdown('{', '|ふりがな}'); break;
-                case 'c': if(e.shiftKey) { e.preventDefault(); applyMarkdown(`<c:${brushColor}>`, '</c>', { placeholder: 'テキスト', shouldClearSelection: true }); } break;
                 default: break;
             }
         }
