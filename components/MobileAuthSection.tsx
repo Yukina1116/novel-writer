@@ -4,11 +4,10 @@ import type { AuthStatus, CurrentUser } from '../store/authSlice';
 
 type MobileAuthVariant = 'loading' | 'cta' | 'user';
 
-// MobileAuthSection.test.ts が import して同じロジックを pin する。
-// テストで再宣言しない (実コードと drift する事故を防ぐ)。
+// Exported so tests pin this exact predicate (no re-declaration → no drift).
 export const selectMobileAuthVariant = (
     authStatus: AuthStatus,
-    currentUser: CurrentUser | null | undefined,
+    currentUser: CurrentUser | null,
 ): MobileAuthVariant => {
     if (authStatus === 'initializing') return 'loading';
     if (authStatus === 'unauthenticated' || !currentUser) return 'cta';
