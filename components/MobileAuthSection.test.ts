@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectMobileAuthVariant } from './MobileAuthSection';
+import { selectMobileAuthVariant } from './mobileAuthVariant';
 
 describe('selectMobileAuthVariant', () => {
     it('loading: authStatus is initializing', () => {

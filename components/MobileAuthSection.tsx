@@ -1,18 +1,6 @@
 import React from 'react';
 import { useStore } from '../store/index';
-import type { AuthStatus, CurrentUser } from '../store/authSlice';
-
-type MobileAuthVariant = 'loading' | 'cta' | 'user';
-
-// Exported so tests pin this exact predicate (no re-declaration → no drift).
-export const selectMobileAuthVariant = (
-    authStatus: AuthStatus,
-    currentUser: CurrentUser | null,
-): MobileAuthVariant => {
-    if (authStatus === 'initializing') return 'loading';
-    if (authStatus === 'unauthenticated' || !currentUser) return 'cta';
-    return 'user';
-};
+import { selectMobileAuthVariant } from './mobileAuthVariant';
 
 export const MobileAuthSection: React.FC = () => {
     const authStatus = useStore(state => state.authStatus);
