@@ -32,6 +32,15 @@ AI駆動の小説執筆支援アプリ（小説らいたーver16）。React + Ty
 [ActivityBar] | [LeftPanel] | [NovelEditor] | [RightPanel]
 ```
 
+### モバイル feature parity (PR #100)
+
+モバイル版で到達経路が欠落していたデスクトップ機能 3 つを統合 (`App.mobile.tsx` 経路、isMobile=true):
+
+- **ログイン / ログアウト**: `components/MobileAuthSection.tsx` を LeftPanel「設定・ツール」直下に mount。未ログイン時は全幅 Indigo CTA バナー + サブテキスト「ログインすると AI 機能が使えます」、ログイン済時はアバター + email + ログアウトボタン。デスクトップ `AuthButton` (ヘッダー右上の小型アバター + ドロップダウン) とはレイアウト前提が異なるため共通化せず分離維持。`{isMobile && <MobileAuthSection />}` の mount guard は `components/LeftPanel.mount.test.ts` で grep pin
+- **標準⇄シンプルモード切替**: Header.tsx BentoMenu「プロジェクト一覧へ」直下に `isSimpleMode` で「標準モードへ」/「シンプルモードへ」を出し分け
+- **全データ (.json, 暗号化) エクスポート**: Header.tsx BentoMenu「書き出し」セクション最上部 (txt/HTML より上、強調表示) に `handleExportAll()` = `openModal('exportEncrypt')` を追加。M6 PR-D の「3 起点に集約」をモバイルで 4 起点目として継承
+- **pure helper 分離パターン**: `selectMobileAuthVariant` は `components/mobileAuthVariant.ts` の独立ファイル (component から export ではなく)。理由は component 経由だと `useStore` → `store/index` → `firebaseClient.ts` の transitive import で CI に `VITE_FIREBASE_*` 必須化、test が壊れる。pure helper は最初から store / firebase 依存ゼロの独立モジュールに置く規律 (本セッション CI fail からの教訓)
+
 ### API層（サーバーサイド）
 
 ```
