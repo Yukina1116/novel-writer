@@ -174,7 +174,7 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
             switch (e.key) {
                 case 'b': e.preventDefault(); applyMarkdown('**'); break;
                 case 'u': e.preventDefault(); applyMarkdown('__'); break;
-                case 'h': e.preventDefault(); applyMarkdown('# '); break;
+                case 'h': e.preventDefault(); applyMarkdown('# ', ''); break;
                 case 'r': e.preventDefault(); applyMarkdown('{', '|ふりがな}'); break;
                 case 'c': if(e.shiftKey) { e.preventDefault(); applyMarkdown(`<c:${brushColor}>`, '</c>', 'テキスト', true); } break;
                 default: break;
@@ -234,7 +234,7 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
                                 <button onMouseDown={preventFocusLoss} onClick={() => applyMarkdown('__')} className="p-1.5 text-gray-300 hover:text-white hover:bg-gray-600 rounded transition-colors"><Icons.UnderlineIcon className="h-4 w-4" /></button>
                             </Tooltip>
                             <Tooltip helpId="heading">
-                                <button onMouseDown={preventFocusLoss} onClick={() => applyMarkdown('# ')} className="p-1.5 text-gray-300 hover:text-white hover:bg-gray-600 rounded transition-colors"><Icons.TypeIcon className="h-4 w-4" /></button>
+                                <button onMouseDown={preventFocusLoss} onClick={() => applyMarkdown('# ', '')} className="p-1.5 text-gray-300 hover:text-white hover:bg-gray-600 rounded transition-colors"><Icons.TypeIcon className="h-4 w-4" /></button>
                             </Tooltip>
                             <Tooltip helpId="ruby">
                                 <button onMouseDown={preventFocusLoss} onClick={() => applyMarkdown('{', '|ふりがな}')} className="p-1.5 text-gray-300 hover:text-white hover:bg-gray-600 rounded font-bold text-xs px-2">ルビ</button>
