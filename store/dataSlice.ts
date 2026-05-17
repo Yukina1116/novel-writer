@@ -47,7 +47,7 @@ export interface DataSlice {
     applyAnalysisResults: (selections: {
         characters: { name: string; action: 'create' | 'link' | 'ignore'; targetId?: string }[];
         worldTerms: { name: string; action: 'world' | 'knowledge' | 'ignore' }[];
-    }, importedText: string) => void;
+    }) => void;
 }
 
 export const createDataSlice = (set, get): DataSlice => ({
@@ -598,14 +598,13 @@ export const createDataSlice = (set, get): DataSlice => ({
     },
     clearAnalysisResult: () => set({ lastAnalysisResult: null }),
 
-    applyAnalysisResults: (selections, importedText) => {
+    applyAnalysisResults: (selections) => {
         const { activeProjectId, setActiveProjectData, showToast, lastAnalysisResult } = get();
         if (!activeProjectId || !lastAnalysisResult) return;
 
         setActiveProjectData(d => {
             let updatedSettings = [...d.settings];
             let updatedKnowledge = [...d.knowledgeBase];
-            let updatedNovelContent = [...d.novelContent];
 
             const annotation = "【インポート解析による補完】\n";
 
@@ -692,18 +691,15 @@ export const createDataSlice = (set, get): DataSlice => ({
                 }
             });
 
-            // 3. 本文の追加
-            const newChunk: NovelChunk = {
-                id: uuidv4(),
-                text: importedText.trim()
-            };
-            updatedNovelContent.push(newChunk);
+            // NOTE: 投入元テキスト (importedText) は本文 (novelContent) に push しない。
+            // テキスト解析で投入したテキストはあくまで解析の素材であり、本文に意図せず残ることを
+            // 防ぐためサイレント追加を廃止した (Issue #105)。投入元テキストの参照は
+            // analysisHistory (IndexedDB) を経由する想定 (UI 表示は Issue #106 で対応)。
 
             return {
                 ...d,
                 settings: updatedSettings,
                 knowledgeBase: updatedKnowledge,
-                novelContent: updatedNovelContent,
                 lastModified: new Date().toISOString()
             };
         }, { type: 'settings', label: 'インポート解析結果を反映' });

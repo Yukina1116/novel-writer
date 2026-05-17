@@ -73,7 +73,7 @@ export const ImportTextModal: React.FC = () => {
     applyAnalysisResults({
         characters: charPayload,
         worldTerms: termPayload
-    }, inputText);
+    });
     closeModal();
   };
 
