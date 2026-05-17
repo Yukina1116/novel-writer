@@ -405,11 +405,21 @@ export const createBackupSlice = (set, get): BackupSlice => ({
                 existingIds,
                 resolutions,
             );
+            // Issue #104: skip overwriting tutorial / analysis state when the
+            // incoming backup carries no entries. This is the import-side
+            // counterpart of the subset export (which writes `{}` / `[]` to
+            // mark the side stores as "not part of this backup"). Without
+            // this guard, a shared per-project file would wipe the receiver's
+            // tutorial progress on import. A full backup with genuinely empty
+            // state imports as a no-op for these stores either way.
+            const hasTutorialKeys = Object.keys(plan.backup.tutorialState).length > 0;
+            const hasAnalysisEntries = plan.backup.analysisHistory.length > 0;
+
             await writeImport({
                 toUpsert,
                 toCreate,
-                tutorialState: plan.backup.tutorialState,
-                analysisHistory: plan.backup.analysisHistory,
+                tutorialState: hasTutorialKeys ? plan.backup.tutorialState : undefined,
+                analysisHistory: hasAnalysisEntries ? plan.backup.analysisHistory : undefined,
             });
 
             // Re-hydrate in-memory state from IndexedDB. Without this,

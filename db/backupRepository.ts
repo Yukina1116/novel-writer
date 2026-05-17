@@ -45,8 +45,12 @@ export const readSnapshot = async (): Promise<ExportSnapshot> => {
 export interface WriteImportPayload {
     toUpsert: Project[];
     toCreate: Project[];
-    tutorialState: BackupV1['tutorialState'];
-    analysisHistory: BackupV1['analysisHistory'];
+    // Issue #104: subset (per-project) backups intentionally omit these side
+    // stores so that importing a shared/migration file does not wipe the
+    // receiver's tutorial progress or analysis history. Treat both as
+    // optional — when omitted, the existing IndexedDB record is left intact.
+    tutorialState?: BackupV1['tutorialState'];
+    analysisHistory?: BackupV1['analysisHistory'];
 }
 
 // Single Dexie transaction so a partial failure never leaves IndexedDB in a
@@ -59,14 +63,18 @@ export const writeImport = async (payload: WriteImportPayload): Promise<void> =>
         async () => {
             for (const p of payload.toUpsert) await db.projects.put(sanitizeForImport(p));
             for (const p of payload.toCreate) await db.projects.put(sanitizeForImport(p));
-            await db.tutorialState.put({
-                version: TUTORIAL_STATE_VERSION,
-                ...payload.tutorialState,
-            });
-            await db.analysisHistory.put({
-                key: ANALYSIS_HISTORY_KEY,
-                history: payload.analysisHistory,
-            });
+            if (payload.tutorialState !== undefined) {
+                await db.tutorialState.put({
+                    version: TUTORIAL_STATE_VERSION,
+                    ...payload.tutorialState,
+                });
+            }
+            if (payload.analysisHistory !== undefined) {
+                await db.analysisHistory.put({
+                    key: ANALYSIS_HISTORY_KEY,
+                    history: payload.analysisHistory,
+                });
+            }
         },
     );
 };

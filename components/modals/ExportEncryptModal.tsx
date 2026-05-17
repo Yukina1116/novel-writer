@@ -199,6 +199,7 @@ export const ExportEncryptModal: React.FC = () => {
                             </span>
                         </label>
                         <label
+                            aria-disabled={!canSelectActive ? 'true' : undefined}
                             className={`flex items-start gap-3 rounded border px-4 py-3 ${
                                 canSelectActive
                                     ? 'cursor-pointer border-gray-700 bg-gray-900/40 hover:bg-gray-700/30'
