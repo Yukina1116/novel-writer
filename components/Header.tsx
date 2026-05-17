@@ -165,6 +165,17 @@ export const Header: React.FC<HeaderProps> = ({ displayMenuButtonRef, isMobile =
                                     <Icons.ArrowLeftIcon className="h-4 w-4" />
                                     <span>プロジェクト一覧へ</span>
                                 </button>
+                                {isSimpleMode ? (
+                                    <button onClick={() => { setSimpleMode(false); setIsMobileMenuOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm text-text-main hover:bg-app-bg transition border-b border-border">
+                                        <Icons.LayersIcon className="h-4 w-4" />
+                                        <span>標準モードへ</span>
+                                    </button>
+                                ) : (
+                                    <button onClick={() => { setSimpleMode(true); setIsMobileMenuOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm text-text-main hover:bg-app-bg transition border-b border-border">
+                                        <Icons.PenSquareIcon className="h-4 w-4" />
+                                        <span>シンプルモードへ</span>
+                                    </button>
+                                )}
                                  <button onClick={() => { openModal('globalSearch'); setIsMobileMenuOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm text-text-main hover:bg-app-bg transition">
                                     <Icons.SearchIcon className="h-4 w-4" />
                                     <span>検索</span>
@@ -183,6 +194,10 @@ export const Header: React.FC<HeaderProps> = ({ displayMenuButtonRef, isMobile =
                                 </button>
                                  <div className="border-t border-border">
                                      <div className="px-4 py-2 text-xs text-text-muted font-semibold">書き出し</div>
+                                     <button onClick={() => { handleExportAll(); setIsMobileMenuOpen(false); }} className="w-full flex items-center gap-3 px-4 py-2 text-left text-sm text-text-main hover:bg-app-bg transition">
+                                        <Icons.DownloadIcon className="h-4 w-4" />
+                                        <span>全データ (.json, 暗号化)</span>
+                                    </button>
                                      <button onClick={() => { handleExportTxt(); setIsMobileMenuOpen(false); }} className="w-full flex items-center gap-3 px-4 py-2 text-left text-sm text-text-muted hover:bg-app-bg hover:text-text-main transition">
                                         <Icons.FileTextIcon className="h-4 w-4" />
                                         <span>テキスト (.txt)</span>

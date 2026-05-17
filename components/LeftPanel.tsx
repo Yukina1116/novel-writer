@@ -11,6 +11,7 @@ import { PlotListPanel } from './panels/PlotListPanel';
 import { OutlinePanel } from './panels/OutlinePanel';
 import { LeftPanelTab } from '../types';
 import { Tooltip } from './Tooltip';
+import { MobileAuthSection } from './MobileAuthSection';
 
 interface LeftPanelProps {
     onExportProject: () => void;
@@ -74,7 +75,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({ onExportProject, onExportT
             {isMobile && (
                 <div className="flex items-center justify-between p-2 bg-app-bg border-b border-border">
                      <h3 className="text-sm font-bold text-text-main ml-2">設定・ツール</h3>
-                     <button 
+                     <button
                         onClick={() => setIsLeftSidebarOpen(false)}
                         className="p-2 text-text-muted hover:text-text-main"
                     >
@@ -82,7 +83,9 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({ onExportProject, onExportT
                     </button>
                 </div>
             )}
-            
+
+            {isMobile && <MobileAuthSection />}
+
             {isMobile && !isSimpleMode && userMode !== 'simple' && (
                 <div className="flex overflow-x-auto bg-app-bg border-b border-border no-scrollbar flex-shrink-0">
                     {tabs.map(tab => (
