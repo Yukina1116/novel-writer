@@ -14,11 +14,25 @@ const TIMEOUT_TOAST =
 const isAbortError = (e: unknown): boolean =>
     e instanceof Error && e.name === 'AbortError';
 
+type ExportScope = 'all' | 'active';
+
 export const ExportEncryptModal: React.FC = () => {
     const closeModal = useStore(state => state.closeModal);
     const exportAllData = useStore(state => state.exportAllData);
     const isExporting = useStore(state => state.isExporting);
     const showToast = useStore(state => state.showToast);
+    const activeProjectId = useStore(state => state.activeProjectId);
+    const activeProjectName = useStore(state =>
+        state.activeProjectId
+            ? state.allProjectsData[state.activeProjectId]?.name
+            : undefined,
+    );
+
+    // Issue #104: scope chooser. "active" is only offered when an active
+    // project is loaded — opening from ProjectSelectionScreen pins scope to "all".
+    const canSelectActive = Boolean(activeProjectId);
+    const [scope, setScope] = useState<ExportScope>('all');
+    const effectiveScope: ExportScope = canSelectActive ? scope : 'all';
 
     const [encrypt, setEncrypt] = useState<boolean>(false);
     const [passphrase, setPassphrase] = useState<string>('');
@@ -69,13 +83,17 @@ export const ExportEncryptModal: React.FC = () => {
     const handleSubmit = async (): Promise<void> => {
         if (submitDisabled) return;
 
+        const projectIds = effectiveScope === 'active' && activeProjectId
+            ? [activeProjectId]
+            : undefined;
+
         if (!encrypt) {
             // 平文 export: slice 側で toast + lastExportedAt 更新が走る。throw した場合は
             // slice 側 catch で toast 済 (AbortError は別途 suppress)。modal は throw 有無で
             // 分岐 close する (silent-failure-hunter B3 — closeModal を await 前に呼ぶと
             // unhandled rejection 化するため try/catch で囲む)。
             try {
-                await exportAllData();
+                await exportAllData({ projectIds });
                 closeModal();
             } catch (e) {
                 if (!isAbortError(e)) {
@@ -104,6 +122,7 @@ export const ExportEncryptModal: React.FC = () => {
             await exportAllData({
                 encrypt: { passphrase: usedPassphrase },
                 signal: controller.signal,
+                projectIds,
             });
             // signal.aborted を post-await check (timeout 発火後に slice 内で early return
             // した場合は succeeded=true でも実 download は行われていない)。
@@ -151,14 +170,67 @@ export const ExportEncryptModal: React.FC = () => {
             <div className="w-full max-w-lg rounded-lg bg-gray-800 shadow-xl">
                 <div className="border-b border-gray-700 px-6 py-4">
                     <h2 id="export-encrypt-title" className="text-lg font-semibold text-white">
-                        全データバックアップ
+                        データエクスポート
                     </h2>
                     <p id="export-encrypt-description" className="mt-1 text-sm text-gray-400">
-                        プロジェクト・チュートリアル状態・解析履歴をまとめてエクスポートします。
+                        エクスポート範囲と形式を選んでファイルとして保存します。
                     </p>
                 </div>
 
                 <div className="space-y-4 px-6 py-4">
+                    <fieldset className="space-y-2">
+                        <legend className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                            エクスポート範囲
+                        </legend>
+                        <label className="flex cursor-pointer items-start gap-3 rounded border border-gray-700 bg-gray-900/40 px-4 py-3 hover:bg-gray-700/30">
+                            <input
+                                type="radio"
+                                name="export-scope"
+                                value="all"
+                                checked={effectiveScope === 'all'}
+                                onChange={() => setScope('all')}
+                                className="mt-0.5"
+                            />
+                            <span className="text-sm">
+                                <span className="block font-semibold text-white">全データ</span>
+                                <span className="block text-xs text-gray-400">
+                                    すべてのプロジェクト + チュートリアル進捗 + 解析履歴。バックアップ用途に推奨。
+                                </span>
+                            </span>
+                        </label>
+                        <label
+                            aria-disabled={!canSelectActive ? 'true' : undefined}
+                            className={`flex items-start gap-3 rounded border px-4 py-3 ${
+                                canSelectActive
+                                    ? 'cursor-pointer border-gray-700 bg-gray-900/40 hover:bg-gray-700/30'
+                                    : 'cursor-not-allowed border-gray-800 bg-gray-900/20 opacity-50'
+                            }`}
+                        >
+                            <input
+                                type="radio"
+                                name="export-scope"
+                                value="active"
+                                checked={effectiveScope === 'active'}
+                                onChange={() => setScope('active')}
+                                disabled={!canSelectActive}
+                                className="mt-0.5"
+                            />
+                            <span className="text-sm">
+                                <span className="block font-semibold text-white">
+                                    現在のプロジェクトのみ
+                                    {canSelectActive && activeProjectName && (
+                                        <span className="ml-2 text-gray-300">「{activeProjectName}」</span>
+                                    )}
+                                </span>
+                                <span className="block text-xs text-gray-400">
+                                    {canSelectActive
+                                        ? '共有・移行用。チュートリアル進捗と解析履歴は含まれません。'
+                                        : 'プロジェクトを開いてから選択できます。'}
+                                </span>
+                            </span>
+                        </label>
+                    </fieldset>
+
                     <label className="flex cursor-pointer items-start gap-3 rounded border border-gray-700 bg-gray-900/40 px-4 py-3 hover:bg-gray-700/30">
                         <input
                             type="checkbox"

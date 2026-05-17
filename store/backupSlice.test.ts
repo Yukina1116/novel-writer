@@ -142,6 +142,138 @@ describe('exportAllData (AC-1, AC-6)', () => {
     });
 });
 
+describe('exportAllData scope (#104)', () => {
+    // Captures the latest Blob payload (the JSON string handed to triggerDownload).
+    let blobParts: any[] = [];
+
+    beforeEach(() => {
+        blobParts = [];
+        (globalThis as any).Blob = class {
+            constructor(parts: any[]) {
+                blobParts = parts;
+            }
+        } as any;
+    });
+
+    const lastBackup = () => JSON.parse(blobParts[0]) as {
+        projects: { id: string }[];
+        tutorialState: Record<string, boolean>;
+        analysisHistory: unknown[];
+    };
+
+    it('full scope (projectIds undefined): includes all projects + tutorialState + analysisHistory', async () => {
+        readSnapshot.mockResolvedValue({
+            projects: [makeProject({ id: 'p-1' }), makeProject({ id: 'p-2' })],
+            tutorialState: { hasCompletedGlobalTutorial: true },
+            analysisHistory: [{ characters: { match: [], similar: [], new: [], extractedDetails: [] }, worldContext: { worldKeywords: [], genre: 'g', tone: 't' }, worldTerms: { match: [], similar: [], new: [] }, dialogues: [], notes: [] }],
+        });
+        const fake = createFakeStore();
+        await fake.state.exportAllData();
+        const b = lastBackup();
+        expect(b.projects.map(p => p.id)).toEqual(['p-1', 'p-2']);
+        expect(b.tutorialState.hasCompletedGlobalTutorial).toBe(true);
+        expect(b.analysisHistory).toHaveLength(1);
+        // Full scope advances the banner timestamp.
+        expect(saveLastExportedAt).toHaveBeenCalledOnce();
+        expect(fake.state.lastExportedAt).toBeTruthy();
+    });
+
+    it('subset scope (projectIds: ["p-2"]): includes only p-2, drops tutorialState + analysisHistory', async () => {
+        readSnapshot.mockResolvedValue({
+            projects: [makeProject({ id: 'p-1' }), makeProject({ id: 'p-2', name: 'Two' })],
+            tutorialState: { hasCompletedGlobalTutorial: true },
+            analysisHistory: [{ characters: { match: [], similar: [], new: [], extractedDetails: [] }, worldContext: { worldKeywords: [], genre: 'g', tone: 't' }, worldTerms: { match: [], similar: [], new: [] }, dialogues: [], notes: [] }],
+        });
+        const fake = createFakeStore();
+        await fake.state.exportAllData({ projectIds: ['p-2'] });
+        const b = lastBackup();
+        expect(b.projects.map(p => p.id)).toEqual(['p-2']);
+        expect(b.tutorialState).toEqual({});
+        expect(b.analysisHistory).toEqual([]);
+    });
+
+    it('subset scope does NOT advance lastExportedAt (banner stays based on full backup)', async () => {
+        readSnapshot.mockResolvedValue({
+            projects: [makeProject({ id: 'p-1' })],
+            tutorialState: {},
+            analysisHistory: [],
+        });
+        const fake = createFakeStore();
+        await fake.state.exportAllData({ projectIds: ['p-1'] });
+        expect(saveLastExportedAt).not.toHaveBeenCalled();
+        expect(fake.state.lastExportedAt).toBeNull();
+    });
+
+    it('subset scope with no matching id: aborts with error toast and no download', async () => {
+        readSnapshot.mockResolvedValue({
+            projects: [makeProject({ id: 'p-1' })],
+            tutorialState: {},
+            analysisHistory: [],
+        });
+        const fake = createFakeStore();
+        await fake.state.exportAllData({ projectIds: ['nonexistent'] });
+        expect(saveLastExportedAt).not.toHaveBeenCalled();
+        expect(blobParts).toEqual([]);
+        const toast = fake.state.showToast as any;
+        const calls = toast.mock.calls as any[][];
+        const lastCall = calls[calls.length - 1];
+        expect(lastCall[1]).toBe('error');
+    });
+
+    // Issue #104 evaluator HIGH: a subset backup (empty side stores) must NOT
+    // wipe the receiver's tutorial progress / analysis history on import.
+    // The fix lives in executeImport (`store/backupSlice.ts`), which passes
+    // `undefined` to writeImport for empty side stores. Mirror it with a
+    // regression test that imports a subset-shaped BackupV1 and asserts the
+    // sidecar fields land as `undefined`, so writeImport (real db layer)
+    // skips the destructive put.
+    it('subset import (empty tutorialState + empty analysisHistory): skips both writes (#104 regression)', async () => {
+        readSnapshot.mockResolvedValue({
+            projects: [],
+            tutorialState: { hasCompletedGlobalTutorial: true },
+            analysisHistory: [],
+        });
+        // writeImport is the mock from the outer beforeEach; we just need to
+        // observe what executeImport hands it.
+        (writeImport as any).mockResolvedValue(undefined);
+        const fake = createFakeStore();
+        const raw = JSON.stringify({
+            schemaVersion: 1,
+            exportedAt: '2026-05-17T00:00:00.000Z',
+            appVersion: '0.0.0',
+            projects: [makeProject({ id: 'p-shared', name: '共有プロジェクト' })],
+            tutorialState: {},
+            analysisHistory: [],
+        });
+        await fake.state.prepareImport(raw);
+        await fake.state.executeImport();
+        expect(writeImport).toHaveBeenCalledOnce();
+        const payload = (writeImport as any).mock.calls[0][0];
+        expect(payload.tutorialState).toBeUndefined();
+        expect(payload.analysisHistory).toBeUndefined();
+    });
+
+    // Defensive guard: an accidental `projectIds: []` should hit the same
+    // empty-subset abort path (the comment in backupSlice.ts mentions this
+    // explicitly, so pin it with its own test rather than relying on the
+    // 'nonexistent' case alone).
+    it('subset scope with empty array: aborts with error toast (no silent empty download)', async () => {
+        readSnapshot.mockResolvedValue({
+            projects: [makeProject({ id: 'p-1' })],
+            tutorialState: {},
+            analysisHistory: [],
+        });
+        const fake = createFakeStore();
+        await fake.state.exportAllData({ projectIds: [] });
+        expect(saveLastExportedAt).not.toHaveBeenCalled();
+        expect(blobParts).toEqual([]);
+        const toast = fake.state.showToast as any;
+        const calls = toast.mock.calls as any[][];
+        const lastCall = calls[calls.length - 1];
+        expect(lastCall[1]).toBe('error');
+    });
+});
+
 describe('prepareImport / executeImport (AC-3, AC-5)', () => {
     it('detects conflicts against existing IndexedDB ids', async () => {
         readSnapshot.mockResolvedValue({
@@ -370,10 +502,13 @@ describe('prepareImport / executeImport (AC-3, AC-5)', () => {
             const payload = writeImport.mock.calls[0][0];
             expect(payload.toUpsert.map((p: Project) => p.id)).toEqual(['p-new']);
             expect(payload.toCreate).toEqual([]);
-            // Non-project sidecar fields must travel atomically with the
-            // project payload (writeImport is the single transaction).
+            // Non-project sidecar fields travel atomically with the project
+            // payload (writeImport is a single transaction). Issue #104 added
+            // a guard: empty side stores are signalled by `undefined` so that
+            // writeImport skips the put — preserving the receiver's existing
+            // tutorial / analysis state when subset backups are imported.
             expect(payload.tutorialState).toEqual({ hasCompletedGlobalTutorial: true });
-            expect(payload.analysisHistory).toEqual([]);
+            expect(payload.analysisHistory).toBeUndefined();
             expect(result).toEqual({ upserted: 1, created: 0, skipped: 1 });
         });
 

@@ -2,6 +2,9 @@ import React, { useState, useRef } from 'react';
 import * as Icons from '../icons';
 import { Project } from '../types';
 import { AuthButton } from './AuthButton';
+import { useStore } from '../store/index';
+import { STALE_BACKUP_DAYS, formatLastExportedAt } from '../utils/backupFormat';
+import { readFileAsText } from '../utils/readFileAsText';
 
 interface ProjectSelectionScreenProps {
     projects: Project[];
@@ -17,6 +20,33 @@ export function ProjectSelectionScreen({ projects, onCreateProject, onDeleteProj
     const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
     const importInputRef = useRef(null);
     const handleCreate = (e) => { e.preventDefault(); if (!newProjectName.trim()) return; onCreateProject(newProjectName, newProjectMode); setNewProjectName(''); };
+
+    // Issue #104: データ管理セクション (全データバックアップを SettingsPanel から移設)。
+    const openModal = useStore(state => state.openModal);
+    const lastExportedAt = useStore(state => state.lastExportedAt);
+    const isStale = useStore(state => state.isBackupStale());
+    const isExporting = useStore(state => state.isExporting);
+    const prepareImport = useStore(state => state.prepareImport);
+    const showToast = useStore(state => state.showToast);
+    const backupImportInputRef = useRef<HTMLInputElement>(null);
+
+    const handleBackupImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        try {
+            const raw = await readFileAsText(file);
+            const result = await prepareImport(raw);
+            // 暗号化 envelope の場合は pendingDecryption が ModalManager 経由で自動 mount。
+            // 平文はここで ImportConflictModal を開く。
+            if (result.kind === 'plaintext') {
+                openModal('importConflict');
+            }
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'インポートの準備に失敗しました';
+            showToast(msg, 'error');
+        }
+    };
     return (
         <div className="min-h-screen bg-gray-900 text-gray-200 flex flex-col items-center justify-start p-4 sm:p-8">
             <div className="w-full max-w-3xl">
@@ -74,6 +104,44 @@ export function ProjectSelectionScreen({ projects, onCreateProject, onDeleteProj
                         </div>
                     </form>
                 </div>
+                <div className="bg-gray-800/50 p-6 rounded-lg shadow-lg mb-8">
+                    <h2 className="text-xl font-semibold mb-2">データ管理</h2>
+                    <p className="text-sm text-gray-400 mb-4">
+                        すべてのプロジェクトを 1 つのファイルにまとめて保存・復元できます。
+                        暗号化エクスポートと復元のどちらもここから操作します。
+                    </p>
+                    <div className={`text-xs mb-3 ${isStale ? 'text-yellow-400' : 'text-gray-400'}`}>
+                        最終バックアップ: {formatLastExportedAt(lastExportedAt)}
+                        {isStale && ` (推奨は ${STALE_BACKUP_DAYS} 日以内)`}
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <button
+                            type="button"
+                            onClick={() => openModal('exportEncrypt')}
+                            disabled={isExporting}
+                            className="flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-md btn-pressable bg-emerald-700 text-white hover:bg-emerald-600 disabled:opacity-50"
+                        >
+                            <Icons.DownloadIcon className="h-4 w-4 flex-shrink-0" />
+                            <span>{isExporting ? 'エクスポート中…' : '全データをエクスポート'}</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => backupImportInputRef.current?.click()}
+                            className="flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-md btn-pressable bg-gray-700 text-gray-200 hover:bg-gray-600"
+                        >
+                            <Icons.UploadIcon className="h-4 w-4 flex-shrink-0" />
+                            <span>バックアップから復元</span>
+                        </button>
+                        <input
+                            type="file"
+                            ref={backupImportInputRef}
+                            onChange={handleBackupImportFile}
+                            accept=".json,application/json"
+                            className="hidden"
+                        />
+                    </div>
+                </div>
+
                 <div className="bg-gray-800/50 p-6 rounded-lg shadow-lg">
                     <h2 className="text-xl font-semibold mb-4">既存の物語</h2>
                     <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
