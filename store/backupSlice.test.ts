@@ -219,6 +219,26 @@ describe('exportAllData scope (#104)', () => {
         const lastCall = calls[calls.length - 1];
         expect(lastCall[1]).toBe('error');
     });
+
+    // Defensive guard: an accidental `projectIds: []` should hit the same
+    // empty-subset abort path (the comment in backupSlice.ts mentions this
+    // explicitly, so pin it with its own test rather than relying on the
+    // 'nonexistent' case alone).
+    it('subset scope with empty array: aborts with error toast (no silent empty download)', async () => {
+        readSnapshot.mockResolvedValue({
+            projects: [makeProject({ id: 'p-1' })],
+            tutorialState: {},
+            analysisHistory: [],
+        });
+        const fake = createFakeStore();
+        await fake.state.exportAllData({ projectIds: [] });
+        expect(saveLastExportedAt).not.toHaveBeenCalled();
+        expect(blobParts).toEqual([]);
+        const toast = fake.state.showToast as any;
+        const calls = toast.mock.calls as any[][];
+        const lastCall = calls[calls.length - 1];
+        expect(lastCall[1]).toBe('error');
+    });
 });
 
 describe('prepareImport / executeImport (AC-3, AC-5)', () => {
