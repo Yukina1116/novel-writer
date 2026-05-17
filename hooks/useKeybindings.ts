@@ -106,7 +106,9 @@ export const useKeybindings = ({
                             e.preventDefault();
                             openModal('timeline');
                             break;
-                        case 'p':
+                        case 'l':
+                             // Ctrl+Shift+L (storyLine = plot) — moved off Ctrl+Shift+P
+                             // to avoid colliding with browser Print (issue #101).
                              e.preventDefault();
                              openModal('plot');
                              break;
