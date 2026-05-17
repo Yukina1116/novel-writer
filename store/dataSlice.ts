@@ -693,8 +693,9 @@ export const createDataSlice = (set, get): DataSlice => ({
 
             // NOTE: 投入元テキスト (importedText) は本文 (novelContent) に push しない。
             // テキスト解析で投入したテキストはあくまで解析の素材であり、本文に意図せず残ることを
-            // 防ぐためサイレント追加を廃止した (Issue #105)。投入元テキストの参照は
-            // analysisHistory (IndexedDB) を経由する想定 (UI 表示は Issue #106 で対応)。
+            // 防ぐためサイレント追加を廃止した (Issue #105)。解析結果 (AnalysisResult) は
+            // analysisHistory (IndexedDB) に保存される。投入元テキスト本体は現状どこにも残らない
+            // (Issue #106 で UI からの参照経路を別途追加予定)。
 
             return {
                 ...d,

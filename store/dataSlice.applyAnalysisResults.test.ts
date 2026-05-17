@@ -38,6 +38,9 @@ const makeBaseProject = (extras: Partial<Project> = {}): Project => ({
 
 const makeAnalysisResult = (): AnalysisResult => ({
     characters: {
+        match: [],
+        similar: [],
+        new: ['水澤怜'],
         extractedDetails: [
             {
                 name: '水澤怜',
@@ -54,14 +57,16 @@ const makeAnalysisResult = (): AnalysisResult => ({
                 suggestedColor: '#0000ff',
             },
         ],
-        similar: [],
-        new: [{ name: '水澤怜' }],
     },
+    worldContext: { worldKeywords: [], genre: 'fantasy', tone: 'neutral' },
     worldTerms: {
+        match: [],
+        similar: [],
         new: [{ name: '絵本', description: 'children book' }],
     },
-    worldContext: { genre: 'fantasy' },
-} as unknown as AnalysisResult);
+    dialogues: [],
+    notes: [],
+});
 
 interface FakeStore {
     state: Record<string, any>;
