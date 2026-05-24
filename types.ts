@@ -184,6 +184,7 @@ export interface AnalysisResult {
     possibleSpeaker: string | null;
   }[];
   notes: string[];
+  sourceText?: string;
 }
 
 export interface AppState {
