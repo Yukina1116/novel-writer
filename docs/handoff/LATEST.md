@@ -1,158 +1,144 @@
-# Handoff: 前セッション起票 Issue の連続解消 + テキスト解析モーダル課題の発見・起票
+# Handoff: テキストインポート解析モーダルの bundle 修正 + レスポンシブ網羅 meta-issue 起票
 
-- Session Date: 2026-05-17 (同日 2 セッション目)
+- Session Date: 2026-05-24
 - Owner: yasushi-honda
-- Status: ✅ 再開可能（main clean、Open Issue 3 件すべて P2 以下）
-- Previous handoff: [2026-05-17-mobile-parity-shortcut-issues.md](./2026-05-17-mobile-parity-shortcut-issues.md)
+- Status: ✅ 再開可能（main clean、Cloud Run デプロイ success、Open Issue 2 件すべて monitor / spec 検討対象）
+- Previous handoff: [2026-05-17b-issue-cleanup-and-text-import-bugs.md](./2026-05-17b-issue-cleanup-and-text-import-bugs.md)
 
 ## 今セッションのトリガー
 
-1. 前セッション (`/catchup`) で残った Open Issue 4 件のうち、ユーザー指示順 `#102 → #101 → #104` を主軸に着手
-2. `#102` 動作確認中にユーザーから新規 3 件の UX 課題を指摘 → 即 Issue 化:
-   - テキスト解析モーダルの投入元テキストが本文に混入
-   - 投入元テキスト内容を左サイドメニューに表示
-   - 用語などのチェックボックスのデフォルト OFF 化
-3. 起票後、P1 bug の `#105` を優先順位調整 (`#102 → #105 → #101 → #104` の順) で実装
+1. `/catchup` で前セッション残 Open Issue 確認 → `#106` + `#107` (両方 `components/ImportTextModal.tsx` を touch) を bundle 着手と判断
+2. 実装 Phase 4 中にユーザーからスクリーンショット添付 (iPhone 12 Pro 390px) で **ImportTextModal の 2-col レイアウトが縦書き化** している致命的 UX 不良を報告 → PR scope を拡張してモバイルレスポンシブ修正を統合 + 全モーダル/view 網羅監査の meta-issue を別途起票
+3. 4 段階レビュー方式 (`Codex (impl-plan)` → `/code-review medium (3-finder)` → `Evaluator agent (AC 検証)` → `Codex (最終 diff)`) で各段階で実害ある指摘を 1 件以上検出 → 全て修正 → 1 PR で main マージ
 
-## 完了 PR (4 件、すべて本セッション内で main 反映済)
+## 完了 PR (1 件、main 反映済 + Cloud Run デプロイ success)
 
-| PR | 内容 | Closes | merge commit |
-|---|---|---|---|
-| #108 | fix(editor): applyMarkdown placeholder/race fix | #102 | `2f8038b` |
-| #109 | fix(analysis): drop importedText body-push in applyAnalysisResults | #105 | `b0400e1` |
-| #110 | fix(shortcuts): resolve key collisions + add static conflict pin | #101 | `290b300` |
-| #111 | feat(backup): relocate data-management to ProjectSelectionScreen + add subset scope | #104 | `313920c` |
+| PR | 内容 | Closes | merge commit | デプロイ |
+|---|---|---|---|---|
+| #114 | fix(import): default-OFF checkboxes + source text panel + mobile responsive | #106, #107 | `f508934` | ✅ success (3m1s) |
 
-## PR #108 要点 (Issue #102)
+## PR #114 要点 (Issue #106 + #107 bundle + モバイルレスポンシブ緊急対応)
 
-**症状**: マークダウン記法 `**bold**` / `__underline__` / `# heading` 等を選択なしで挿入すると `**テキスト**` のように placeholder `テキスト` が本文に残る + 全選択時に placeholder 混入の race 仮説
+### #107 修正 (チェックボックスのデフォルト OFF 化)
+
+**根本原因**: `components/ImportTextModal.tsx:302` の `checked={selectedTerms[termObj.name]?.action !== 'ignore'}` で `undefined !== 'ignore' = true` となり、未操作の用語・世界観候補が全部 ON 表示。`line 351` 右ペイン「この項目を反映する」も同じ pattern で latent bug。
 
 **修正**:
-- `components/applyMarkdown.ts` 新規 pure helper (副作用なし、unit test 可能)
-- `applyMarkdown` signature を positional → options object に変更: `applyMarkdown(prefix, suffix=prefix, options={ placeholder?, shouldClearSelection? })`
-- デフォルト挙動: 選択なし → `${prefix}${suffix}` collapsed cursor (placeholder 不要)
-- color tag のみ opt-in で placeholder + shouldClearSelection を継続
-- race fix: `selectionRef.current` の stale read を回避し、`textareaRef.current.selectionStart/End` から直読み
-- 15 unit tests (no-selection / wrap / color opt-in / boundary / multi-byte)
+- `components/importTextModalHelpers.ts` (新規 pure helper) に `isSelectedCharacterAction` / `isSelectedTermAction` を切出
+- `line 302` (用語 list) + `line 351` (右ペイン character / term 両方) を helper に置換 → undefined → false で OFF 初期化
+- 登場人物候補 (line 248, 272) は元から `=== 'link'` / `=== 'create'` で正しく OFF 初期だったため変更なし (`line 270` で一度 helper 化したが `&& === 'link'` が冗長と /code-review で指摘され元に戻し)
+- `components/importTextModalHelpers.test.ts` (新規) で 8 件の vitest pin (undefined→false / 各 action → 期待値)
 
-**Codex review 指摘 (Medium)**: `removeAllRanges()` を `setSelectionRange()` の後に呼ぶと textarea selection が [0,0] に巻き戻る → 順序を逆にして解消 (color path の cursor が replacement 末尾 [19,19] に正しく着くことを Playwright で確認)
+### #106 追加 (投入元テキスト表示)
 
-## PR #109 要点 (Issue #105、新規発見・即修正)
+**追加**: reflect step 左サイドメニュー末尾に「投入元テキスト」collapse セクション
 
-**症状**: テキストインポート解析モーダルで投入したテキスト (`inputText`) が、「選択した設定を反映して取り込む」時にキャラ/世界観の登録だけでなく本文 (`novelContent`) に新規 chunk として無条件 push されていた
+**型・データ拡張**:
+- `types.ts`: `AnalysisResult.sourceText?: string` 追加 (optional、backward compatible)
+- `analysisApi.ts`: `analyzeTextForImport` 成功時に `enriched = { ...result.data, sourceText: importedText }` を組み立て、`saveAnalysisHistory(enriched)` + return `{ success: true, data: enriched }` 早期 return で履歴 + `lastAnalysisResult` 両経路に反映
+- Codex 事前相談で「`saveAnalysisHistory` 経路の見落とし」を指摘 → dataSlice 側でなく `analysisApi.ts` 側で enrich する設計に変更
 
-**根本原因**: `store/dataSlice.ts:695-700` で `applyAnalysisResults` が `updatedNovelContent.push(newChunk)` を実行
+**UI**:
+- `aria-expanded` 付き collapse button + `<pre>` で `max-h-64 overflow-y-auto whitespace-pre-wrap break-words font-sans` 表示
+- 旧履歴 (sourceText 未保存) は fallback 文言「(この履歴データには投入元テキストが含まれていません。次回以降の解析から記録されます)」
+- **Evaluator 指摘 (AC-106-5 FAIL)**: 当初 `(currentAnalysisResult?.sourceText || inputText)` で fallback 表示していたが、「ユーザーが input → analyze → 戻る → 旧履歴を開く」シナリオで textarea 残骸 `inputText` が誤表示される問題 → `inputText` fallback を削除し `currentAnalysisResult?.sourceText` のみで判定 (新規解析は必ず enrich されるため副作用なし)
 
-**修正**:
-- signature から `importedText` 引数を削除
-- `applyAnalysisResults` の本文追加 block を撤去 + 経緯コメント追加
-- `components/ImportTextModal.tsx` の呼び出し側も整理
-- 4 regression tests (vitest, `vi.mock('../analysisApi')` で循環 import 回避)
+### モバイルレスポンシブ修正 (緊急対応、PR scope 拡張)
 
-**Codex review 指摘 (Low)**: コメント文言と test fixture の `as unknown as AnalysisResult` キャストを修正
-
-## PR #110 要点 (Issue #101)
+**問題**: iPhone 12 Pro (390px) で `max-w-6xl` Modal 内の `flex` 2-col (`w-1/2 + w-1/2`) が 195px に潰れ、ボタンテキスト・説明文・textarea が縦書き化
 
 **修正**:
-- **HIGH**: `Ctrl+Shift+C` 重複 → EditableParagraph の `case 'c'` を撤去 (color は palette ボタンのみで操作可)
-- **MEDIUM**: `Ctrl+Shift+P` (Browser Print 競合) → `Ctrl+Shift+L` (storyLine) に変更
-- **MEDIUM**: `Ctrl+R` (Browser Reload 競合) → 撤去 (ルビ は toolbar ボタンのみ)
-- `helpTexts.ts` 同期
-- `tests/static/shortcut-conflicts.test.ts` 新規 (4 静的 grep test で regression pin)
+- **input phase**: `flex` → `flex-col md:flex-row` + 各カラムを `w-full md:w-1/2`、右側 hero panel は `hidden md:flex` でモバイル非表示、textarea に `min-h-[200px]` 確保
+- **reflect phase**: モバイルは「候補リスト」「プレビュー」の 2-tab 切替に再構成
+  - `mobileReflectView: 'list' | 'preview'` state 追加
+  - `flex md:hidden` の tab switcher (`role="tablist"` + 各ボタン `role="tab"` / `aria-selected` / `aria-controls`)
+  - 左右パネルに `role="tabpanel"` / `aria-labelledby`
+  - `showPreview()` で `setMobileReflectView('preview')` 自動切替
+  - `handleBackToInput()` で `setMobileReflectView('list')` リセット
+- **ボタン**: `whitespace-nowrap min-w-0` + `text-sm md:text-base truncate` で縦書き化防止 (PR #92 の規律を本モーダルに展開)
+- **preview pane radio row** (Codex 最終 diff レビュー指摘 Medium): `flex items-center gap-4` → `flex-col items-start gap-3 md:flex-row md:items-center md:gap-4 md:flex-wrap` で長文ラベル overflow 解消 (追加 commit `69641b7`)
 
-scope 外 (別 PR 候補): 修正案 D (ヘルプモーダル / Tooltip にショートカット一覧表 + SSOT 化)
+### レビュー結果 (4 段階)
 
-**Codex review: OK** (High/Medium 残存指摘なし)
-
-## PR #111 要点 (Issue #104)
-
-**修正**:
-- **A 配置**: 「全データバックアップ」を SettingsPanel から ProjectSelectionScreen の新セクション「データ管理」へ移設
-- **B-1 粒度**: `exportAllData(opts.projectIds?)` 拡張 + ExportEncryptModal に scope chooser (全データ / 現在のプロジェクトのみ) 追加。activeProjectId なし起点では「現在のプロジェクトのみ」disabled
-- subset では `lastExportedAt` を更新しない (banner は full backup を基準にする意味を保つ)
-- subset で対象 0 件 → 早期 error toast + abort
-
-**Evaluator 分離プロトコル発動** (5+ ファイル + 新規機能 → `rules/quality-gate.md` 適用) で検出 + 同 PR 内で解消:
-
-| 重要度 | 指摘 | 修正 |
+| Phase | 検出 | 対応 |
 |---|---|---|
-| **HIGH** | subset export を import すると受け手の tutorial 進捗が全消去 (`writeImport` が `tutorialState: {}` を put して上書き) | `executeImport` で空 sidecar を `undefined` で `writeImport` に渡し、`WriteImportPayload` を optional 化、undefined のとき put skip |
-| **MEDIUM** | SettingsPanel から「バックアップから復元」が削除された AC-7 regression | 復元ボタンを SettingsPanel に残置 (主導線は ProjectSelectionScreen) |
-| **MEDIUM** | scope chooser radio に `aria-disabled` なし | 外側 `<label>` に `aria-disabled="true"` 追加 |
-| **LOW (scope 外)** | ProjectSelectionScreen の 2 つの `<input type="file">` (legacy single-project import と全データ BackupV1 import) が混同しやすい | 別 PR / 別 Issue 候補 |
+| Codex (impl-plan 段階) | `saveAnalysisHistory` 経路の見落とし | `analysisApi.ts` で enrich する設計に変更 |
+| `/code-review medium` (3-finder × verify) | 8 候補 → dedup 後 2 件採用 | `line 270` 冗長 `&&` 削除 + mobile tab WAI-ARIA 追加 |
+| Evaluator agent (5 ファイル変更で Evaluator 分離プロトコル発動) | AC-106-5 FAIL (旧履歴 fallback の textarea 残骸誤表示) | `inputText` fallback 削除 |
+| Codex (最終 diff レビュー) | Medium: preview pane radio row が mobile overflow | `flex-col → md:flex-row` + `md:flex-wrap` で対応 (追加 commit `69641b7`) |
 
-**Codex review: OK** (High/Medium 残存指摘なし)
+## 起票 Issue (1 件、本セッションで発見、ユーザー明示指示 = triage 基準 #5)
 
-## 起票 Issue (3 件、本セッションで発見、すべてユーザー明示指示)
+### #113 [P1, meta-enhancement] (OPEN)
 
-### #105 [P1, bug] (CLOSED in this session)
+レスポンシブデザイン全体網羅監査 + 修正 meta-issue。本セッションの ImportTextModal 縦書き化を契機に、全 modal (27 件) + view / screen (9 件) のレスポンシブを Playwright MCP で 3 breakpoint (iPhone 12 Pro / iPad / Desktop) で screenshot 収集 → L0/L1/L2 分類 → 個別 sub-issue 化 → 順次 PR 提出する Phase 1〜4 spec を body に明記済
 
-テキスト解析で投入したテキストが本文に混入する。`store/dataSlice.ts:695-700` で根本原因を直接確認、PR #109 で解消
+**triage 基準**: ✅ #5 ユーザー明示指示 + ✅ #1 実害あり (iPhone 12 Pro でモーダル操作不能、本セッション ImportTextModal で実証)
 
-### #106 [P2, enhancement] (OPEN)
-
-テキストインポート解析・反映プレビュー画面の左サイドメニュー一番下に「投入元テキスト内容」を表示。Issue #105 で本文混入を止めた前提のため、UI から参照できる場所を確保する Issue
-
-### #107 [P2, bug + enhancement] (OPEN)
-
-「用語・世界観候補」「登場人物候補」のチェックボックスが解析直後に全部 ON 状態になっているのを OFF 化。`components/ImportTextModal.tsx:302` の `checked={selectedTerms[termObj.name]?.action !== 'ignore'}` 判定が undefined を ON 扱いしているのが原因
+**着手判断**: spec 規模大、次セッションでユーザーと優先順位協議
 
 ## 残課題 (本セッション外)
 
-1. **法務確認 (継続)**: 顧問弁護士確認 → md 文言確定 + LEGAL_REVIEW_REQUIRED + `<!-- TODO -->` 一斉削除 PR (M7-β)
-2. **モバイル実機確認 (継続)**: PR #100 のログイン CTA / モード切替 / 暗号化エクスポートを iPhone 実機で 1 サイクル
-3. **#106 / #107 着手**: 次セッションで実装。両方とも `components/ImportTextModal.tsx` を触るため bundle 候補
-4. **Firebase Auth `popup.closed` polling の COOP console error** — SDK 仕様 (前セッションから継続)
-5. **タッチ操作 / 仮想キーボード挙動** (モバイル実機) — 前セッションから継続
+1. **#113 着手判断**: Phase 1 (Playwright MCP で 36 component の 3 breakpoint screenshot 収集) から開始可能。spec 大規模のため、ユーザーが「P1 で全体監査やる」か「個別優先で都度 issue 切る」かを判断
+2. **モバイル実機確認 (継続)**: PR #100 / #110-#112 / #114 を iPhone 実機で 1 サイクル
+3. **法務確認 (継続)**: 顧問弁護士確認 → md 文言確定 + LEGAL_REVIEW_REQUIRED + `<!-- TODO -->` 一斉削除 PR (M7-β)
+4. **#49 [M4 follow-up]**: monitor 継続 (変化なし)
+5. **Firebase Auth `popup.closed` polling の COOP console error** — SDK 仕様 (前セッションから継続)
+6. **タッチ操作 / 仮想キーボード挙動** (モバイル実機) — 前セッションから継続
 
 ## 次セッション開始時の状態
 
-- ブランチ: `main` clean (`313920c` = PR #111 マージ後)
-- Open Issue: 3 件
-  - #49 [M4 follow-up] PR #48 持越 5 件（monitor、変化なし）
-  - **#106 [P2] 投入元テキスト表示**（本セッション起票）
-  - **#107 [P2] チェックボックス default OFF**（本セッション起票）
-- 自動テスト: vitest **474 / 474 PASS** (前 445 → +29: 15 applyMarkdown + 4 applyAnalysisResults + 4 shortcut-conflicts + 6 backup-scope)
+- ブランチ: `main` clean (`f508934` = PR #114 マージ後)
+- Open Issue: 2 件
+  - #49 [M4 follow-up] PR #48 持越 5 件 (monitor、変化なし)
+  - **#113 [meta][P1] レスポンシブ全体網羅監査** (本セッション起票)
+- 自動テスト: vitest **482 / 482 PASS** (前 474 → +8: importTextModalHelpers 8 件)
 - 型チェック: `tsc --noEmit` 0 errors
-- CI/CD: 4 PR 連続マージ後の Cloud Run デプロイは main push のたびに自動実行 (能動確認はしていない、4 原則 §1 越権回避)
+- CI/CD: PR #114 マージ後の Cloud Run デプロイ ✅ success (3m1s、`actions/runs/26349493732`)
 
 ## 次のアクション (推奨順)
 
-1. **Issue #106 + #107 を bundle で着手**: 両方とも `components/ImportTextModal.tsx` を touch するため 1 PR で進めると効率的。`#107` のチェックボックス判定式修正は line 302 の `!== 'ignore'` → `=== 'world' || === 'knowledge'` で完了 (小修正)。`#106` の投入元テキスト表示は collapse/expanded UI + scroll
-2. **モバイル実機確認**: PR #100 + 本セッションの 4 PR が iPhone で正常動作するか 1 サイクル確認
-3. **#101 修正案 D (ショートカット一覧 SSOT) 別 Issue 起票検討**: 本セッション #110 で scope 外とした「Tooltip 文字列のハードコード SSOT 化」を必要なら別 Issue 化
+1. **#113 着手判断**: ユーザーと「全体監査 spec を実行するか」「個別観察ベースで都度 issue 化するか」を協議
+2. **本番実機確認**: https://novel-writer-ramnh3ulya-an.a.run.app/ で iPhone 12 Pro エミュレーション → テキストインポート解析モーダルが縦書き化していないことを確認 (#114 の最も重要な修正点)
+3. **#106/#107 動作確認**: 同 URL で AI 解析実行 → reflect step で「用語・世界観候補」が全部 OFF 初期 + 投入元テキスト section が機能することを確認
 
 ## 主要参照
 
-- 関連 PR: **#108, #109, #110, #111** (本セッション)
-- 関連 Issue: **#102 / #105 / #101 / #104 (CLOSED)**, **#106 / #107 (OPEN、本セッション起票)**
+- 関連 PR: **#114** (本セッション、squash merge `f508934`)
+- 関連 Issue: **#106 / #107 (CLOSED)**, **#113 (OPEN、本セッション起票)**
 - 主要修正ファイル:
-  - `components/applyMarkdown.ts` / `applyMarkdown.test.ts` (新規、PR #108)
-  - `components/EditableParagraph.tsx` (PR #108 + #110)
-  - `store/dataSlice.ts` / `store/dataSlice.applyAnalysisResults.test.ts` (新規、PR #109)
-  - `hooks/useKeybindings.ts` / `helpTexts.ts` / `tests/static/shortcut-conflicts.test.ts` (新規、PR #110)
-  - `components/ProjectSelectionScreen.tsx` / `components/modals/ExportEncryptModal.tsx` / `components/panels/SettingsPanel.tsx` / `store/backupSlice.ts` / `db/backupRepository.ts` (PR #111)
+  - `types.ts` (sourceText optional 追加)
+  - `analysisApi.ts` (enrich + 早期 return)
+  - `components/ImportTextModal.tsx` (helper 適用 + 投入元テキスト UI + モバイルレスポンシブ + WAI-ARIA tabs + radio row 折返し)
+  - `components/importTextModalHelpers.ts` / `importTextModalHelpers.test.ts` (新規 pure helper + 8 vitest)
 
 ## 知見メモ (本セッションで得た教訓)
 
-### A. Evaluator 分離プロトコルは「実害ありの隠れたバグ」を確実に拾う
+### A. 4 段階レビュー方式は大規模 PR で各段階別の検出力を発揮する
 
-PR #111 の `subset export 経由で tutorial 進捗全消去` バグは、Generator (実装担当の自分) には見えていなかった。実装に頭が入っているとき、データフローの「source が変わったときに destination の上書き挙動が破壊的かどうか」までは目が届かない。**5+ ファイル変更 / 新機能追加では Evaluator 起動を絶対に省略しない** という規律を強化
+本 PR では:
+- **Codex (impl-plan 段階)**: 設計段階の経路見落とし (`saveAnalysisHistory` で sourceText が enrich されない) を検出 → 実装前に設計修正できた
+- **/code-review medium (3-finder × verify)**: 実装後の重複・冗長コード (`&&` 冗長) + WAI-ARIA 欠落を検出 → 実装中に対応
+- **Evaluator agent (AC 検証)**: 表示ロジックの edge case (旧履歴 + textarea 残骸) を検出 → 仕様レベルの FAIL 発見
+- **Codex (最終 diff)**: コード変更で誘発された別の overflow リスク (preview pane radio row) を検出 → マージ前に追加 commit で対応
 
-### B. ユーザー指摘の Issue 化は「triage 基準 #5 / 即実装」を分ける
+各段階で **重なる指摘がほぼなかった** ことが重要。Generator + 4 種の Evaluator の組合せは「同じ層を異なる角度で見る」だけでなく「異なる層を異なる時点で見る」効果がある。**5+ ファイル / 200+ 行の PR ではこの 4 段階を全部走らせる規律を継続**
 
-本セッションで `#105/#106/#107` を起票 + `#105` だけ即実装した。`#105` は P1 bug (本文データ混入) で実害大、コードで根本原因を確認済 (`store/dataSlice.ts:695-700`)、修正は数行 → 即実装が ROI 高い。`#106/#107` は UX 改善 + 中規模変更 → 次セッション着手で OK の判断。
-**規律**: ユーザー指示で Issue 化する際、P1 bug + 小修正は同セッションで処理する選択肢を持つ (`net Issue 数` KPI も改善)
+### B. PR scope の途中拡張は「同ファイル touch」で正当化される
 
-### C. 「副作用なし」前提の pure helper 抽出はテスト価値が高い
+ユーザーから ImportTextModal の縦書き化指摘を受けた時点で、すでに同ファイルを Phase 4 で編集中だった。**別 PR に切り出す方が「PR は単一目的」原則には沿うが、同ファイル並行編集による merge conflict + dev review 往復のコストを考えると、scope 拡張 + meta-issue 起票 (#113) で大規模監査を別管理する判断が ROI 高い**。`feedback_multi_pr_file_conflict.md` の教訓と整合
 
-`applyMarkdown` を `components/applyMarkdown.ts` の pure 関数に抽出 (PR #108) → 15 unit test で挙動を完全に固定できた。component 内 closure のままだと event handler + setTimeout + setState の絡みでテストできなかった。**「変化が複雑そう」「edge case が多そう」と感じたら pure helper 抽出を実装計画段階で検討する**
+### C. 「実機目視 Test plan に明記してユーザー本人に委ねる」は妥当な妥協点
+
+Playwright MCP で LeftPanel → Settings タブ → 「テキスト解析」モーダル経路に到達するのに UI 操作で手間取った。Build/lint/482 unit test/Evaluator AC が全 PASS している状況で「実機目視まで AI が完遂する」のは ROI が悪い。**PR Test plan にチェックボックス形式でユーザー本人実機確認を明記** → マージ判断時にユーザーが端末で確認、という分業が現実的
+
+ただし、致命的な修正 (今回の縦書き化) は AI 側で 1 枚でも screenshot 取れていれば自信が増した。**次回以降は Zustand store を dev build で window 露出する hack (もしくは URL hash で modal open する dev-only API) を持つと、Playwright で直接モーダルを開けて目視できる**
 
 ## Issue Net 変化
 
-- Open Issue 開始時: 4 件 (#101, #102, #104, #49)
-- Open Issue 終了時: 3 件 (#106, #107, #49)
-- Close 数: 4 件 (#102, #105, #101, #104)
-- 起票数: 3 件 (#105, #106, #107、すべてユーザー明示指示 = triage 基準 #5)
-- Net: **-1 件** (4 → 3)
-- 備考: ユーザー指摘起票 3 件のうち 1 件 (#105) は同セッション内で解消。**P1 bug** (#105) は実害大の本文データ混入で、即修正の判断は妥当。残 2 件 (#106/#107) は UX 改善 P2 のため次セッション着手で OK
+- Open Issue 開始時: 3 件 (#106, #107, #49)
+- Open Issue 終了時: 2 件 (#113, #49)
+- Close 数: 2 件 (#106, #107、いずれも PR #114 auto-close)
+- 起票数: 1 件 (#113、ユーザー明示指示 + 実害発見 = triage 基準 #5 + #1)
+- Net: **-1 件** (3 → 2)
+- 備考: 起票 1 件 (#113) は meta-issue で、内部に Phase 1〜4 spec + 36 component リストを抱えているため「実質的には 36 個分の懸念を 1 件に束ねた」状態。L0/L1 個別 sub-issue 化は Phase 2 で実施予定。**rating 5-6 の review agent 提案を機械起票していない** ことを再確認済
