@@ -3,6 +3,7 @@ import * as Icons from '../icons';
 import { useStore } from '../store/index';
 import { AnalysisResult, SettingItem, KnowledgeItem, ExtractedCharacterDetail } from '../types';
 import { useRequiresAuth } from '../hooks/useRequiresAuth';
+import { isSelectedCharacterAction, isSelectedTermAction } from './importTextModalHelpers';
 
 type PreviewTarget = {
   type: 'character' | 'world' | 'knowledge';
@@ -17,6 +18,7 @@ export const ImportTextModal: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [step, setStep] = useState<'input' | 'reflect'>('input');
   const [previewItem, setPreviewItem] = useState<PreviewTarget | null>(null);
+  const [mobileReflectView, setMobileReflectView] = useState<'list' | 'preview'>('list');
   
   const analyzeImportedText = useStore(state => state.analyzeImportedText);
   const lastAnalysisResult = useStore(state => state.lastAnalysisResult);
@@ -31,6 +33,7 @@ export const ImportTextModal: React.FC = () => {
   
   const [showHistory, setShowHistory] = useState(false);
   const [currentAnalysisResult, setCurrentAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [isSourceTextExpanded, setIsSourceTextExpanded] = useState(false);
 
   React.useEffect(() => {
     loadAnalysisHistory();
@@ -59,6 +62,7 @@ export const ImportTextModal: React.FC = () => {
     setStep('input');
     clearAnalysisResult();
     setPreviewItem(null);
+    setMobileReflectView('list');
   };
 
   const handleApply = () => {
@@ -85,6 +89,7 @@ export const ImportTextModal: React.FC = () => {
 
   // プレビュー表示用のデータを生成
   const showPreview = (name: string, type: 'char' | 'term', isSimilar: boolean) => {
+    setMobileReflectView('preview');
     if (type === 'char') {
       const detail = currentAnalysisResult?.characters.extractedDetails.find(ed => ed.name === name);
       const targetId = isSimilar ? (selectedChars[name]?.targetId || currentAnalysisResult?.characters.similar.find(s => s.text === name)?.target) : undefined;
@@ -136,8 +141,8 @@ export const ImportTextModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[80] p-4">
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl h-[90vh] flex flex-col border border-gray-700 overflow-hidden">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[80] p-2 md:p-4">
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl h-[95vh] md:h-[90vh] flex flex-col border border-gray-700 overflow-hidden">
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-gray-700 flex-shrink-0 bg-gray-800/50">
           <h2 className="text-xl font-bold text-indigo-400 flex items-center gap-2">
@@ -151,31 +156,31 @@ export const ImportTextModal: React.FC = () => {
 
         <div className="flex-grow flex min-h-0 overflow-hidden">
           {step === 'input' ? (
-            <>
+            <div className="flex-grow flex flex-col md:flex-row min-h-0 overflow-y-auto md:overflow-hidden">
               {/* Input Phase */}
-              <div className="w-1/2 flex flex-col p-6 border-r border-gray-700">
+              <div className="w-full md:w-1/2 flex flex-col p-4 md:p-6 md:border-r border-gray-700 min-h-0">
                 <label className="block text-sm font-medium text-gray-400 mb-2">取り込むテキストをペースト</label>
                 <textarea
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   placeholder="ここに外部で書いた本文を貼り付けてください..."
-                  className="flex-grow bg-gray-900 border border-gray-600 rounded-md p-4 text-sm text-white resize-none focus:ring-2 focus:ring-indigo-500 outline-none leading-relaxed"
+                  className="flex-grow min-h-[200px] md:min-h-0 bg-gray-900 border border-gray-600 rounded-md p-4 text-sm text-white resize-none focus:ring-2 focus:ring-indigo-500 outline-none leading-relaxed"
                 />
-                <div className="mt-6 flex gap-2">
+                <div className="mt-4 md:mt-6 flex gap-2">
                   <button
                     onClick={handleAnalyze}
                     disabled={!canUseAi || isLoading || !inputText.trim()}
                     title={!canUseAi ? aiBlockedReason : undefined}
-                    className="flex-grow h-12 flex items-center justify-center gap-2 px-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition font-bold disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                    className="flex-grow min-w-0 h-12 flex items-center justify-center gap-2 px-4 md:px-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition font-bold disabled:opacity-50 disabled:cursor-not-allowed shadow-lg whitespace-nowrap"
                   >
                     <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
                       {isLoading ? <Icons.LoaderIcon className="animate-spin h-5 w-5" /> : <Icons.TIcon className="h-5 w-5" />}
                     </div>
-                    <span>AIで設定を抽出して反映準備</span>
+                    <span className="text-sm md:text-base truncate">AIで設定を抽出して反映準備</span>
                   </button>
                   <button
                     onClick={() => setShowHistory(!showHistory)}
-                    className="h-12 w-12 flex items-center justify-center bg-gray-700 hover:bg-gray-600 text-white rounded-md transition shadow-lg"
+                    className="h-12 w-12 flex-shrink-0 flex items-center justify-center bg-gray-700 hover:bg-gray-600 text-white rounded-md transition shadow-lg"
                     title="解析履歴"
                   >
                     <Icons.HistoryIcon className="h-5 w-5" />
@@ -211,7 +216,7 @@ export const ImportTextModal: React.FC = () => {
                   </div>
                 )}
               </div>
-              <div className="w-1/2 flex flex-col items-center justify-center p-12 text-gray-400 text-center">
+              <div className="hidden md:flex w-1/2 flex-col items-center justify-center p-12 text-gray-400 text-center">
                 <div className="bg-indigo-500/10 p-6 rounded-full mb-6">
                   <Icons.TIcon className="h-16 w-16 text-indigo-400" />
                 </div>
@@ -221,12 +226,42 @@ export const ImportTextModal: React.FC = () => {
                   抽出された設定は、既存の設定と照らし合わせて「新規登録」するか「既存キャラに追記」するかを自由に選べます。
                 </p>
               </div>
-            </>
+            </div>
           ) : (
             /* Reflection Phase */
-            <div className="w-full flex min-h-0">
+            <div className="w-full flex flex-col md:flex-row min-h-0">
+              {/* Mobile Tab Switcher */}
+              <div role="tablist" aria-label="反映プレビュー切替" className="flex md:hidden border-b border-gray-700 bg-gray-900/40 flex-shrink-0">
+                <button
+                  id="import-tab-list"
+                  role="tab"
+                  aria-selected={mobileReflectView === 'list'}
+                  aria-controls="import-panel-list"
+                  onClick={() => setMobileReflectView('list')}
+                  className={`flex-1 px-4 py-3 text-sm font-bold transition ${mobileReflectView === 'list' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-gray-800/50' : 'text-gray-500'}`}
+                >
+                  候補リスト
+                </button>
+                <button
+                  id="import-tab-preview"
+                  role="tab"
+                  aria-selected={mobileReflectView === 'preview'}
+                  aria-controls="import-panel-preview"
+                  onClick={() => setMobileReflectView('preview')}
+                  disabled={!previewItem}
+                  className={`flex-1 px-4 py-3 text-sm font-bold transition disabled:opacity-40 disabled:cursor-not-allowed ${mobileReflectView === 'preview' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-gray-800/50' : 'text-gray-500'}`}
+                >
+                  プレビュー
+                </button>
+              </div>
+
               {/* Left Column: List */}
-              <div className="w-1/3 flex flex-col border-r border-gray-700 bg-gray-900/20 overflow-y-auto p-4 space-y-6">
+              <div
+                id="import-panel-list"
+                role="tabpanel"
+                aria-labelledby="import-tab-list"
+                className={`w-full md:w-1/3 flex-col md:border-r border-gray-700 bg-gray-900/20 overflow-y-auto p-4 space-y-6 ${mobileReflectView === 'list' ? 'flex' : 'hidden'} md:flex`}
+              >
                 {!currentAnalysisResult ? (
                   <div className="flex flex-col justify-center items-center h-full gap-3">
                     <Icons.LoaderIcon className="animate-spin h-8 w-8 text-indigo-500" />
@@ -238,14 +273,14 @@ export const ImportTextModal: React.FC = () => {
                       <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 px-2">登場人物候補</h3>
                       <div className="space-y-2">
                         {currentAnalysisResult.characters.similar.map((item, idx) => (
-                          <div 
-                            key={`sim-${idx}`} 
+                          <div
+                            key={`sim-${idx}`}
                             onClick={() => showPreview(item.text, 'char', true)}
                             className={`p-3 rounded-lg border cursor-pointer transition flex items-center gap-3 ${previewItem?.name === item.text ? 'bg-indigo-600/20 border-indigo-500' : 'bg-gray-800/40 border-gray-700 hover:bg-gray-700/50'}`}
                           >
-                            <input 
-                              type="checkbox" 
-                              checked={selectedChars[item.text]?.action === 'link'} 
+                            <input
+                              type="checkbox"
+                              checked={selectedChars[item.text]?.action === 'link'}
                               onChange={(e) => {
                                 e.stopPropagation();
                                 setSelectedChars(prev => ({
@@ -262,14 +297,14 @@ export const ImportTextModal: React.FC = () => {
                           </div>
                         ))}
                         {currentAnalysisResult.characters.new.map((name) => (
-                          <div 
-                            key={`new-${name}`} 
+                          <div
+                            key={`new-${name}`}
                             onClick={() => showPreview(name, 'char', false)}
                             className={`p-3 rounded-lg border cursor-pointer transition flex items-center gap-3 ${previewItem?.name === name ? 'bg-indigo-600/20 border-indigo-500' : 'bg-gray-800/40 border-gray-700 hover:bg-gray-700/50'}`}
                           >
-                            <input 
-                              type="checkbox" 
-                              checked={selectedChars[name]?.action === 'create'} 
+                            <input
+                              type="checkbox"
+                              checked={selectedChars[name]?.action === 'create'}
                               onChange={(e) => {
                                 e.stopPropagation();
                                 setSelectedChars(prev => ({
@@ -292,14 +327,14 @@ export const ImportTextModal: React.FC = () => {
                       <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 px-2">用語・世界観候補</h3>
                       <div className="space-y-2">
                         {currentAnalysisResult.worldTerms.new.map((termObj) => (
-                          <div 
-                            key={`term-${termObj.name}`} 
+                          <div
+                            key={`term-${termObj.name}`}
                             onClick={() => showPreview(termObj.name, 'term', false)}
                             className={`p-3 rounded-lg border cursor-pointer transition flex items-center gap-3 ${previewItem?.name === termObj.name ? 'bg-indigo-600/20 border-indigo-500' : 'bg-gray-800/40 border-gray-700 hover:bg-gray-700/50'}`}
                           >
-                            <input 
-                              type="checkbox" 
-                              checked={selectedTerms[termObj.name]?.action !== 'ignore'} 
+                            <input
+                              type="checkbox"
+                              checked={isSelectedTermAction(selectedTerms[termObj.name]?.action)}
                               onChange={(e) => {
                                 e.stopPropagation();
                                 setSelectedTerms(prev => ({
@@ -319,18 +354,49 @@ export const ImportTextModal: React.FC = () => {
                         ))}
                       </div>
                     </section>
+
+                    {/* 投入元テキスト section (Issue #106) */}
+                    <section className="border-t border-gray-700/50 pt-4">
+                      <button
+                        type="button"
+                        onClick={() => setIsSourceTextExpanded(!isSourceTextExpanded)}
+                        className="w-full flex items-center justify-between px-2 py-1 text-xs font-bold text-gray-500 uppercase tracking-widest hover:text-gray-300 transition"
+                        aria-expanded={isSourceTextExpanded}
+                      >
+                        <span>投入元テキスト</span>
+                        <span className="text-gray-400" aria-hidden="true">{isSourceTextExpanded ? '▼' : '▶'}</span>
+                      </button>
+                      {isSourceTextExpanded && (
+                        <div className="mt-2 max-h-64 overflow-y-auto bg-gray-900/60 border border-gray-700/50 rounded p-3">
+                          {currentAnalysisResult?.sourceText ? (
+                            <pre className="text-xs text-gray-300 whitespace-pre-wrap break-words font-sans leading-relaxed">
+                              {currentAnalysisResult.sourceText}
+                            </pre>
+                          ) : (
+                            <p className="text-xs text-gray-500 italic">
+                              (この履歴データには投入元テキストが含まれていません。次回以降の解析から記録されます)
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </section>
                   </>
                 )}
               </div>
 
               {/* Right Column: Detail Preview */}
-              <div className="w-2/3 flex flex-col bg-gray-900/40 overflow-hidden relative">
+              <div
+                id="import-panel-preview"
+                role="tabpanel"
+                aria-labelledby="import-tab-preview"
+                className={`w-full md:w-2/3 flex-col bg-gray-900/40 overflow-hidden relative ${mobileReflectView === 'preview' ? 'flex' : 'hidden'} md:flex`}
+              >
                 {previewItem ? (
                   <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-200">
-                    <div className="p-6 border-b border-gray-700 flex justify-between items-center bg-gray-800/30">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-xl font-bold text-white">{previewItem.name}</h3>
+                    <div className="p-4 md:p-6 border-b border-gray-700 flex flex-col md:flex-row md:justify-between md:items-center gap-3 md:gap-4 bg-gray-800/30">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <h3 className="text-lg md:text-xl font-bold text-white truncate">{previewItem.name}</h3>
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${previewItem.isNew ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30'}`}>
                             {previewItem.isNew ? '新規' : '追記予定'}
                           </span>
@@ -344,11 +410,13 @@ export const ImportTextModal: React.FC = () => {
                           {previewItem.type === 'character' ? '登場人物設定' : '世界観・ナレッジ設定'} として反映されます
                         </p>
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-4 flex-shrink-0">
                         <label className="flex items-center gap-2 cursor-pointer bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-600 hover:border-indigo-500 transition">
-                          <input 
-                            type="checkbox" 
-                            checked={previewItem.type === 'character' ? (selectedChars[previewItem.name]?.action !== 'ignore') : (selectedTerms[previewItem.name]?.action !== 'ignore')}
+                          <input
+                            type="checkbox"
+                            checked={previewItem.type === 'character'
+                              ? isSelectedCharacterAction(selectedChars[previewItem.name]?.action)
+                              : isSelectedTermAction(selectedTerms[previewItem.name]?.action)}
                             onChange={(e) => {
                               if (previewItem.type === 'character') {
                                 setSelectedChars(prev => ({
@@ -368,12 +436,12 @@ export const ImportTextModal: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="flex-grow overflow-y-auto p-6 space-y-8">
+                    <div className="flex-grow overflow-y-auto p-4 md:p-6 space-y-6 md:space-y-8">
                       {previewItem.type === 'character' ? (
                         /* Character Detailed Preview */
-                        <div className="space-y-8">
+                        <div className="space-y-6 md:space-y-8">
                           {/* Quick Info Grid */}
-                          <div className="grid grid-cols-4 gap-4">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
                              <div className="bg-gray-800/40 p-3 rounded border border-gray-700/50">
                                <p className="text-[10px] text-gray-500 uppercase mb-1">推定年齢</p>
                                <p className="text-sm text-white font-bold">{previewItem.data.age || '不明'}</p>
@@ -503,8 +571,8 @@ export const ImportTextModal: React.FC = () => {
 
         {/* Footer Summary Area */}
         {step === 'reflect' && (
-          <div className="p-4 border-t border-gray-700 bg-gray-900/50 flex items-center justify-between flex-shrink-0">
-            <div className="flex items-center gap-8 ml-4">
+          <div className="p-3 md:p-4 border-t border-gray-700 bg-gray-900/50 flex flex-col md:flex-row md:items-center md:justify-between gap-3 flex-shrink-0">
+            <div className="flex items-center gap-8 md:ml-4">
               <div className="flex flex-col">
                 <span className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter">REFLECT TARGET</span>
                 <div className="flex gap-4 text-sm font-bold text-white">
@@ -513,19 +581,19 @@ export const ImportTextModal: React.FC = () => {
                 </div>
               </div>
             </div>
-            
-            <div className="flex gap-3">
+
+            <div className="flex gap-2 md:gap-3">
               <button
                 onClick={handleBackToInput}
-                className="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition font-bold flex items-center gap-2"
+                className="px-4 md:px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition font-bold flex items-center gap-2 whitespace-nowrap"
               >
                 <Icons.ArrowLeftIcon className="h-4 w-4"/>
                 戻る
               </button>
-              <button 
+              <button
                 onClick={handleApply}
                 disabled={reflectSummary.chars === 0 && reflectSummary.terms === 0}
-                className="px-8 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md font-bold transition shadow-lg active:scale-95 disabled:opacity-50"
+                className="flex-grow md:flex-grow-0 px-4 md:px-8 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md font-bold transition shadow-lg active:scale-95 disabled:opacity-50 whitespace-nowrap text-sm md:text-base"
               >
                 選択した設定を反映して取り込む
               </button>

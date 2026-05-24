@@ -16,7 +16,9 @@ export const analyzeTextForImport = async (
     });
 
     if (result.success) {
-        useStore.getState().saveAnalysisHistory(result.data);
+        const enriched: AnalysisResult = { ...result.data, sourceText: importedText };
+        useStore.getState().saveAnalysisHistory(enriched);
+        return { success: true, data: enriched };
     }
 
     return result;
