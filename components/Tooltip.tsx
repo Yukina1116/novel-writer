@@ -19,7 +19,8 @@ export const Tooltip: React.FC<TooltipProps> = ({ helpId, children, placement = 
     const isMac = useMemo(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0, []);
     const modifier = isMac ? '⌘' : 'Ctrl';
 
-    const data = helpTexts[helpId]?.[userMode];
+    // pro モードは standard モードの tooltip にフォールバック (小説家向け表記で統一)
+    const data = helpTexts[helpId]?.[userMode === 'pro' ? 'standard' : userMode];
 
     // クリーンアップ処理
     useEffect(() => {
