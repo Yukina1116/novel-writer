@@ -10,7 +10,6 @@ import { ModalManager } from './components/ModalManager';
 import { CommandPalette } from './components/CommandPalette';
 import { FloatingWindow } from './components/FloatingWindow';
 import { useStore } from './store/index';
-import { helpTexts } from './helpTexts';
 import { useKeybindings } from './hooks/useKeybindings';
 import { useSidebarResize } from './hooks/useSidebarResize';
 import { ProjectSelectionScreen } from './components/ProjectSelectionScreen';
@@ -138,33 +137,6 @@ export default function App() {
             setIsRightSidebarOpen(true);
         }
     }, [activeProjectId, activeProjectData?.isSimpleMode, setIsRightSidebarOpen]);
-
-    // ヘルプをナレッジベースに自動追加
-    useEffect(() => {
-        if (!activeProjectId || !activeProjectData) return;
-        
-        const { handleSaveSetting } = useStore.getState();
-        const existingKnowledge = activeProjectData.knowledgeBase || [];
-
-        // ヘルプ項目は初回（ナレッジが空の場合）のみ自動追加
-        // 削除後に再追加されるのを防ぐため、1件でも存在すればスキップ
-        if (existingKnowledge.length > 0) return;
-
-        const helpKnowledgeItems = Object.entries(helpTexts).map(([key, modes]) => {
-            const content = Object.entries(modes).map(([mode, content]) => {
-                return `【${mode}モード】\nタイトル: ${content.title}\n説明: ${content.desc}${content.shortcut ? `\nショートカット: ${content.shortcut}` : ''}${content.tech ? `\n技術: ${content.tech}` : ''}\n`;
-            }).join('\n');
-            return {
-                name: `ヘルプ: ${modes.standard.title}`,
-                content: content,
-                isAutoFilled: true
-            };
-        });
-
-        helpKnowledgeItems.forEach(item => {
-            handleSaveSetting(item, 'knowledge');
-        });
-    }, [activeProjectId]);
 
     // Handle knowledge link clicks globally
     useEffect(() => {
