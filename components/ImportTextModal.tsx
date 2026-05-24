@@ -523,21 +523,21 @@ export const ImportTextModal: React.FC = () => {
                              <p className="text-sm text-white leading-relaxed whitespace-pre-wrap">{previewItem.data.description}</p>
                            </section>
                            
-                           <div className="flex items-center gap-4 p-4 bg-gray-800/30 rounded border border-gray-700/50">
+                           <div className="flex flex-col items-start gap-3 md:flex-row md:items-center md:gap-4 md:flex-wrap p-4 bg-gray-800/30 rounded border border-gray-700/50">
                              <span className="text-xs text-gray-400">登録先カテゴリの選択:</span>
                              <label className="text-xs text-gray-300 flex items-center gap-1 cursor-pointer">
-                               <input 
-                                 type="radio" 
-                                 name="termType" 
+                               <input
+                                 type="radio"
+                                 name="termType"
                                  checked={selectedTerms[previewItem.name]?.action === 'world'}
                                  onChange={() => setSelectedTerms(prev => ({ ...prev, [previewItem.name]: { action: 'world' } }))}
                                />
                                世界観設定 (地図・カスタム項目)
                              </label>
                              <label className="text-xs text-gray-300 flex items-center gap-1 cursor-pointer">
-                               <input 
-                                 type="radio" 
-                                 name="termType" 
+                               <input
+                                 type="radio"
+                                 name="termType"
                                  checked={selectedTerms[previewItem.name]?.action === 'knowledge'}
                                  onChange={() => setSelectedTerms(prev => ({ ...prev, [previewItem.name]: { action: 'knowledge' } }))}
                                />
