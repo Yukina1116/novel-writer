@@ -50,9 +50,11 @@ export const AuthButton: React.FC = () => {
             <button
                 type="button"
                 onClick={() => setIsMenuOpen((p) => !p)}
-                className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-panel-bg transition btn-pressable"
+                className="flex items-center px-1 py-1 rounded-md hover:bg-panel-bg transition btn-pressable"
                 aria-haspopup="menu"
                 aria-expanded={isMenuOpen}
+                aria-label={`アカウントメニュー (${displayLabel})`}
+                title={displayLabel}
             >
                 {currentUser.photoURL ? (
                     <img
@@ -66,7 +68,6 @@ export const AuthButton: React.FC = () => {
                         {(currentUser.email ?? '?').slice(0, 1).toUpperCase()}
                     </div>
                 )}
-                <span className="text-sm text-text-main truncate max-w-[180px] hidden sm:inline">{displayLabel}</span>
             </button>
             {isMenuOpen && (
                 <div role="menu" className="absolute top-full right-0 mt-2 w-56 bg-panel-bg border border-border rounded-lg shadow-xl z-50 overflow-hidden">
