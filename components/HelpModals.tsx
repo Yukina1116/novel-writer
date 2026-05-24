@@ -6,67 +6,6 @@ import { helpContent } from '../constants';
 import { renderMarkdown } from '../utils/sanitizeHtml';
 import { useStore } from '../store/index';
 
-const siteMapContent = `【プロジェクト選択画面】
-      │
-      ├─ 新規プロジェクト作成
-      │     ├─ シンプルモード or 標準モード選択
-      │     ├─ タイトル入力
-      │     └─ 「作成」ボタン
-      │           ▼
-      │         【メイン画面】
-      │
-      ├─ プロジェクトをインポート
-      │     ├─ ファイル選択
-      │     └─ ▼【メイン画面】
-      │
-      └─ 既存プロジェクト一覧
-            ├─ 「開く」ボタン
-            └─ ▼【メイン画面】
-                  │
-                  ▼
-
-【メイン画面】
-      │
-      ├─ ヘッダー
-      │     ├─ 「プロジェクト一覧へ」ボタン → ▼【プロジェクト選択画面】
-      │     ├─ 「エクスポート」ボタン (プロジェクト.json)
-      │     ├─ タイトル部分クリック (タイトル編集)
-      │     ├─ 「検索」ボタン (Ctrl+F) → ▼【全体検索モーダル】
-      │     ├─ 「表示設定」ボタン → ▼【表示設定ポップオーバー】
-      │     ├─ モード切替ボタン (標準/シンプル)
-      │     ├─ 「プレビュー」ボタン → ▼【プレビューモーダル】
-      │     ├─ 「.txtで出力」ボタン
-      │     ├─ 「.htmlで出力」ボタン → ▼【HTML書き出しモーダル】
-      │     └─ サイドバー開閉ボタン
-      │
-      ├─ 左サイドバー (標準モードのみ)
-      │     └─ タブ切替ドロップダウン
-      │           ├─ 設定ライブラリ
-      │           │    ├─ 「設定」ボタン → ▼【設定モーダル】
-      │           │    ├─ キャラクター追加 → ▼【キャラクター設定モーダル】
-      │           │    ├─ 世界観追加 → ▼【世界観設定モーダル】
-      │           │    ├─ 「相関図を表示」 → ▼【相関図モーダル】
-      │           │    ├─ 「タイムライン」 → ▼【タイムラインモーダル】
-      │           │    ├─ 「ジェネレーター」 → ▼【固有名詞生成モーダル】
-      │           │    ├─ ナレッジ追加 → ▼【ナレッジ設定モーダル】
-      │           │    └─ プロット追加 → ▼【プロットボードモーダル】
-      │           │
-      │           └─ アウトライン
-      │                ├─ 章タイトルクリック (本文へスクロール)
-      │                ├─ 「設定」ボタン → ▼【章設定モーダル】
-      │                └─ 「新しい章を追加」
-      │
-      ├─ 中央パネル (本文)
-      │     ├─ 段落の編集・ピン留め
-      │     └─ 本文の直接入力エリア
-      │
-      └─ 右サイドバー (AIアシスタント)
-            ├─ 「ヘルプ」ボタン → ▼【一般ヘルプモーダル】
-            ├─ 元に戻す / やり直す
-            ├─ 相談/執筆モード切替
-            └─ 指示入力・送信
-`;
-
 const manualContent = {
     'index.md': `# 小説らいたー 取扱説明書
 
@@ -109,9 +48,6 @@ const manualContent = {
 
 6.  **[AIの性格を変える（設定）](./06-ai-settings.md)**
     *   アシスタントの「口調」や「提案の傾向」を、あなた好みにカスタマイズしましょう。
-
-7.  **[UIリファレンスとサイトマップ](./07-ui-reference.md)**
-    *   「このボタンなんだっけ？」と思ったらこちら。全機能を網羅しています。
 
 ---
 
@@ -545,9 +481,6 @@ AIに一度に書いてもらう長さです。
 いろいろ試して、あなたにとって最高のパートナーに育ててあげてくださいね！
 
 [目次に戻る](./index.md)`,
-    '07-ui-reference.md': siteMapContent,
-    '08-test-cases.md': `# 8. 動作確認項目（チェックリスト）\n\nこのドキュメントは、「小説らいたー」の各機能が意図通りに正しく動作することを確認するための、詳細なテスト項目をまとめたものです。\n\n---\n\n## 0. テストの準備：まっさらな状態から始める\n\n| テスト項目 | 操作手順 | 期待される結果 |\n| :--- | :--- | :--- |\n| **データのリセット** | 1. \`F12\`キーで開発者ツールを開く<br>2. 「アプリケーション」タブで「ローカルストレージ」を選択<br>3. 表示されたドメインを右クリックし、「クリア」を選択<br>4. ページをリロードする | 1. プロジェクト選択画面が表示され、既存のプロジェクトが一つも表示されていない状態になる |\n\n（以降、省略）`,
-    '09-user-acceptance-test.md': `# 9. ユーザー総合テストシナリオ\n\n## はじめに：君は今日から新人作家！\n\nこのテストは、あなたが「一人の作家」として、この「小説らいたー」アプリを使って**短編小説を一本書き上げる**までをシミュレートするものです。\n\n---\n\n### Step 0: テストの準備\n\n| 操作手順 | 期待される結果 |\n| :--- | :--- |\n| 1. 開発者ツールでローカルストレージをクリア<br>2. ページをリロードする | 最初の画面が表示される |\n\n（以降、省略）`,
 };
 
 
@@ -616,9 +549,6 @@ export const GeneralHelpModal = ({ isOpen, onClose }) => {
         '04-assistant-panel.md': '4. AIと一緒に書く',
         '05-main-panel.md': '5. 本文を書く・整える',
         '06-ai-settings.md': '6. AIの性格設定',
-        '07-ui-reference.md': '7. UIリファレンス',
-        '08-test-cases.md': '8. テストケース',
-        '09-user-acceptance-test.md': '9. テストシナリオ',
     };
 
     useEffect(() => {
@@ -710,14 +640,10 @@ export const GeneralHelpModal = ({ isOpen, onClose }) => {
                         </ul>
                     </aside>
                     <main ref={contentRef} className="w-3/4 p-6 overflow-y-auto">
-                        {activeDocKey === '07-ui-reference.md' ? (
-                            <pre className="text-sm whitespace-pre-wrap font-mono text-gray-300">{manualContent[activeDocKey]}</pre>
-                        ) : (
-                            <div
-                                className="prose prose-invert prose-lg max-w-full"
-                                dangerouslySetInnerHTML={{ __html: renderMarkdown(manualContent[activeDocKey] || '', [], [], undefined, { applyKnowledgeLinks: false }) }}
-                            />
-                        )}
+                        <div
+                            className="prose prose-invert prose-lg max-w-full"
+                            dangerouslySetInnerHTML={{ __html: renderMarkdown(manualContent[activeDocKey] || '', [], [], undefined, { applyKnowledgeLinks: false }) }}
+                        />
                     </main>
                 </div>
             </div>
