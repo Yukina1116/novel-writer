@@ -1,144 +1,176 @@
-# Handoff: テキストインポート解析モーダルの bundle 修正 + レスポンシブ網羅 meta-issue 起票
+# Handoff: 取扱説明書削除 + ヘッダー UI 整理 + ナレッジ初期空化 + tooltip 統一 + 人名抽出強化 (5 PR 連続マージ)
 
-- Session Date: 2026-05-24
+- Session Date: 2026-05-24 (2nd session)
 - Owner: yasushi-honda
-- Status: ✅ 再開可能（main clean、Cloud Run デプロイ success、Open Issue 2 件すべて monitor / spec 検討対象）
-- Previous handoff: [2026-05-17b-issue-cleanup-and-text-import-bugs.md](./2026-05-17b-issue-cleanup-and-text-import-bugs.md)
+- Status: ✅ 再開可能（main clean、Cloud Run デプロイ進行中、Open Issue 2 件すべて monitor 対象）
+- Previous handoff: [2026-05-24-import-modal-bundle-fix.md](./2026-05-24-import-modal-bundle-fix.md)
 
 ## 今セッションのトリガー
 
-1. `/catchup` で前セッション残 Open Issue 確認 → `#106` + `#107` (両方 `components/ImportTextModal.tsx` を touch) を bundle 着手と判断
-2. 実装 Phase 4 中にユーザーからスクリーンショット添付 (iPhone 12 Pro 390px) で **ImportTextModal の 2-col レイアウトが縦書き化** している致命的 UX 不良を報告 → PR scope を拡張してモバイルレスポンシブ修正を統合 + 全モーダル/view 網羅監査の meta-issue を別途起票
-3. 4 段階レビュー方式 (`Codex (impl-plan)` → `/code-review medium (3-finder)` → `Evaluator agent (AC 検証)` → `Codex (最終 diff)`) で各段階で実害ある指摘を 1 件以上検出 → 全て修正 → 1 PR で main マージ
+ユーザーから連続して 5 件の UI / UX / AI prompt 改善要求がスクリーンショット付きで投入された:
 
-## 完了 PR (1 件、main 反映済 + Cloud Run デプロイ success)
+1. **要求 (取扱説明書)**: HelpModal 左サイドバーの「7. UIリファレンス」「8. テストケース」「9. テストシナリオ」 3 セクションを削除
+2. **要求 B**: ヘッダー右上アバター横の email 全文表示 (`hy.unimail.11@gmail.com`) を非表示化
+3. **要求 C**: 新規プロジェクトの初期ナレッジ (「ヘルプ: テキスト解析」等 約 15 件の自動投入カード) を空に
+4. **要求 D**: 「プロモード」tooltip が英語 + tech 表記 (engineer 寄り) になっていたのを「標準モード」と統一 (小説家向け表記)
+5. **要求 A**: テキストインポート解析の「登場人物候補」セクションが空欄になる問題 → AI prompt を強化し呼称・代名詞も抽出対象に
 
-| PR | 内容 | Closes | merge commit | デプロイ |
-|---|---|---|---|---|
-| #114 | fix(import): default-OFF checkboxes + source text panel + mobile responsive | #106, #107 | `f508934` | ✅ success (3m1s) |
+各要求を独立した小 PR (1-6 ファイル / +5〜+73 行) に分割し、ユーザー番号単位明示認可 → squash merge → main 同期を 5 サイクル連続実行。
 
-## PR #114 要点 (Issue #106 + #107 bundle + モバイルレスポンシブ緊急対応)
+## 完了 PR (5 件、すべて main マージ済)
 
-### #107 修正 (チェックボックスのデフォルト OFF 化)
+| PR | 内容 | 規模 | merge commit |
+|---|---|---|---|
+| #116 | docs(manual): remove sections 7-9 (UI ref / test cases / test scenarios) | 6 files, +5/-429 | `513bb82` |
+| #117 | ui(auth): hide email text from header avatar button (keep in dropdown) | 1 file, +3/-2 | `e939a87` |
+| #118 | chore(knowledge): remove auto-seed of help entries on new project | 1 file, +0/-28 | `ce16d2d` |
+| #119 | ui(tooltip): fall back pro mode to standard tooltip (novelist-friendly text) | 1 file, +2/-1 | `5579a0b` |
+| #120 | feat(analysis): extract appellations and pronouns as character candidates | 2 files, +73/-1 | `5493647` |
 
-**根本原因**: `components/ImportTextModal.tsx:302` の `checked={selectedTerms[termObj.name]?.action !== 'ignore'}` で `undefined !== 'ignore' = true` となり、未操作の用語・世界観候補が全部 ON 表示。`line 351` 右ペイン「この項目を反映する」も同じ pattern で latent bug。
+Cloud Run デプロイ: PR #120 main マージ後のデプロイが本ハンドオフ作成時点で `in_progress` (1m13s 経過、PR-time deploy は ✅ success 50s)。
+
+## PR 別要点
+
+### PR #116 (manual sections 7-9 削除)
+
+- `components/HelpModals.tsx`: `siteMapContent` 定数 (60 行) + `manualContent` 7-9 エントリ + `docTitles` 7-9 エントリ + `index.md` 目次 7 番リンク + `<pre>` 専用分岐をすべて削除し、通常 markdown render に統一
+- `manual/07-ui-reference.md` / `08-test-cases.md` / `09-user-acceptance-test.md` 物理削除
+- `manual/index.md` / `manual/full-documentation.md`: 削除ファイル参照を除去 (リンク切れ防止)
+- code-review 3-angle 並列レビュー: 全 angle CONFIRMED 候補ゼロ
+- `manual/full-documentation.md` 内に残存する `## 07. テストとデバッグ` 章は内部 numbering で削除 manual/07 とは衝突なし
+
+### PR #117 (ヘッダー email 削減)
+
+- `components/AuthButton.tsx:69` の `<span>{displayLabel}</span>` (sm 以上で email 全文表示) を削除
+- 代わりに button に `aria-label={\`アカウントメニュー (${displayLabel})\`}` + `title={displayLabel}` を追加 → accessibility (screen reader) + hover tooltip で email アクセスを保持
+- button のレイアウト: `gap-2 px-2` → `px-1` で詰めて視覚ノイズ削減
+- ドロップダウンメニュー内 email 表示 (line 73-75) は不変、アカウント切替時の確認用として保持
+- Mobile (sm 未満) は元から `hidden sm:inline` で email 非表示だったため UX 不変
+
+### PR #118 (ナレッジ初期空化)
+
+- `App.tsx` の旧 l.142-167 `useEffect`: 新規プロジェクト初回オープン時に `helpTexts` を元に「ヘルプ: テキスト解析」等のナレッジカードを `existingKnowledge.length === 0` ガード下で自動投入していた処理を全削除
+- `App.tsx:13` の `import { helpTexts } from './helpTexts'` も削除 (App.tsx 内では本 useEffect でしか使用していなかった)
+- `helpTexts` 本体は `components/Tooltip.tsx` で UI tooltip 用に使われているため温存
+- **既存プロジェクトへの影響ゼロ**: 旧 useEffect は `existingKnowledge.length > 0` で skip していたため、ヘルプを持つ既存プロジェクトには元々再投入していなかった → migration 不要・破壊なし
+- ユーザーが既存プロジェクトでヘルプを消したい場合は従来通り手動で削除可能
+
+### PR #119 (pro tooltip → standard フォールバック)
+
+- `components/Tooltip.tsx:22`: `helpTexts[helpId]?.[userMode]` → `helpTexts[helpId]?.[userMode === 'pro' ? 'standard' : userMode]` (1 行 + コメント追加)
+- 例: 「相関図を表示」tooltip
+  - 旧 (pro): "Relation Chart" / "Ctrl+Shift+C" / dev フィールドなし
+  - 新 (pro): "相関図を表示" / ⌘+Shift+C / "人物の関係を可視化。" (standard と完全一致)
+- `helpTexts.ts` の pro エントリ自体は **温存 (可逆)**。将来 pro 固有の小説家向け表記が必要になった場合、本フォールバック行を外せば復活する
+- pro データ一括削除は型定義変更が広範囲に及ぶため見送り、最小変更原則に従い 1 行修正を採用
+
+### PR #120 (人名抽出強化、唯一の機能変更)
+
+**原因切り分け**:
+- FE は `ImportTextModal.tsx:299-322` で正しく `characters.new` を render している
+- スクショの worldTerms (「絵本/学校/竹馬/空や星」) から子供視点の物語と推察、「お母さん」「先生」「あの子」等の呼称中心テキストである可能性
+- 旧 systemInstruction は「キャラクター分析」とのみ指示し、呼称・代名詞・役割語を `characters.new` に積極詰める指示が不在 → AI 側責務不足
 
 **修正**:
-- `components/importTextModalHelpers.ts` (新規 pure helper) に `isSelectedCharacterAction` / `isSelectedTermAction` を切出
-- `line 302` (用語 list) + `line 351` (右ペイン character / term 両方) を helper に置換 → undefined → false で OFF 初期化
-- 登場人物候補 (line 248, 272) は元から `=== 'link'` / `=== 'create'` で正しく OFF 初期だったため変更なし (`line 270` で一度 helper 化したが `&& === 'link'` が冗長と /code-review で指摘され元に戻し)
-- `components/importTextModalHelpers.test.ts` (新規) で 8 件の vitest pin (undefined→false / 各 action → 期待値)
+- `server/services/analysisService.ts` systemInstruction に「**■ 人物候補の積極抽出（最重要）**」セクションを追加
+  - 抽出対象を 4 カテゴリに整理: 固有名詞 / 親族・関係呼称 / 役割・職業呼称 / 物語内で識別可能な代名詞・指示語
+  - 判断基準: 「同じ呼称が複数回登場し一貫した個人を指す」+「迷ったら抽出側に倒す」
+  - `characters.new` と `extractedDetails.name` の一文字一句一致を明示
+  - few-shot guidance: 「お母さん」「先生」「主人公」「あの子」「太郎」「アイリス」「サクラ先輩」を例示
+  - `dialogueSamples` は本文に該当セリフがない場合は推測生成可と緩和 (呼称キャラは台詞欠落しやすいため)
+- `server/services/analysisService.test.ts` 新規 contract test:
+  - systemInstruction 文字列に必要 13 キーワード (積極姿勢 4 / カテゴリ 3 / 同期 2 / few-shot 4) が含まれることを vitest で pin
+  - 既存 world 解析指示 / 4 フィールド責務 (summary / detailDescription / memo / dialogueSamples) が改修で破壊されていないことも併せて pin
+  - Gemini 実応答は flaky のため unit test しない方針 (contract test pattern)
+- **スコープ外 (すべて不変)**: ImportTextModal.tsx, types.ts (AnalysisResult schema), usageConfig.ts (200 sen 不変), 認証ミドルウェア, FE-BE API 契約
 
-### #106 追加 (投入元テキスト表示)
+## レビュー方式
 
-**追加**: reflect step 左サイドメニュー末尾に「投入元テキスト」collapse セクション
+| PR 規模 | 方式 |
+|---|---|
+| #116 (6 files, +5/-429) | code-review 3-angle 並列 (CONFIRMED ゼロ) |
+| #117-#120 (1-2 files, +3〜+73) | post-pr-review hook 提供チェックリスト手動確認 (small tier) |
 
-**型・データ拡張**:
-- `types.ts`: `AnalysisResult.sourceText?: string` 追加 (optional、backward compatible)
-- `analysisApi.ts`: `analyzeTextForImport` 成功時に `enriched = { ...result.data, sourceText: importedText }` を組み立て、`saveAnalysisHistory(enriched)` + return `{ success: true, data: enriched }` 早期 return で履歴 + `lastAnalysisResult` 両経路に反映
-- Codex 事前相談で「`saveAnalysisHistory` 経路の見落とし」を指摘 → dataSlice 側でなく `analysisApi.ts` 側で enrich する設計に変更
+`feedback_simplify_vs_review.md` の規律に従い「1-2 ファイル / 30 行未満は /code-review skip 相当」を踏襲。#116 は削除が大量だが実質ロジック変更は HelpModals.tsx 1 ファイルなので 3-angle で十分。
 
-**UI**:
-- `aria-expanded` 付き collapse button + `<pre>` で `max-h-64 overflow-y-auto whitespace-pre-wrap break-words font-sans` 表示
-- 旧履歴 (sourceText 未保存) は fallback 文言「(この履歴データには投入元テキストが含まれていません。次回以降の解析から記録されます)」
-- **Evaluator 指摘 (AC-106-5 FAIL)**: 当初 `(currentAnalysisResult?.sourceText || inputText)` で fallback 表示していたが、「ユーザーが input → analyze → 戻る → 旧履歴を開く」シナリオで textarea 残骸 `inputText` が誤表示される問題 → `inputText` fallback を削除し `currentAnalysisResult?.sourceText` のみで判定 (新規解析は必ず enrich されるため副作用なし)
+## 起票 Issue (0 件)
 
-### モバイルレスポンシブ修正 (緊急対応、PR scope 拡張)
+本セッションで起票した Issue はゼロ。全 5 件はユーザー直接指示 (CLAUDE.md GitHub Issues §「ユーザーから複数タスクを明示指示された場合のみ個別 Issue 化」基準には該当しない、各要求は独立した小 PR で完結したため Issue 化不要)。
 
-**問題**: iPhone 12 Pro (390px) で `max-w-6xl` Modal 内の `flex` 2-col (`w-1/2 + w-1/2`) が 195px に潰れ、ボタンテキスト・説明文・textarea が縦書き化
+## 残課題 (本セッション外、前セッションから継続)
 
-**修正**:
-- **input phase**: `flex` → `flex-col md:flex-row` + 各カラムを `w-full md:w-1/2`、右側 hero panel は `hidden md:flex` でモバイル非表示、textarea に `min-h-[200px]` 確保
-- **reflect phase**: モバイルは「候補リスト」「プレビュー」の 2-tab 切替に再構成
-  - `mobileReflectView: 'list' | 'preview'` state 追加
-  - `flex md:hidden` の tab switcher (`role="tablist"` + 各ボタン `role="tab"` / `aria-selected` / `aria-controls`)
-  - 左右パネルに `role="tabpanel"` / `aria-labelledby`
-  - `showPreview()` で `setMobileReflectView('preview')` 自動切替
-  - `handleBackToInput()` で `setMobileReflectView('list')` リセット
-- **ボタン**: `whitespace-nowrap min-w-0` + `text-sm md:text-base truncate` で縦書き化防止 (PR #92 の規律を本モーダルに展開)
-- **preview pane radio row** (Codex 最終 diff レビュー指摘 Medium): `flex items-center gap-4` → `flex-col items-start gap-3 md:flex-row md:items-center md:gap-4 md:flex-wrap` で長文ラベル overflow 解消 (追加 commit `69641b7`)
-
-### レビュー結果 (4 段階)
-
-| Phase | 検出 | 対応 |
-|---|---|---|
-| Codex (impl-plan 段階) | `saveAnalysisHistory` 経路の見落とし | `analysisApi.ts` で enrich する設計に変更 |
-| `/code-review medium` (3-finder × verify) | 8 候補 → dedup 後 2 件採用 | `line 270` 冗長 `&&` 削除 + mobile tab WAI-ARIA 追加 |
-| Evaluator agent (5 ファイル変更で Evaluator 分離プロトコル発動) | AC-106-5 FAIL (旧履歴 fallback の textarea 残骸誤表示) | `inputText` fallback 削除 |
-| Codex (最終 diff レビュー) | Medium: preview pane radio row が mobile overflow | `flex-col → md:flex-row` + `md:flex-wrap` で対応 (追加 commit `69641b7`) |
-
-## 起票 Issue (1 件、本セッションで発見、ユーザー明示指示 = triage 基準 #5)
-
-### #113 [P1, meta-enhancement] (OPEN)
-
-レスポンシブデザイン全体網羅監査 + 修正 meta-issue。本セッションの ImportTextModal 縦書き化を契機に、全 modal (27 件) + view / screen (9 件) のレスポンシブを Playwright MCP で 3 breakpoint (iPhone 12 Pro / iPad / Desktop) で screenshot 収集 → L0/L1/L2 分類 → 個別 sub-issue 化 → 順次 PR 提出する Phase 1〜4 spec を body に明記済
-
-**triage 基準**: ✅ #5 ユーザー明示指示 + ✅ #1 実害あり (iPhone 12 Pro でモーダル操作不能、本セッション ImportTextModal で実証)
-
-**着手判断**: spec 規模大、次セッションでユーザーと優先順位協議
-
-## 残課題 (本セッション外)
-
-1. **#113 着手判断**: Phase 1 (Playwright MCP で 36 component の 3 breakpoint screenshot 収集) から開始可能。spec 大規模のため、ユーザーが「P1 で全体監査やる」か「個別優先で都度 issue 切る」かを判断
-2. **モバイル実機確認 (継続)**: PR #100 / #110-#112 / #114 を iPhone 実機で 1 サイクル
-3. **法務確認 (継続)**: 顧問弁護士確認 → md 文言確定 + LEGAL_REVIEW_REQUIRED + `<!-- TODO -->` 一斉削除 PR (M7-β)
+1. **#113 着手判断**: Phase 1 (Playwright MCP で 36 component の 3 breakpoint screenshot 収集) から開始可能。spec 大規模のためユーザーが「P1 で全体監査」か「個別優先で都度 issue 切る」かを判断
+2. **モバイル実機確認 (継続)**: PR #100 / #110-#112 / #114 / #117 / #119 / #120 を iPhone 実機で 1 サイクル
+3. **法務確認 (継続)**: 顧問弁護士確認 → md 文言確定 + LEGAL_REVIEW_REQUIRED 一斉削除 PR (M7-β)
 4. **#49 [M4 follow-up]**: monitor 継続 (変化なし)
-5. **Firebase Auth `popup.closed` polling の COOP console error** — SDK 仕様 (前セッションから継続)
-6. **タッチ操作 / 仮想キーボード挙動** (モバイル実機) — 前セッションから継続
+5. **Firebase Auth `popup.closed` polling の COOP console error** — SDK 仕様 (継続)
+6. **タッチ操作 / 仮想キーボード挙動** (モバイル実機) — 継続
 
 ## 次セッション開始時の状態
 
-- ブランチ: `main` clean (`f508934` = PR #114 マージ後)
-- Open Issue: 2 件
-  - #49 [M4 follow-up] PR #48 持越 5 件 (monitor、変化なし)
-  - **#113 [meta][P1] レスポンシブ全体網羅監査** (本セッション起票)
-- 自動テスト: vitest **482 / 482 PASS** (前 474 → +8: importTextModalHelpers 8 件)
+- ブランチ: `main` clean (`5493647` = PR #120 マージ後)
+- Open Issue: 2 件 (変化なし、本セッション増減ゼロ)
+  - #113 [meta][P1] レスポンシブ全体網羅監査 (前セッション起票)
+  - #49 [M4 follow-up] PR #48 持越 5 件 (monitor)
+- 自動テスト: vitest **497 / 497 PASS** (前 482 → +15: analysisService.test.ts contract pin 15 件)
 - 型チェック: `tsc --noEmit` 0 errors
-- CI/CD: PR #114 マージ後の Cloud Run デプロイ ✅ success (3m1s、`actions/runs/26349493732`)
+- CI/CD: PR #120 main マージ後の Cloud Run デプロイ `in_progress` (1m13s 経過時点)。次セッション開始時に `gh run list --limit 1` で完了確認
 
 ## 次のアクション (推奨順)
 
-1. **#113 着手判断**: ユーザーと「全体監査 spec を実行するか」「個別観察ベースで都度 issue 化するか」を協議
-2. **本番実機確認**: https://novel-writer-ramnh3ulya-an.a.run.app/ で iPhone 12 Pro エミュレーション → テキストインポート解析モーダルが縦書き化していないことを確認 (#114 の最も重要な修正点)
-3. **#106/#107 動作確認**: 同 URL で AI 解析実行 → reflect step で「用語・世界観候補」が全部 OFF 初期 + 投入元テキスト section が機能することを確認
+1. **本番実機確認 (ユーザー本人)**: https://novel-writer-ramnh3ulya-an.a.run.app/ で 5 PR の動作を 1 サイクル目視
+   - **PR #116**: 取扱説明書モーダル → 左サイドバーが「はじめに〜6. AIの性格設定」7 項目で完結
+   - **PR #117**: ヘッダー右上が「シンプルモードへ + アバター + サイドバー切替」だけになり、アバター hover で email tooltip 表示
+   - **PR #118**: 新規プロジェクト作成 → ナレッジベースが空、既存プロジェクトのヘルプは消えていない
+   - **PR #119**: ユーザーモード設定 → プロモード選択 → 任意機能 tooltip が日本語表記
+   - **PR #120**: 呼称中心の短編 (「お母さん」「先生」等) をテキストインポート → AI 解析 → 反映プレビューの「登場人物候補」セクションに呼称が表示される
+2. **#113 着手判断**: ユーザーと「全体監査 spec を実行するか」「個別観察ベースで都度 issue 化するか」を協議
+3. **#120 regression watch**: 固有名詞ありの旧来テキストでも regression なく抽出されているか (本番モニタリング)
 
 ## 主要参照
 
-- 関連 PR: **#114** (本セッション、squash merge `f508934`)
-- 関連 Issue: **#106 / #107 (CLOSED)**, **#113 (OPEN、本セッション起票)**
+- 関連 PR: **#116** (`513bb82`), **#117** (`e939a87`), **#118** (`ce16d2d`), **#119** (`5579a0b`), **#120** (`5493647`)
+- 関連 Issue: なし (本セッション 5 件はすべてユーザー直接指示、Issue 化要件未満)
 - 主要修正ファイル:
-  - `types.ts` (sourceText optional 追加)
-  - `analysisApi.ts` (enrich + 早期 return)
-  - `components/ImportTextModal.tsx` (helper 適用 + 投入元テキスト UI + モバイルレスポンシブ + WAI-ARIA tabs + radio row 折返し)
-  - `components/importTextModalHelpers.ts` / `importTextModalHelpers.test.ts` (新規 pure helper + 8 vitest)
+  - `components/HelpModals.tsx` (sections 7-9 削除 + render 統一)
+  - `components/AuthButton.tsx` (header email span 削除 + aria-label 補完)
+  - `App.tsx` (ヘルプ自動投入 useEffect 削除)
+  - `components/Tooltip.tsx` (pro→standard フォールバック 1 行)
+  - `server/services/analysisService.ts` + `analysisService.test.ts` 新規 (呼称・代名詞抽出 prompt + contract test)
+  - `manual/07-ui-reference.md` / `08-test-cases.md` / `09-user-acceptance-test.md` 削除
+  - `manual/index.md` / `manual/full-documentation.md` (リンク参照除去)
 
 ## 知見メモ (本セッションで得た教訓)
 
-### A. 4 段階レビュー方式は大規模 PR で各段階別の検出力を発揮する
+### A. 「ユーザー直接指示の連続要求」は impl-plan よりも「小 PR 連続化」が ROI 高い
 
-本 PR では:
-- **Codex (impl-plan 段階)**: 設計段階の経路見落とし (`saveAnalysisHistory` で sourceText が enrich されない) を検出 → 実装前に設計修正できた
-- **/code-review medium (3-finder × verify)**: 実装後の重複・冗長コード (`&&` 冗長) + WAI-ARIA 欠落を検出 → 実装中に対応
-- **Evaluator agent (AC 検証)**: 表示ロジックの edge case (旧履歴 + textarea 残骸) を検出 → 仕様レベルの FAIL 発見
-- **Codex (最終 diff)**: コード変更で誘発された別の overflow リスク (preview pane radio row) を検出 → マージ前に追加 commit で対応
+5 要求のうち 4 件 (B, C, D, manual 削除) は 1 ファイル / 数行レベルの修正で、各々を独立した PR にした方が:
+- レビュー単位が小さく blast radius が局所化
+- ユーザー番号単位明示認可も「PR # — タイトル (N files, +X/-Y)」要約で判断容易
+- main 同期も Fast-forward で衝突なし
+- 1 件にバンドルすると revert 単位が荒くなる
 
-各段階で **重なる指摘がほぼなかった** ことが重要。Generator + 4 種の Evaluator の組合せは「同じ層を異なる角度で見る」だけでなく「異なる層を異なる時点で見る」効果がある。**5+ ファイル / 200+ 行の PR ではこの 4 段階を全部走らせる規律を継続**
+ただし機能追加 (要求 A: AI prompt 強化) は 1 ファイル変更でも contract test 同時追加で「regression 防止の砦」を建てる規律は維持 (PR #120 で 15 件追加)。**小規模変更でも「テストで責務を pin する」 + 「Issue 化要件はユーザー指示の triage 基準で判断」 の 2 軸を分けて判定する**
 
-### B. PR scope の途中拡張は「同ファイル touch」で正当化される
+### B. 「画面で見えている問題」の根本原因は必ずしも見えている層にない
 
-ユーザーから ImportTextModal の縦書き化指摘を受けた時点で、すでに同ファイルを Phase 4 で編集中だった。**別 PR に切り出す方が「PR は単一目的」原則には沿うが、同ファイル並行編集による merge conflict + dev review 往復のコストを考えると、scope 拡張 + meta-issue 起票 (#113) で大規模監査を別管理する判断が ROI 高い**。`feedback_multi_pr_file_conflict.md` の教訓と整合
+要求 A の「登場人物候補が空欄」は一見 FE バグに見えたが、調査の結果 **FE は正しく render している、AI が `characters.new` に詰めていない** という BE/prompt 層の問題だった。`/trace-dataflow` 相当の経路追跡を頭の中で実行 (`ImportTextModal.tsx:299` → `currentAnalysisResult.characters.new` → `analysisApi.ts` → `analysisService.ts` の AI 応答) して原因切り分けしてから着手する規律は今後も維持
 
-### C. 「実機目視 Test plan に明記してユーザー本人に委ねる」は妥当な妥協点
+スクショ起点の修正依頼では「**見えている層の前 2-3 layer 上流まで読んでから方針提示**」を impl-plan 段階で実行する
 
-Playwright MCP で LeftPanel → Settings タブ → 「テキスト解析」モーダル経路に到達するのに UI 操作で手間取った。Build/lint/482 unit test/Evaluator AC が全 PASS している状況で「実機目視まで AI が完遂する」のは ROI が悪い。**PR Test plan にチェックボックス形式でユーザー本人実機確認を明記** → マージ判断時にユーザーが端末で確認、という分業が現実的
+### C. helpTexts のような「3 モード対応 data」は data 重複ではなくフォールバックロジックで統一する方が可逆
 
-ただし、致命的な修正 (今回の縦書き化) は AI 側で 1 枚でも screenshot 取れていれば自信が増した。**次回以降は Zustand store を dev build で window 露出する hack (もしくは URL hash で modal open する dev-only API) を持つと、Playwright で直接モーダルを開けて目視できる**
+要求 D で `helpTexts.ts` の pro エントリ全件を standard で上書きする選択肢もあったが、`Tooltip.tsx` の 1 行修正 (`userMode === 'pro' ? 'standard' : userMode`) で同等の UX 効果を実現。data 重複させず、将来 pro 固有表記が必要になったらフォールバック行を外すだけで復活できる。**最小変更原則 + 可逆性の両立** が選べる場合は迷わずロジック側で吸収する
+
+### D. 「初期投入データの削除」は既存ユーザーへの影響をガード文で事前に切り分けてから提案する
+
+要求 C で `App.tsx` の自動投入 useEffect 削除を提案する前に、旧コードに `if (existingKnowledge.length > 0) return;` のガードがあることを確認 → **既存プロジェクトには元々再投入しない設計** だったと特定 → migration 不要・破壊なしを PR description に明記。「破壊性ゼロ」が言える削除は AskUserQuestion で「破壊あり版」と分けて選択肢提示すると認可判断が早い
 
 ## Issue Net 変化
 
-- Open Issue 開始時: 3 件 (#106, #107, #49)
+- Open Issue 開始時: 2 件 (#113, #49)
 - Open Issue 終了時: 2 件 (#113, #49)
-- Close 数: 2 件 (#106, #107、いずれも PR #114 auto-close)
-- 起票数: 1 件 (#113、ユーザー明示指示 + 実害発見 = triage 基準 #5 + #1)
-- Net: **-1 件** (3 → 2)
-- 備考: 起票 1 件 (#113) は meta-issue で、内部に Phase 1〜4 spec + 36 component リストを抱えているため「実質的には 36 個分の懸念を 1 件に束ねた」状態。L0/L1 個別 sub-issue 化は Phase 2 で実施予定。**rating 5-6 の review agent 提案を機械起票していない** ことを再確認済
+- Close 数: 0 件
+- 起票数: 0 件
+- Net: **0 件** (2 → 2)
+- 備考: 本セッション 5 要求はすべてユーザー直接指示で、各々が独立した小 PR で完結したため Issue 化不要 (CLAUDE.md GitHub Issues §「ユーザーから複数タスクを明示指示された場合のみ個別 Issue 化」基準には該当せず、「個別 5 PR で連続マージ」が triage より軽量で適切と判断)。Net 0 だが、5 PR マージ済 + 全要求対応済の実質進捗あり。**rating 5-6 の review agent 提案を機械起票していない** ことも再確認済
