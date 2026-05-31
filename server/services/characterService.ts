@@ -1,28 +1,12 @@
 import { Type, GenerateContentResponse } from '@google/genai';
 import { ChatMessage, SettingItem } from '../../types';
 import { getAiClient, TEXT_MODEL } from '../aiClient';
-
-const systemInstruction = `You are a multi-modal assistant for character creation. Your task is to analyze a user's request based on their specified **intent** and respond in the correct JSON format.
-
-***CRITICAL RULES:***
-
-1.  **CHECK THE USER'S INTENT:** The user will explicitly state their intent as either 'update' or 'consult'. You MUST follow the instructions for that intent precisely.
-
-2.  **IF INTENT IS 'update':**
-    *   The user wants to modify the character data. Your goal is to generate a JSON "patch" or ask a clarifying question.
-    *   **If the request is clear:** Generate a JSON "patch" object containing ONLY the modified or new fields. NEVER return the full character object.
-        -   Example: User says "彼の性格を『冷酷非道』に変更して". Output MUST be: \`{"personality": "冷酷非道"}\`.
-    *   **If the request is ambiguous:** If the user's request to update data is vague (e.g., "彼の外見を更新して"), you MUST ask for clarification. Generate a JSON object with a single key: \`"clarification_needed"\`.
-        -   Example Output: \`{"clarification_needed": "承知しました。外見のどの部分を更新しますか？（例：髪の色、目の色、服装など）"}\`.
-    *   Under the 'update' intent, you MUST NOT use the "consultation_reply" field.
-
-3.  **IF INTENT IS 'consult':**
-    *   The user wants to brainstorm or have a conversation. You MUST NOT generate a data patch or ask for data-entry style clarification.
-    *   Your role is to be a creative partner. Respond conversationally.
-    *   To do this, generate a JSON object with a single key: \`"consultation_reply"\`. The value will be your creative, conversational response in Japanese.
-    *   Under the 'consult' intent, you MUST NOT generate a JSON patch or use the "clarification_needed" field.
-
-4.  **Output Format:** Your entire output MUST BE a single, valid JSON object matching one of the three structures described above. No other text is allowed. All string values inside the JSON must be in Japanese.`;
+import {
+    CHARACTER_UPDATE_SYSTEM_INSTRUCTION,
+    CHARACTER_REPLY_SYSTEM_INSTRUCTION,
+    buildCharacterContents,
+    sanitizeCharacterPatch,
+} from './characterPrompt';
 
 const characterSchema = {
     type: Type.OBJECT,
@@ -71,26 +55,24 @@ export const updateCharacterData = async (chatHistory: ChatMessage[], currentCha
         required: [],
     };
 
-    const singlePrompt = `
-**Current Character Data (JSON):**
-\`\`\`json
-${JSON.stringify(currentCharacterData || {}, null, 2)}
-\`\`\`
+    // 空履歴ガード（P2）: 従来は配列末尾参照で例外になっていた。
+    if (!Array.isArray(chatHistory) || chatHistory.length === 0) {
+        return { clarification_needed: 'どのようなキャラクターにしたいか、もう少し教えてください。' };
+    }
 
-**User's Intent:** "${intent}"
+    // 症状A の中核: 最後の1件だけでなく会話履歴全体をマルチターンで渡す。
+    const contents = buildCharacterContents(chatHistory, currentCharacterData, intent);
 
-**User's Request:**
-"${chatHistory[chatHistory.length - 1].text}"
-
-**Your Task:**
-Based on your system instructions, the user's intent, and their request, generate the appropriate JSON output.
-`;
+    // 履歴がすべて assistant 等で user ターンが残らなかった場合のガード（空 contents で API を呼ばない）。
+    if (contents.length === 0) {
+        return { clarification_needed: 'どのようなキャラクターにしたいか、もう少し教えてください。' };
+    }
 
     const response: GenerateContentResponse = await client.models.generateContent({
         model: TEXT_MODEL,
-        contents: singlePrompt,
+        contents,
         config: {
-            systemInstruction,
+            systemInstruction: CHARACTER_UPDATE_SYSTEM_INSTRUCTION,
             responseMimeType: 'application/json',
             responseSchema
         }
@@ -101,28 +83,37 @@ Based on your system instructions, the user's intent, and their request, generat
     if (parsedJson.consultation_reply) return { consultation_reply: parsedJson.consultation_reply };
     delete parsedJson.clarification_needed;
     delete parsedJson.consultation_reply;
-    return parsedJson;
+    // null/undefined を除去し、既存値の意図しない上書きを防ぐ（P2）。
+    return sanitizeCharacterPatch(parsedJson);
 };
 
-export const generateCharacterReply = async (updatedCharacterData: any) => {
-    const client = getAiClient();
-    const replySystemInstruction = `You are a friendly and helpful assistant for novel writing. Your task is to generate a conversational reply based on the character data provided.
+export interface CharacterReplyContext {
+    latestUserMessage?: string;
+    appliedPatch?: Record<string, unknown>;
+}
 
-***RULES***
-1.  **INPUT:** You will receive a JSON object with a character's current profile.
-2.  **TASK:** Formulate a brief, engaging reply in Japanese. Acknowledge the recent updates and ask a relevant follow-up question.
-3.  **OUTPUT:** Your response MUST be ONLY a JSON object with a single key "reply" containing the conversational text in Japanese.`;
+export const generateCharacterReply = async (updatedCharacterData: any, context?: CharacterReplyContext) => {
+    const client = getAiClient();
+
+    const contextLines: string[] = [];
+    if (context?.latestUserMessage) {
+        contextLines.push(`The user's latest message was: "${context.latestUserMessage}"`);
+    }
+    if (context?.appliedPatch && Object.keys(context.appliedPatch).length > 0) {
+        contextLines.push(`The change just applied to the profile: ${JSON.stringify(context.appliedPatch)}`);
+    }
+    const contextBlock = contextLines.length > 0 ? `\n\n${contextLines.join('\n')}` : '';
 
     const prompt = `Here is the updated character profile:
-${JSON.stringify(updatedCharacterData, null, 2)}
+${JSON.stringify(updatedCharacterData, null, 2)}${contextBlock}
 
-Please provide a conversational reply and a follow-up question based on this data.`;
+Please provide a conversational reply that reflects what was just changed, and a relevant follow-up question.`;
 
     const response: GenerateContentResponse = await client.models.generateContent({
         model: TEXT_MODEL,
         contents: prompt,
         config: {
-            systemInstruction: replySystemInstruction,
+            systemInstruction: CHARACTER_REPLY_SYSTEM_INSTRUCTION,
             responseMimeType: 'application/json',
             responseSchema: {
                 type: Type.OBJECT,
