@@ -86,3 +86,52 @@ Issue [#113](https://github.com/Yukina1116/novel-writer/issues/113) Phase 1（sc
 4. 完了後 harness を revert
 
 > 全 54 枚はローカル収集済み。リポジトリ肥大化回避のため、リポジトリには L1 証跡（`evidence/`）と本レポートのみ commit。全件 commit を希望する場合は指示ください（約 +3.9MB）。
+
+---
+
+# Round 2 追記（2026-05-31・カバレッジ補完）
+
+Round 1 で未カバーだった component を補完監査。ModalManager 経由で開けない modal（フォーム内ローカル state 起動）・panel view・静的 HTML を対象に追加 16 component をキャプチャ・レビュー。
+
+## Round 2 カバレッジ
+
+| カテゴリ | 結果 |
+|---|---|
+| 静的HTML: `public/dev/index.html` | ✅ clean。**issue #35 の Mermaid 横はみ出し懸念を否定**（390px で `documentElement.scrollWidth === 390`, overflow 0px）|
+| 静的HTML: `public/legal/{terms,privacy,tokushou}.html` | ✅ clean（3ページとも overflow 0px、単一カラムで mobile 可読）|
+| `tutorialModeSelection` / `chapterSettings` | ✅ clean（store `openModal` 経由）|
+| `displaySettings` | N/A（`displayMenuButtonRef` 依存のデスクトップ専用 popover。モバイルに該当 trigger なし）|
+| panel view ×7（settings/characters/worlds/knowledge/plots/outline/history）| ✅ mobile(390)/desktop(1440) とも clean（L2: 7タブのタブバーは横スクロール、標準的なモバイルパターン）|
+| **CharacterGenerationModal** | 🔴 **L1 → 本 PR 修正** |
+| **WorldGenerationModal** | 🔴 **L1 → 本 PR 修正** |
+| **ImageGenerationModal** | 🔴 **L1 → 本 PR 修正** |
+
+未捕捉（低リスク・defer）: `CharacterHelpModal` / `WorldHelpModal`（テキスト中心、`generalHelp@390` が clean で同レイアウトパターン健全）、`ImportConflictModal` / `ImportPassphraseModal`（state 前提、M4/M6 で responsive 構築済）。
+
+## 🔴 Round 2 L1（3件・同一根本原因 → 本 PR 修正済）
+
+生成系3 modal が **2カラムレイアウト（`w-1/2` + `w-1/2`）を全幅で強制**し、レスポンシブ分岐がなかった。390px で左ペイン（チャット / フォーム）が極端に圧縮され、**「送信」ボタンが縦書き化**（証跡 `evidence/characterGeneration-390-2col-before.png`）。
+
+これは **meta-issue 発端の `ImportTextModal` バグ（スコープ表 #1: `w-1/2 + w-1/2` がモバイル幅に潰される）と完全に同根**。
+
+| component | 該当行 |
+|---|---|
+| `CharacterGenerationModal.tsx` | 337（行コンテナ）/ 338, 421（`w-1/2` ペイン）|
+| `WorldGenerationModal.tsx` | 256 / 257, 334 |
+| `ImageGenerationModal.tsx` | 260 / 261, 262 |
+
+**修正（3 modal 共通パターン）**:
+- 行コンテナ: `flex` → `flex flex-col md:flex-row`（< 768px は縦 stack、≥ 768px は従来の 2 カラム）
+- 各ペイン: `w-1/2` → `w-full md:w-1/2`
+- 区切り線: `border-r` → `border-b md:border-b-0 md:border-r`（stack 時は下境界、横並び時は右境界）
+
+**検証**: `CharacterGenerationModal` を 390px（縦 stack・送信ボタン横並びに改善）/ 1440px（2 カラム維持・回帰なし）で視覚確認（証跡 `evidence/characterGeneration-390-stacked-after.png`）。`WorldGenerationModal` / `ImageGenerationModal` は同一の className 変更（コード parity）で、CharacterGeneration を代表検証とする（両者は AI ボタンが name 未入力 / 操作前提で実 UI 起動が gate されるため）。
+
+## カバレッジ最終: 約 34/36 component
+
+Round 1（18）+ Round 2（16）。残り未捕捉は Help 2 種（低リスク）+ Import 系 2 種（state 前提・M4/M6 監査済）のみ。meta-issue #113 の主要 modal / view / 静的ページはほぼ網羅。
+
+## Round 2 で得た知見
+
+- **2カラム強制パターンは横展開していた**: ImportTextModal（修正済）と同根の `w-1/2 + w-1/2` が生成系3 modal に残存。今後 modal 追加時は「mobile で 2 カラムを強制していないか」を規律としてチェックすべき（PR #92 の whitespace-nowrap 規律と並ぶ責務分界）。
+- **isMobile 切替は 1280px 境界**のため、768px (iPad) でも生成系 modal は `md:`(768) breakpoint で 2 カラムに戻る。iPad では 2 カラム各ペイン約 340px で実用上問題なし。
