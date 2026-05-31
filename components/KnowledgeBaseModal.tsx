@@ -346,13 +346,13 @@ export const KnowledgeBaseModal: React.FC<KnowledgeBaseModalProps> = ({
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[70]">
             <KnowledgeTutorial />
             <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl p-6 border border-gray-700 max-h-[90vh] flex flex-col">
-                <div className="flex justify-between items-center mb-4 flex-shrink-0">
-                    <h2 className="text-xl font-bold text-yellow-400 flex items-center gap-2">
+                <div className="flex flex-wrap justify-between items-center gap-2 mb-4 flex-shrink-0">
+                    <h2 className="text-xl font-bold text-yellow-400 flex items-center gap-2 whitespace-nowrap">
                         <Icons.LibraryIcon className="h-6 w-6" />
                         ナレッジベース
                     </h2>
-                    <div className="flex items-center gap-2">
-                        <button id="tutorial-kb-add-btn" onClick={onAddItem} className="flex items-center gap-2 px-4 py-2 text-sm bg-yellow-600/80 text-white rounded-md hover:bg-yellow-600 transition btn-pressable">
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        <button id="tutorial-kb-add-btn" onClick={onAddItem} className="flex items-center gap-2 px-4 py-2 text-sm bg-yellow-600/80 text-white rounded-md hover:bg-yellow-600 transition btn-pressable whitespace-nowrap">
                             <Icons.PlusCircleIcon />
                             新規項目を追加
                         </button>
