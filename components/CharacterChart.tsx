@@ -237,12 +237,12 @@ export const CharacterChartModal = ({ isOpen, onClose, characters, relations, no
             <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-5xl h-[90vh] flex flex-col border border-gray-700 relative overflow-hidden">
                 <UnsavedChangesPopover isOpen={isConfirmCloseOpen} targetRef={closeButtonRef} onCancel={() => setIsConfirmCloseOpen(false)} onCloseWithoutSaving={onClose} onSaveAndClose={handleSaveAndClose} />
                 
-                <div className="flex justify-between items-center p-4 border-b border-gray-700 flex-shrink-0 bg-gray-800/50">
-                    <h2 className="text-xl font-bold text-violet-400 flex items-center gap-2"><Icons.UserCogIcon />キャラクター相関図</h2>
-                    <div className="flex items-center gap-2">
+                <div className="flex flex-wrap justify-between items-center gap-2 p-4 border-b border-gray-700 flex-shrink-0 bg-gray-800/50">
+                    <h2 className="text-xl font-bold text-violet-400 flex items-center gap-2 whitespace-nowrap"><Icons.UserCogIcon />キャラクター相関図</h2>
+                    <div className="flex items-center gap-2 flex-shrink-0">
                         <div className="flex items-center p-1 bg-gray-900 rounded-lg shadow-inner">
                             {(['navigate', 'add_relation', 'delete_relation'] as const).map(m => (
-                                <button id={m === 'navigate' ? 'tutorial-chart-navigate-btn' : m === 'add_relation' ? 'tutorial-chart-add-btn' : 'tutorial-chart-delete-btn'} key={m} onClick={() => { setMode(m); setFirstSelectionForAdd(null); }} className={`px-4 py-1.5 text-xs rounded transition-all ${mode === m ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-white'} btn-pressable`}>
+                                <button id={m === 'navigate' ? 'tutorial-chart-navigate-btn' : m === 'add_relation' ? 'tutorial-chart-add-btn' : 'tutorial-chart-delete-btn'} key={m} onClick={() => { setMode(m); setFirstSelectionForAdd(null); }} className={`px-4 py-1.5 text-xs rounded transition-all whitespace-nowrap ${mode === m ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-white'} btn-pressable`}>
                                     {m === 'navigate' ? '移動' : m === 'add_relation' ? '追加' : '削除'}
                                 </button>
                             ))}
