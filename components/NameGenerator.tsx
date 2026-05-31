@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import * as Icons from '../icons';
 import { useRequiresAuth } from '../hooks/useRequiresAuth';
+import { NAME_CATEGORY, PRESET_NAME_CATEGORIES, NameCategory } from './nameCategories';
 
 interface NameGeneratorProps {
     isOpen: boolean;
@@ -9,7 +10,7 @@ interface NameGeneratorProps {
     onGenerate: (category: string, keywords: string) => Promise<string[]>;
     onApply: (name: string) => void;
     applyButtonText: string;
-    initialCategory?: string;
+    initialCategory?: NameCategory;
     initialKeywords?: string;
     isContextual?: boolean;
 }
@@ -20,7 +21,7 @@ export const NameGenerator: React.FC<NameGeneratorProps> = ({
     onGenerate,
     onApply,
     applyButtonText,
-    initialCategory = 'ファンタジー風',
+    initialCategory = NAME_CATEGORY.FANTASY,
     initialKeywords = '',
     isContextual = false
 }) => {
@@ -34,7 +35,7 @@ export const NameGenerator: React.FC<NameGeneratorProps> = ({
     const modifierKeyText = isMac ? '⌘Cmd' : 'Ctrl';
     const { canUseAi, reason: aiBlockedReason } = useRequiresAuth();
 
-    const presetCategories = ['ファンタジー風', 'SF風', '現代日本風', '中華風', '地名', '組織名', '技名'];
+    const presetCategories = PRESET_NAME_CATEGORIES;
 
     useEffect(() => {
         if (isOpen) {

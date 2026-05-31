@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import * as Icons from '../../icons';
 import { SettingItem } from '../../types';
 import { NameGenerator } from '../NameGenerator';
+import { NAME_CATEGORY } from '../nameCategories';
 import * as utilityApi from '../../utilityApi';
 import { UnsavedChangesPopover } from '../UnsavedChangesPopover';
 import { HelpPopover } from '../HelpPopover';
@@ -506,7 +507,7 @@ export const CharacterForm: React.FC<CharacterFormProps> = ({
                     onGenerate={handleGenerateNames}
                     onApply={(name) => { setName(name); setIsNameGeneratorOpen(false); markEdited('name'); }}
                     applyButtonText="これに決める"
-                    initialCategory="ファンタジー風"
+                    initialCategory={NAME_CATEGORY.CHARACTER}
                     initialKeywords={characterKeywords}
                 />
             )}
