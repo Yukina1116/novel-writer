@@ -9,8 +9,13 @@ export const updateCharacterData = async (
     return apiCall('/character/update', { chatHistory, currentCharacterData, intent });
 };
 
-export const generateCharacterReply = async (updatedCharacterData: any) => {
-    return apiCall<{ reply: string }>('/character/reply', { updatedCharacterData });
+export interface CharacterReplyContext {
+    latestUserMessage?: string;
+    appliedPatch?: Record<string, unknown>;
+}
+
+export const generateCharacterReply = async (updatedCharacterData: any, context?: CharacterReplyContext) => {
+    return apiCall<{ reply: string }>('/character/reply', { updatedCharacterData, context });
 };
 
 export const generateCharacterImagePrompt = async (chatHistory: ChatMessage[]) => {

@@ -115,6 +115,8 @@ export const CharacterGenerationModal = ({ isOpen, onClose, onApply, initialData
     const [currentCharacterData, setCurrentCharacterData] = useState<Partial<SettingItem> | null>(null);
     const [mode, setMode] = useState<'create' | 'update'>('create');
     const [isHelpOpen, setIsHelpOpen] = useState(false);
+    // clarification 直後の通常送信が consult に化ける問題対策: 直前の update intent を次の通常送信に引き継ぐ
+    const [pendingUpdateIntent, setPendingUpdateIntent] = useState(false);
     const chatEndRef = useRef(null);
     const userInputRef = useRef(null);
     const isMac = useMemo(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0, []);
@@ -191,10 +193,14 @@ export const CharacterGenerationModal = ({ isOpen, onClose, onApply, initialData
     
         // Case 1 & 2: AI gives a direct reply (consultation or clarification)
         if ('consultation_reply' in resultData || 'clarification_needed' in resultData) {
-            const reply = ('consultation_reply' in resultData) 
-                ? resultData.consultation_reply 
+            const isClarification = 'clarification_needed' in resultData;
+            const reply = ('consultation_reply' in resultData)
+                ? resultData.consultation_reply
                 : resultData.clarification_needed;
-            
+
+            // update 中に聞き返された場合は、次の通常送信(Enter)を update intent に引き継ぐ
+            setPendingUpdateIntent(isClarification && intent === 'update');
+
             setChatHistory(prev => [...prev, { role: 'assistant', text: reply, mode: 'consult' }]);
             setIsLoading(false); // All done
             return;
@@ -202,9 +208,10 @@ export const CharacterGenerationModal = ({ isOpen, onClose, onApply, initialData
         
         // Case 3: AI gives a data patch. We need to update the preview and then get a confirmation reply.
         const patch = resultData;
-    
+        setPendingUpdateIntent(false);
+
         // Show spinner in preview pane while merging/updating
-        setIsUpdatingPreview(true); 
+        setIsUpdatingPreview(true);
         const newCharacterData = mergeCharacterData(currentCharacterData, patch);
         setCurrentCharacterData(newCharacterData);
         setIsUpdatingPreview(false);
@@ -224,7 +231,10 @@ export const CharacterGenerationModal = ({ isOpen, onClose, onApply, initialData
         }
     
         // Now, get a confirmation reply. The main spinner is still active.
-        const replyResult = await generateCharacterReply(newCharacterData);
+        const replyResult = await generateCharacterReply(newCharacterData, {
+            latestUserMessage: trimmedInput,
+            appliedPatch: patch as Record<string, unknown>,
+        });
         
         if (replyResult.success === false) {
             console.error(replyResult.error);
@@ -239,6 +249,11 @@ export const CharacterGenerationModal = ({ isOpen, onClose, onApply, initialData
         setIsLoading(false); // End of all operations
     };
     
+    // 通常送信(Ctrl/Cmd+Enter・送信ボタン)の intent を決める。
+    // pendingUpdateIntent が立っていれば update を優先（clarification 直後の引き継ぎ）。
+    const resolveNormalIntent = (): 'consult' | 'update' =>
+        pendingUpdateIntent ? 'update' : (mode === 'update' ? 'consult' : 'update');
+
     const handleKeyDown = (e) => {
         if (e.key === 'Enter') {
             if (e.altKey) {
@@ -246,7 +261,7 @@ export const CharacterGenerationModal = ({ isOpen, onClose, onApply, initialData
                 handleSendMessage('update');
             } else if (e.ctrlKey || e.metaKey) {
                 e.preventDefault();
-                handleSendMessage(mode === 'update' ? 'consult' : 'update');
+                handleSendMessage(resolveNormalIntent());
             }
         }
     };
@@ -340,7 +355,7 @@ export const CharacterGenerationModal = ({ isOpen, onClose, onApply, initialData
                                 {isLoading && <div className="flex items-start gap-3"><Icons.BotIcon className="h-6 w-6 text-teal-400 flex-shrink-0" /><div className="px-4 py-3 rounded-xl bg-gray-700/50"><div className="flex items-center space-x-2"><div className="h-2 w-2 bg-teal-300 rounded-full animate-pulse"></div><div className="h-2 w-2 bg-teal-300 rounded-full animate-pulse [animation-delay:-0.15s]"></div><div className="h-2 w-2 bg-teal-300 rounded-full animate-pulse [animation-delay:-0.3s]"></div></div></div></div>}
                                 <div ref={chatEndRef} />
                             </div>
-                            <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(mode === 'update' ? 'consult' : 'update'); }} className="pt-4 border-t border-gray-700">
+                            <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(resolveNormalIntent()); }} className="pt-4 border-t border-gray-700">
                                 <div className="flex-1 bg-gray-900 border border-gray-600 rounded-lg overflow-hidden flex flex-col">
                                     <textarea
                                         ref={userInputRef}

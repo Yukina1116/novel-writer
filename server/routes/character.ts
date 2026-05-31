@@ -10,8 +10,8 @@ router.post('/update', withUsageQuota('character/update', async (req) => {
 }));
 
 router.post('/reply', withUsageQuota('character/reply', async (req) => {
-    const { updatedCharacterData } = req.body;
-    const reply = await generateCharacterReply(updatedCharacterData);
+    const { updatedCharacterData, context } = req.body;
+    const reply = await generateCharacterReply(updatedCharacterData, context);
     return { reply };
 }));
 
