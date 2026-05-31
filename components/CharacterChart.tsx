@@ -296,7 +296,7 @@ export const CharacterChartModal = ({ isOpen, onClose, characters, relations, no
                                 return (
                                     <g key={`${getRelId(rel)}-${i}`} className="cursor-pointer group" onClick={handleClick}>
                                         <path d={path} stroke="transparent" strokeWidth="25" fill="none" />
-                                        <path d={path} stroke={color} strokeWidth={mode === 'delete_relation' ? "4" : "2"} fill="none" markerEnd={`url(#arrow-${rel.id})`} className="transition-all duration-200 group-hover:stroke-white" />
+                                        <path d={path} stroke={color} strokeWidth={mode === 'delete_relation' ? "4" : "2"} fill="none" markerEnd={`url(#arrow-${rel.id})`} className="transition-[stroke] duration-200 group-hover:stroke-white" />
                                         <rect x={cx-25} y={cy-10} width="50" height="20" fill="#1f2937" rx="4" className="stroke-gray-600 border" />
                                         <text x={cx} y={cy} fill="white" fontSize="10" textAnchor="middle" dy=".3em" pointerEvents="none">{rel.label}</text>
                                         <defs>
