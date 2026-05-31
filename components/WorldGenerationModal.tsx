@@ -253,8 +253,8 @@ export const WorldGenerationModal = ({ isOpen, onClose, onApply, initialData }) 
                             <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700 transition"><Icons.XIcon /></button>
                         </div>
                     </div>
-                    <div className="flex-grow flex min-h-0">
-                        <div className="w-1/2 flex flex-col p-4 border-r border-gray-700">
+                    <div className="flex-grow flex flex-col md:flex-row min-h-0">
+                        <div className="w-full md:w-1/2 flex flex-col p-4 border-b md:border-b-0 md:border-r border-gray-700 min-h-0">
                             <div className="flex-grow overflow-y-auto space-y-4 pr-2">
                                 {chatHistory.map((msg, index) => (
                                     <div key={index} className={`flex items-start gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
@@ -331,7 +331,7 @@ export const WorldGenerationModal = ({ isOpen, onClose, onApply, initialData }) 
                                 </div>
                             </form>
                         </div>
-                        <div className="w-1/2 p-4 flex flex-col">
+                        <div className="w-full md:w-1/2 p-4 flex flex-col min-h-0">
                             <h3 className="text-lg font-semibold text-gray-300 mb-3">生成プレビュー</h3>
                             <div className="flex-grow bg-gray-900/50 rounded-lg p-3 overflow-y-auto relative">
                                 {renderPreview()}

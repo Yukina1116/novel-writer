@@ -257,9 +257,9 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
                     </div>
                     <button onClick={handleCloseRequest} className="p-2 rounded-full text-white hover:bg-gray-700 transition"><Icons.XIcon /></button>
                 </div>
-                <div className="flex-grow flex min-h-0">
-                    <div className="w-1/2 flex flex-col p-4 border-r border-gray-700">{renderLeftPanel()}</div>
-                    <div className="w-1/2 p-4 flex flex-col overflow-y-auto">
+                <div className="flex-grow flex flex-col md:flex-row min-h-0">
+                    <div className="w-full md:w-1/2 flex flex-col p-4 border-b md:border-b-0 md:border-r border-gray-700 min-h-0">{renderLeftPanel()}</div>
+                    <div className="w-full md:w-1/2 p-4 flex flex-col overflow-y-auto min-h-0">
                         <div className="w-full grid grid-cols-2 gap-4">
                             {isGeneratingImages ? (
                                 Array(2).fill(0).map((_, i) => <div key={i} className="bg-gray-900/50 rounded-lg flex items-center justify-center aspect-w-3 aspect-h-4"><Icons.LoaderIcon className="h-10 w-10 text-cyan-400" /></div>)
