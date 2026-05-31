@@ -10,6 +10,7 @@ import { DisplaySettingsPopover } from './DisplaySettingsPopover';
 import { HtmlExportModal } from './HtmlExportModal';
 import { TimelineModal } from './TimelineModal';
 import { NameGenerator } from './NameGenerator';
+import { NAME_CATEGORY } from './nameCategories';
 import { ChapterSettingsModal } from './ChapterSettingsModal';
 import { KnowledgeBaseModal } from './KnowledgeBaseModal';
 import { PlotBoardModal } from './PlotBoardModal';
@@ -129,7 +130,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({ displayMenuButtonRef
                 modalContent = <TimelineModal isOpen={true} onClose={closeModal} timeline={timeline} lanes={timelineLanes} onSave={handleSaveTimeline} allSettings={settings} plotBoard={plotBoard} isMobile={isMobile} />;
                 break;
             case 'nameGenerator':
-                modalContent = <NameGenerator isOpen={true} onClose={closeModal} onGenerate={handleGenerateNames} onApply={(name) => { navigator.clipboard.writeText(name); useStore.getState().showToast(`「${name}」をコピーしました`); closeModal(); }} applyButtonText="コピー" initialCategory="ファンタジー風" />;
+                modalContent = <NameGenerator isOpen={true} onClose={closeModal} onGenerate={handleGenerateNames} onApply={(name) => { navigator.clipboard.writeText(name); useStore.getState().showToast(`「${name}」をコピーしました`); closeModal(); }} applyButtonText="コピー" initialCategory={NAME_CATEGORY.FANTASY} />;
                 break;
             case 'knowledgeBase':
                 modalContent = <KnowledgeBaseModal isOpen={true} onClose={closeModal} knowledgeBase={knowledgeBase} onAddItem={() => openModal('knowledge')} onEditItem={(item) => openModal('knowledge', item)} onDeleteItem={(id) => handleDeleteSetting(id, 'knowledge', true)} onTogglePin={handleToggleKnowledgePin} />;
