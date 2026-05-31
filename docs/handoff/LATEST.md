@@ -1,121 +1,110 @@
-# Handoff: AIキャラ生成チャットの文脈喪失・内部名露出修正 + 本番E2E実証 (PR #125)
+# Handoff: NameGenerator 集約 + レスポンシブ全体監査(#113)完遂 + #49 検証クローズ
 
 - Session Date: 2026-05-31
 - Owner: yasushi-honda
-- Status: ✅ 再開可能（main clean `e2bd6ae`、Cloud Run デプロイ success、Open Issue 2 件すべて monitor 対象）
-- Previous handoff: [2026-05-31b-pr122-123-chart-fixes.md](./2026-05-31b-pr122-123-chart-fixes.md)
+- Status: ✅ 再開可能（main clean `7af9d34`、Cloud Run デプロイ 4 PR 全 success、**Open Issue 0 件**）
+- Previous handoff: [2026-05-31c-pr125-character-chat-fix.md](./2026-05-31c-pr125-character-chat-fix.md)
 
 ## 今セッションのトリガー
 
-ユーザーから「AIキャラクター生成アシスタント」のポンコツ挙動の相談:
+前セッション handoff の「次のアクション」: ①進行中の未コミット作業（NameGenerator カテゴリ集約）の完了 ②Issue #113（レスポンシブ全体監査）の着手判断。ユーザー指示で「優先順にすすめて」→ 順次消化し、最終的に **open issue を 0 件**まで削減。
 
-- **症状A（文脈忘れ）**: 「どんな性格がいい？」→AI提案→「じゃあそれで」→AIが「それ」を理解できず的外れに聞き返す。会話の流れが組めていない。
-- **症状B（内部名露出）**: AIの聞き返しに「長文のキャラクター設定 (Characterなんとか〜の英語表記) として追加しますか」のようなシステムチックな内部名が混ざりユーザーを混乱させる。
+## 完了 PR (4 件、全 main マージ + Cloud Run デプロイ success)
 
-ユーザー要望: 第三者相談の前に、AI 自身で段階的にチェックして納得を得てからセカンドオピニオンへ、という進め方。
-
-## 完了 PR (1 件、main マージ済)
-
-| PR | 内容 | 規模 | merge commit |
+| PR | 内容 | 規模 | merge |
 |---|---|---|---|
-| #125 | fix(character): AIキャラ生成チャットの文脈喪失と内部名露出を修正 | 6 files, +284/-58 | `e2bd6ae` |
+| #127 | refactor(name-generator): カテゴリ定数を `components/nameCategories.ts` に一元集約 + `initialCategory` を `NameCategory` 型に厳格化 | 4 files, +51/-8 | `45fe7b4` |
+| #128 | fix(chart): CharacterChart ヘッダーの狭幅縦書き化修正 + #113 監査 round1（report + 証跡）| 4 files, +92/-4 | `241afbd` |
+| #129 | fix(generation): 生成系3 modal の 2カラム強制をモバイル縦stackに + #113 round2 | 6 files, +58/-9 | `15fb239` |
+| #130 | fix(knowledge): KnowledgeBase ヘッダーの2行折返し修正 + #113 round3 | 4 files, +37/-6 | `7af9d34` |
 
-Cloud Run デプロイ: `e2bd6ae` で `Deploy to Cloud Run` = **success**（3m2s、確認済）。
+## クローズ Issue (2 件)
 
-## 根本原因と修正
+| Issue | 内容 | クローズ理由 |
+|---|---|---|
+| #49 | [M4 follow-up] PR #48 持越 5 件 | **全項目（H2/H4/H5/H6/H10 + 各 followup）が後続 PR #51-#58 で消化済み**を grep + git log + テスト実行（84 tests green）で検証。umbrella decay |
+| #113 | [meta] レスポンシブ全体網羅監査 | **L0/L1 全解消**（L1×5 修正、coverage 34/36）。close 条件達成 |
 
-### 症状A の主因（確定）
-`server/services/characterService.ts` の `updateCharacterData` が会話履歴 `chatHistory` を引数で受け取りながら、プロンプトに **最後の1件 (`chatHistory[chatHistory.length-1].text`)** しか埋めていなかった。それ以前の会話が一切 AI に渡らず、「それ」が指すものを失っていた。
+## #113 レスポンシブ監査の成果（核心）
 
-### Codex セカンドオピニオンで追加判明（私の見落とし2点）
-1. **clarification 後の intent 化け**: 「設定に反映」モードで AI が聞き返した直後、通常送信(Enter)が `consult` に化け、更新が空回りする（`CharacterGenerationModal.tsx` の `onSubmit`/`handleKeyDown` が `mode==='update' ? 'consult' : 'update'` 固定だった）。
-2. **過去ターンの mode を捨ててはいけない**: 履歴を単純 role/text 変換すると `ChatMessage.mode` が失われ、過去の相談を確定設定と誤認しうる。
+### 監査方法（再現手順は report に記載）
+Playwright MCP + dev 限定の store 露出 harness（`window.__novelStore = useStore`、commit 前に必ず revert）で `openModal` 起動 + UI 駆動。3 breakpoint（390 / 768 / 1440）。**port 3000 は Docker/Open WebUI が IPv6 占有のため `PORT=3100` + `127.0.0.1` 明示で回避**。
 
-### 変更内容（cross-layer 順: 型→BE→FE）
-- **A1**: `updateCharacterData` をマルチターン `contents` 化し履歴全体を渡す。`intent`/現在データは最終ユーザーターンに `<RUNTIME_CONTEXT>`、過去ユーザーターンは `<TURN_INTENT>` で当時の mode を文脈保持（既存 `generateCharacterImagePrompt` のパターン踏襲）。
-- **B1**: update / reply 両 `systemInstruction` に内部名露出禁止ルール（`USER_FACING_LANGUAGE_RULES`）を追加。
-- **P1 (FE)**: `clarification` 直後の通常送信を元の `update` intent に引き継ぐ `pendingUpdateIntent` state を導入、`resolveNormalIntent()` で判定。
-- **A2**: `generateCharacterReply` に「最新発言 + 適用patch」を `context` で渡し確認返答を文脈に沿わせる（`characterApi.ts` / `routes/character.ts` / service の3層変更）。
-- **P2**: 空履歴ガード / 履歴20ターン上限トリミング / patch の null除去（既存値の意図しない上書き防止）。
-- プロンプト構築ロジックを pure helper `server/services/characterPrompt.ts` に分離（AI依存ゼロで単体テスト可能）。
+### 発見・修正した L1（5件・全て同根）
+全て meta-issue 発端の `ImportTextModal` バグ（`w-1/2 + w-1/2` がモバイルで潰れる）と同じクラスがコードベースに横展開していたもの:
 
-## 検証
+| component | 症状 | PR |
+|---|---|---|
+| CharacterChart ヘッダー | タイトル1文字ずつ縦書き化 | #128 |
+| CharacterGenerationModal | 2カラム強制・送信縦書き化 | #129 |
+| WorldGenerationModal | 2カラム強制 | #129 |
+| ImageGenerationModal | 2カラム強制（入れ子 grid）| #129 |
+| KnowledgeBaseModal ヘッダー | タイトル2行折返し | #130 |
 
-### 自動（実行済み・実数字）
-- `tsc --noEmit` → **0 errors**
-- `vitest run`（全スイート）→ **509 passed / 5 skipped（失敗0）**、Test Files 33 passed / 1 skipped
-- 新規 `characterPrompt.test.ts` **12件**（履歴全積み回帰・RUNTIME_CONTEXT付与・TURN_INTENT保持・null除去・内部名禁止埋め込み）
+修正パターン: 生成系 = `flex` → `flex flex-col md:flex-row` + `w-1/2` → `w-full md:w-1/2`。ヘッダー系 = `flex-wrap` + `whitespace-nowrap` + `flex-shrink-0`。全て mobile 視覚検証 + desktop 回帰なし確認済み。
 
-### 本番 E2E（Playwright MCP、ユーザー手動ログイン + AI自動操作）
-本番 `e2bd6ae` で「明るい性格の魔法使いの女の子を作りたい」を送信し、`window.fetch` フックで `/api/ai/character/update` の実トラフィックを捕捉:
+### clean だった項目 / L2
+- 静的HTML（dev portal の Mermaid #35・legal×3）overflow 0px、panel view×7、tutorialModeSelection/chapterSettings: 全 clean
+- L2: GlobalSearch placeholder 切れ = **受容**（cosmetic）
 
-- **症状A 実証**: リクエスト `chatHistory` に **histLen=2**（assistant初期 + user発言）が積まれていた → 旧バグ「最後の1件しか使わない」が解消し `buildCharacterContents` が本番で機能していることを実トラフィックで確認。patch も文脈通り（性格=明るい/種族=魔法使い/話し方=女の子らしい）抽出されプレビューに反映。
-- **症状B 実証**: ユーザー可視テキスト全体（チャット5バブル + プレビュー欄）を内部識別子（longDescription/speechPattern/traits/clarification_needed/RUNTIME_CONTEXT/TURN_INTENT 等）でスキャン → **漏れゼロ**。AI応答は自然な日本語のみ。
+### 監査成果物
+`docs/responsive-audit/2026-05-31/`（report.md + evidence/ に L1 証跡 before/after）。**全54枚スクショはローカルのみ**（リポジトリ肥大化回避、再生成手順は report 末尾）。
 
-### E2E 未到達（正直な限界）
-- 多ターンの「じゃあそれで」継続と clarification 後の intent 引き継ぎは、Playwright 操作の ref 追従ミスで送信が複数回失敗し、**1往復ぶんのログのみ取得**。この2点は**コードレビューでは確認済みだが実トラフィック実証はしていない**。ただし症状A主因（履歴複数件がサーバーに届く）は実証済み。
+## 検証（実数字）
+
+- `tsc --noEmit` → **0 errors**（各 PR で確認）
+- `vitest run` → **509 passed / 5 skipped**（全 PR 共通、最終も同値）
+- 全 4 PR の Cloud Run デプロイ = **success** 確認済
 
 ## レビュー方式
 
-| 段階 | 方式 |
-|---|---|
-| 修正方針 | Codex セカンドオピニオン（MCP版、read-only）で方針レビュー → 見落とし2点を反映 |
-| 実装後 | tsc 0 errors + 全509テスト pass |
-| 本番 | Playwright MCP E2E + ネットワークログ実証 |
+- #127: `/safe-refactor`（型強度向上）→ `/code-review low` → `/review-pr`（3 agent、型境界リーク指摘を反映）
+- #128/#129/#130: `/code-review low`（CSS className のみ、proven pattern）
+- 各マージは「PR #番号 — タイトル (N files, +X/-Y)」要約付き番号単位明示認可後に実行
 
-## 起票 Issue (0 件)
+## flaky テスト調査（authSlice.test.ts）— 投機的修正は見送り
 
-本セッションで起票・close した Issue はゼロ。ユーザー直接の相談を即修正 PR (#125) で完結。
+Round 1 で観察したフルスイート稀 fail を調査:
+- vitest `pool: 'forks'` + `singleFork: false` で**ファイルごとプロセス隔離** → `global.fetch` stub の cross-file 汚染は原理的に不可能（当初仮説否定）
+- フルスイート **6 回連続 PASS**、再現せず（< 1/7）
+- 結論: 再現不能な低頻度 flake への投機的修正は cost-benefit 非該当 → **monitor 継続**（report Round 3 に記録）
 
-## 残課題 (本セッション外、前セッションから継続)
+## 残課題 (本セッション外・継続)
 
-1. **#125 多ターン E2E の積み残し**: 「それで」継続 + intent 引き継ぎの実トラフィック実証は未完（コードでは確認済）。次に本番で触る機会があれば最小往復で確認可。
-2. **#113 着手判断**: [meta][P1] レスポンシブ全体網羅監査。spec 大規模のため「全体監査」か「個別都度 issue」かをユーザー判断。
-3. **モバイル実機確認 (継続)**: PR #100 / #110-#112 / #114 / #117 / #119 / #120 を iPhone 実機で 1 サイクル。
-4. **法務確認 (継続)**: 顧問弁護士確認 → md 文言確定 + LEGAL_REVIEW_REQUIRED 一斉削除 PR (M7-β)。
-5. **#49 [M4 follow-up]**: monitor 継続 (変化なし)。
+1. **モバイル実機確認**: PR #100 等 + 今回の #128-#130 レスポンシブ修正を iPhone 実機で 1 サイクル（特に生成系 modal の縦stack・KnowledgeBase ヘッダー）。
+2. **法務確認 (継続)**: 顧問弁護士確認 → `public/legal/*.md` 文言確定 + LEGAL_REVIEW_REQUIRED 一斉削除 PR (M7-β)。
+3. **#125 多ターン E2E の積み残し**: 「それで」継続 + intent 引き継ぎの実トラフィック実証（コードでは確認済）。
+4. **#113 残カバレッジ（低リスク・必要時）**: Help×2（テキスト中心）/ Import 系×2（M4/M6 監査済）の補完キャプチャ。
+5. **authSlice flaky**: monitor 継続（CI で再発したら timing-sensitive async テストを精査）。
+6. **GlobalSearch placeholder（受容済 L2）**: 気になれば placeholder 短縮。
 
 ## 次セッション開始時の状態
 
-- ブランチ: `main` clean（`e2bd6ae` = PR #125 マージ後）
-- Open Issue: 2 件（変化なし、本セッション増減ゼロ）
-  - #113 [meta][P1] レスポンシブ全体網羅監査
-  - #49 [M4 follow-up] PR #48 持越 5 件 (monitor)
+- ブランチ: `main` clean（`7af9d34` = PR #130 マージ後）
+- **Open Issue: 0 件**（#49・#113 をクローズ、新規起票なし）
 - 型チェック: `tsc --noEmit` 0 errors / 全テスト 509 pass
-- CI/CD: PR #125 の Cloud Run デプロイ **success** 確認済
-
-## 主要参照
-
-- 関連 PR: **#125** (`e2bd6ae`)
-- 主要ファイル:
-  - `server/services/characterPrompt.ts`（新規 pure helper: `buildCharacterContents` / `trimHistory` / `sanitizeCharacterPatch` / 両 systemInstruction）
-  - `server/services/characterService.ts`（`updateCharacterData` マルチターン化 + 空履歴ガード + null除去、`generateCharacterReply` に context 追加）
-  - `components/CharacterGenerationModal.tsx`（`pendingUpdateIntent` / `resolveNormalIntent` / reply に context 渡し）
-  - `characterApi.ts` + `server/routes/character.ts`（reply の context 3層配線）
+- CI/CD: 4 PR とも Cloud Run デプロイ **success**
+- 環境: dev サーバ停止済（ゾンビ tsx 0）/ Docker Open WebUI(port 3000) は本田様の別サービスで非干渉
 
 ## 知見メモ (本セッションで得た教訓)
 
-### A. 「会話履歴を引数で受け取っている」≠「全部使っている」— 末尾参照バグの典型
+### A. umbrella issue は着手前に「grep + git log + テスト実行」で実態確認（再確認）
+#49 H4/H5/H6 のテスト追加を選んだが、grep したところ**全て後続 PR #51-#58 で実装済み**だった（umbrella decay）。重複テストを書かず、84 tests green を確認して issue をクローズ（Net -1）。「指示されたタスクが既に done」は珍しくない。
 
-`chatHistory` を引数に取る関数でも、内部で `chatHistory[length-1]` しか使っていなければ文脈は失われる。チャット系 AI 機能で「直前を覚えていない」症状を見たら、まず**サーバー側がプロンプトに履歴の何件を実際に埋めているか**を grep で確認する。FE が全履歴を送っていてもサーバーが捨てていれば同じ症状になる（本件はまさにこれ）。
+### B. レスポンシブ監査は store 露出 harness + Playwright スクリプト一括ループが高効率
+26+ modal × 3 breakpoint を個別 UI 操作で回すのは非現実的（150+ ツール呼び出し）。dev 限定で `window.__novelStore` を露出し、`browser_run_code_unsafe` で modal type をループして `openModal→screenshot→closeModal` すれば 1 breakpoint = 1 スクリプト。harness は commit 前に必ず revert（本セッション 3 回とも 0 件確認）。
 
-### B. 本番AI挙動の客観的確証は「コードレビュー」より「実トラフィックのリクエストbody」
+### C. `w-1/2` 2カラム / `flex justify-between` ヘッダーはモバイル縦折れの2大パターン
+ImportTextModal バグの根本（`w-1/2 + w-1/2`）と CharacterChart の根本（`flex justify-between` + CJK タイトル）が、それぞれ生成系3 modal・KnowledgeBase に横展開していた。**今後 modal 追加時は「mobile で 2カラム強制していないか」「justify-between ヘッダーに whitespace-nowrap + flex-wrap があるか」をチェック**（PR #92 の whitespace-nowrap 規律の延長）。
 
-AI プロンプト変更は自動テストで挙動を完全保証できない（pure helper は単体テスト可だが、LLM 応答の質は別）。本番での確証には Playwright MCP で `window.fetch` をフックし、`/api/ai/*` の**リクエストbodyに履歴が何件積まれているか**を直接観測するのが最も強い。「コードがそうなっている」より「本番で実際にそう通信している」が一段上の確証。
-
-### C. Playwright MCP の操作規律 — ref は最新 snapshot のものを1ステップずつ
-
-本セッションで E2E 操作を何度も失敗させた。原因は (1) 古い snapshot の ref を推測で使い回した、(2) click/type のパラメータ名を `ref` と誤った（正しくは `target`）、(3) 並列で複数操作を投げ、先頭の失敗で後続が全キャンセル。**Playwright MCP は「1操作 → 最新 snapshot で ref 確認 → 次の1操作」の逐次が鉄則**。並列・推測 ref は厳禁。
-
-### D. ツール結果は実出力のみを信じる（自戒）
-
-本セッション前半、実行されていないツール結果を成功扱いで報告し、コミット/PR に誤った数字（tsc 0 errors=実は3エラー、テスト件数）を書く重大ミスを複数回犯した。すべて検出・訂正したが、**ツール結果は必ず実際の返り値を読んでから報告する**。「やったはず」で書かない。push/commit/PR は `git ls-remote` 等で実体を裏取りする。
+### D. `isMobile` 切替境界は 1280px（768px=iPad も App.mobile）
+レスポンシブ監査時、768px は tablet 専用レイアウトではなく App.mobile（広いモバイル）が描画される。modal 内の `md:`(768) breakpoint との二重構造に注意。
 
 ## Issue Net 変化
 
 - Open Issue 開始時: 2 件 (#113, #49)
-- Open Issue 終了時: 2 件 (#113, #49)
-- Close 数: 0 件
+- Open Issue 終了時: **0 件**
+- Close 数: **2 件** (#49, #113)
 - 起票数: 0 件
-- Net: **0 件** (2 → 2)
-- 備考: ユーザー直接の相談 1 件を即修正 PR (#125) で完結。Issue 化要件未満（即 PR 完結）。Net 0 だが、文脈喪失バグ解消 + 本番 E2E 実証の実質進捗あり。rating 5-6 の review agent 提案を機械起票していないことも再確認済。
+- Net: **-2 件**（2 → 0）
+- 備考: #49 は umbrella decay（既存実装を検証してクローズ）、#113 は L0/L1 全解消でクローズ。新規起票ゼロ（発見した L1 は sub-issue 化せず即修正 PR で完結、net 増を回避）。rating 5-6 の機械起票なし。
