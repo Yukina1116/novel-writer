@@ -1,4 +1,5 @@
 import { ChatMessage } from '../../types';
+import { sanitizeForPrompt, IMAGE_OMITTED_MARKER as PROMPT_IMAGE_OMITTED_MARKER } from '../utils/promptSafety';
 
 /**
  * キャラクター生成アシスタントのプロンプト構築ロジック（pure helper）。
@@ -72,37 +73,12 @@ export function trimHistory(history: ChatMessage[], maxTurns: number = MAX_HISTO
 }
 
 /**
- * 生成済み base64 dataURI をプロンプトから除外する際のマーカー。
- * AI には「画像が存在する」という事実だけ伝え、bytes 本体は送らない。
+ * 後方互換 re-export: PR #132 で本ファイルに置いていた helper / 定数を `server/utils/promptSafety.ts`
+ * に集約 (character / world 共通)。既存 import 経路 (`from './characterPrompt'`) を壊さないため
+ * ここから re-export する。新規 import は直接 `server/utils/promptSafety` 推奨。
  */
-export const IMAGE_OMITTED_MARKER = '[generated-image: omitted from prompt to fit token budget]';
-
-/**
- * Gemini に送る currentCharacterData から、プロンプト圧迫源を取り除く（token-bomb 対策）。
- *
- * Imagen 経由で生成されたキャラ画像は `appearance.imageUrl` に `data:image/png;base64,...` の
- * 形で保存される。これを JSON.stringify して RUNTIME_CONTEXT に埋め込むと、1MB の dataURI が
- * 約 90 万トークンに展開され、Gemini 2.5 flash の入力上限 (131,072 tokens) を一発で超える。
- * 結果として全 `character/update` 呼び出しが 400 INVALID_ARGUMENT で永久 fail する
- * (2026-06-01 12:21 JST 観測の本番障害)。
- *
- * dataURI のみ omission marker に置換し、http/https URL や空文字はそのまま保持する。
- * 引数を mutate しない (純粋関数)。
- */
-export function stripPromptHeavyFields(data: unknown): unknown {
-  if (!data || typeof data !== 'object') return data;
-  const obj = data as Record<string, unknown>;
-  const result: Record<string, unknown> = { ...obj };
-  const appearance = obj.appearance;
-  if (appearance && typeof appearance === 'object') {
-    const app = appearance as Record<string, unknown>;
-    const imageUrl = app.imageUrl;
-    if (typeof imageUrl === 'string' && imageUrl.startsWith('data:')) {
-      result.appearance = { ...app, imageUrl: IMAGE_OMITTED_MARKER };
-    }
-  }
-  return result;
-}
+export { sanitizeForPrompt as stripPromptHeavyFields } from '../utils/promptSafety';
+export const IMAGE_OMITTED_MARKER = PROMPT_IMAGE_OMITTED_MARKER;
 
 /**
  * 会話履歴をマルチターン contents に変換する（症状A対策の中核）。
@@ -118,7 +94,7 @@ export function buildCharacterContents(
   intent: 'consult' | 'update'
 ): GeminiContent[] {
   const trimmed = trimHistory(history);
-  const safeCurrent = stripPromptHeavyFields(currentCharacterData ?? {});
+  const safeCurrent = sanitizeForPrompt(currentCharacterData ?? {});
   return trimmed.map((message, index) => {
     const isLast = index === trimmed.length - 1;
     let text = message.text;

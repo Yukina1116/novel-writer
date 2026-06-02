@@ -7,6 +7,7 @@ import {
     buildCharacterContents,
     sanitizeCharacterPatch,
 } from './characterPrompt';
+import { sanitizeForPrompt } from '../utils/promptSafety';
 
 const characterSchema = {
     type: Type.OBJECT,
@@ -95,17 +96,25 @@ export interface CharacterReplyContext {
 export const generateCharacterReply = async (updatedCharacterData: any, context?: CharacterReplyContext) => {
     const client = getAiClient();
 
+    // 2026-06-01 本番障害と同根の token-bomb 対策 (Codex Q3 指摘):
+    // updatedCharacterData / appliedPatch は appearance.imageUrl に Imagen 生成画像 (~1MB)
+    // を含みうるため、必ず sanitizeForPrompt 経由でプロンプトに埋め込む。
+    // null/undefined ガード: buildCharacterContents の `?? {}` と対称化 (code-review #133)。
+    // 欠落時に prompt へ literal "null" が embed されるのを防ぐ。
+    const safeCharacter = sanitizeForPrompt(updatedCharacterData ?? {});
+    const safePatch = context?.appliedPatch ? sanitizeForPrompt(context.appliedPatch) : undefined;
+
     const contextLines: string[] = [];
     if (context?.latestUserMessage) {
         contextLines.push(`The user's latest message was: "${context.latestUserMessage}"`);
     }
-    if (context?.appliedPatch && Object.keys(context.appliedPatch).length > 0) {
-        contextLines.push(`The change just applied to the profile: ${JSON.stringify(context.appliedPatch)}`);
+    if (safePatch && Object.keys(safePatch as Record<string, unknown>).length > 0) {
+        contextLines.push(`The change just applied to the profile: ${JSON.stringify(safePatch)}`);
     }
     const contextBlock = contextLines.length > 0 ? `\n\n${contextLines.join('\n')}` : '';
 
     const prompt = `Here is the updated character profile:
-${JSON.stringify(updatedCharacterData, null, 2)}${contextBlock}
+${JSON.stringify(safeCharacter, null, 2)}${contextBlock}
 
 Please provide a conversational reply that reflects what was just changed, and a relevant follow-up question.`;
 
