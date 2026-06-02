@@ -61,6 +61,14 @@ const worldSchema = {
 
 export const updateWorldData = async (chatHistory: ChatMessage[], currentWorldData: any | null, intent: 'consult' | 'update') => {
     const client = getAiClient();
+
+    // 空履歴ガード: characterService.updateCharacterData の P2 ガードと対称化
+    // (code-review #133 で worldService 側に伝播漏れを検出)。line 85 の
+    // chatHistory[chatHistory.length - 1].text が undefined 参照で TypeError → 500 を防ぐ。
+    if (!Array.isArray(chatHistory) || chatHistory.length === 0) {
+        return { clarification_needed: 'どのような世界にしたいか、もう少し教えてください。' };
+    }
+
     const responseSchema = {
         type: Type.OBJECT,
         properties: {
@@ -134,7 +142,7 @@ JSONで返すこと：
 更新内容を踏まえて、コメントと補足を生成してください。
 
 【世界データ】
-${JSON.stringify(sanitizeForPrompt(updatedWorldData), null, 2)}
+${JSON.stringify(sanitizeForPrompt(updatedWorldData ?? {}), null, 2)}
 
 出力は JSON オブジェクト1つのみです。
 `;

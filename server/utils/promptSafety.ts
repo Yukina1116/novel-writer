@@ -27,9 +27,14 @@ export const OVERSIZED_STRING_MARKER = '[oversized-string: truncated to fit toke
 /**
  * 単一 leaf string の最大バイト数 (UTF-8)。これを超えると `OVERSIZED_STRING_MARKER` に置換。
  *
- * 100KB は通常の小説 1 章分 (約 50,000 漢字) に相当。AI コンテキストとして 1 フィールドが
+ * 100KB は通常の小説 1 章分 (約 30,000 漢字) に相当。AI コンテキストとして 1 フィールドが
  * これを超えるのは画像 dataURI 等の異常入力のみで、通常テキスト (longDescription / personality
  * 等) には十分余裕がある (false positive 実質ゼロ)。
+ *
+ * 計測は `Buffer.byteLength(s, 'utf8')` で UTF-8 実バイト数を見る。`String.length` だと
+ * UTF-16 code unit ベースになり、日本語 (CJK BMP) は 3 倍緩く / 絵文字 (surrogate pair) は
+ * 2 倍厳しく評価される (code-review #133 指摘)。本プロジェクトは日本語アプリのため、
+ * 真の token-bomb 防御として UTF-8 byte で評価する必要がある。
  */
 export const MAX_FIELD_BYTES = 100_000;
 
@@ -60,12 +65,12 @@ function replaceDataUriAtPath(input: Record<string, unknown>, path: string): Rec
 
   // 観測可能性 (silent fail paired signal): 本番障害再発の早期検知のため、
   // sanitize 発火を必ず構造化ログに残す。message body は marker 自身を含めず
-  // metric 集計に必要な path / bytes のみ。
+  // metric 集計に必要な path / bytes (UTF-8 実バイト数) のみ。
   logger.warn({
     message: 'promptSafety: image dataURI stripped',
     safetyEvent: 'image-omitted',
     path,
-    bytes: leafValue.length,
+    bytes: Buffer.byteLength(leafValue, 'utf8'),
   });
 
   // 不変性のため path に沿って必要な階層だけ新しいオブジェクトに置換する。
@@ -101,22 +106,23 @@ export function stripPromptHeavyFields(data: unknown): unknown {
 }
 
 /**
- * 任意 leaf string の size guard。再帰的に object / array を辿り、length が maxBytes を
+ * 任意 leaf string の size guard。再帰的に object / array を辿り、UTF-8 byte 長が maxBytes を
  * 超える string を `OVERSIZED_STRING_MARKER` に置換する。
  *
  * whitelist (stripPromptHeavyFields) で取り切れない未知フィールド・将来追加フィールド・
- * SVG dataURI 等のセーフティネット。length 判定は文字単位 (JavaScript の String.length)
- * で行う — UTF-16 code unit ベースだが、実用上 byte count と桁が一致する。
+ * SVG dataURI 等のセーフティネット。サイズ判定は `Buffer.byteLength(s, 'utf8')` で行う
+ * (`String.length` は UTF-16 code unit ベースで、日本語/絵文字混在下で評価がブレる)。
  *
  * 不変性: 入力を mutate しない。
  */
 export function truncateOversizedStrings(data: unknown, maxBytes: number = MAX_FIELD_BYTES): unknown {
   if (typeof data === 'string') {
-    if (data.length > maxBytes) {
+    const utf8Bytes = Buffer.byteLength(data, 'utf8');
+    if (utf8Bytes > maxBytes) {
       logger.warn({
         message: 'promptSafety: oversized string truncated',
         safetyEvent: 'oversized-truncated',
-        bytes: data.length,
+        bytes: utf8Bytes,
         maxBytes,
       });
       return OVERSIZED_STRING_MARKER;

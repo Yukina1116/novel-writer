@@ -75,16 +75,33 @@ describe('stripPromptHeavyFields - whitelist 既知フィールド除去', () =>
 });
 
 describe('truncateOversizedStrings - size guard safety-net', () => {
-  it('truncates leaf string exceeding maxBytes', () => {
+  it('truncates leaf string exceeding maxBytes (ASCII = 1 byte/char)', () => {
     const data = { secret: 'X'.repeat(MAX_FIELD_BYTES + 1) };
     const out = truncateOversizedStrings(data) as typeof data;
     expect(out.secret).toBe(OVERSIZED_STRING_MARKER);
   });
 
-  it('keeps strings at exactly maxBytes intact (boundary)', () => {
+  it('keeps ASCII strings at exactly maxBytes intact (boundary)', () => {
     const data = { secret: 'X'.repeat(MAX_FIELD_BYTES) };
     const out = truncateOversizedStrings(data) as typeof data;
     expect(out.secret).toBe(data.secret);
+  });
+
+  it('measures Japanese (CJK) strings in UTF-8 bytes, not UTF-16 code units (code-review #133 fix)', () => {
+    // 日本語 BMP 文字は UTF-8 で 3 bytes / UTF-16 で 1 code unit。
+    // 30,000 文字 = UTF-8 90,000 bytes (< 100,000) → 素通し
+    // 40,000 文字 = UTF-8 120,000 bytes (> 100,000) → truncate
+    const safeJa = { text: 'あ'.repeat(30_000) };
+    const overJa = { text: 'あ'.repeat(40_000) };
+    expect((truncateOversizedStrings(safeJa) as typeof safeJa).text).toBe(safeJa.text);
+    expect((truncateOversizedStrings(overJa) as typeof overJa).text).toBe(OVERSIZED_STRING_MARKER);
+  });
+
+  it('measures emoji (surrogate pair) strings correctly in UTF-8 bytes', () => {
+    // 絵文字 surrogate pair は UTF-16 で 2 code unit / UTF-8 で 4 bytes。
+    // 30,000 emoji = UTF-8 120,000 bytes → truncate (旧実装の length=60,000 では素通し)
+    const overEmoji = { text: '🎉'.repeat(30_000) };
+    expect((truncateOversizedStrings(overEmoji) as typeof overEmoji).text).toBe(OVERSIZED_STRING_MARKER);
   });
 
   it('recurses into nested objects and arrays', () => {
@@ -124,25 +141,25 @@ describe('observability (silent fail paired signal)', () => {
     warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
   });
 
-  it('emits warn log with path + bytes when dataURI is stripped', () => {
+  it('emits warn log with path + UTF-8 bytes when dataURI is stripped', () => {
     const big = `data:image/png;base64,${'A'.repeat(1000)}`;
     stripPromptHeavyFields({ appearance: { imageUrl: big } });
     expect(warnSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         safetyEvent: 'image-omitted',
         path: 'appearance.imageUrl',
-        bytes: big.length,
+        bytes: Buffer.byteLength(big, 'utf8'),
       })
     );
   });
 
-  it('emits warn log with bytes + maxBytes when string is truncated', () => {
+  it('emits warn log with UTF-8 bytes + maxBytes when string is truncated', () => {
     const big = 'X'.repeat(MAX_FIELD_BYTES + 1);
     truncateOversizedStrings({ unknownField: big });
     expect(warnSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         safetyEvent: 'oversized-truncated',
-        bytes: big.length,
+        bytes: Buffer.byteLength(big, 'utf8'),
         maxBytes: MAX_FIELD_BYTES,
       })
     );

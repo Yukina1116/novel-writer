@@ -99,7 +99,9 @@ export const generateCharacterReply = async (updatedCharacterData: any, context?
     // 2026-06-01 本番障害と同根の token-bomb 対策 (Codex Q3 指摘):
     // updatedCharacterData / appliedPatch は appearance.imageUrl に Imagen 生成画像 (~1MB)
     // を含みうるため、必ず sanitizeForPrompt 経由でプロンプトに埋め込む。
-    const safeCharacter = sanitizeForPrompt(updatedCharacterData);
+    // null/undefined ガード: buildCharacterContents の `?? {}` と対称化 (code-review #133)。
+    // 欠落時に prompt へ literal "null" が embed されるのを防ぐ。
+    const safeCharacter = sanitizeForPrompt(updatedCharacterData ?? {});
     const safePatch = context?.appliedPatch ? sanitizeForPrompt(context.appliedPatch) : undefined;
 
     const contextLines: string[] = [];
