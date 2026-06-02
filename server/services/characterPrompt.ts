@@ -72,11 +72,45 @@ export function trimHistory(history: ChatMessage[], maxTurns: number = MAX_HISTO
 }
 
 /**
+ * 生成済み base64 dataURI をプロンプトから除外する際のマーカー。
+ * AI には「画像が存在する」という事実だけ伝え、bytes 本体は送らない。
+ */
+export const IMAGE_OMITTED_MARKER = '[generated-image: omitted from prompt to fit token budget]';
+
+/**
+ * Gemini に送る currentCharacterData から、プロンプト圧迫源を取り除く（token-bomb 対策）。
+ *
+ * Imagen 経由で生成されたキャラ画像は `appearance.imageUrl` に `data:image/png;base64,...` の
+ * 形で保存される。これを JSON.stringify して RUNTIME_CONTEXT に埋め込むと、1MB の dataURI が
+ * 約 90 万トークンに展開され、Gemini 2.5 flash の入力上限 (131,072 tokens) を一発で超える。
+ * 結果として全 `character/update` 呼び出しが 400 INVALID_ARGUMENT で永久 fail する
+ * (2026-06-01 12:21 JST 観測の本番障害)。
+ *
+ * dataURI のみ omission marker に置換し、http/https URL や空文字はそのまま保持する。
+ * 引数を mutate しない (純粋関数)。
+ */
+export function stripPromptHeavyFields(data: unknown): unknown {
+  if (!data || typeof data !== 'object') return data;
+  const obj = data as Record<string, unknown>;
+  const result: Record<string, unknown> = { ...obj };
+  const appearance = obj.appearance;
+  if (appearance && typeof appearance === 'object') {
+    const app = appearance as Record<string, unknown>;
+    const imageUrl = app.imageUrl;
+    if (typeof imageUrl === 'string' && imageUrl.startsWith('data:')) {
+      result.appearance = { ...app, imageUrl: IMAGE_OMITTED_MARKER };
+    }
+  }
+  return result;
+}
+
+/**
  * 会話履歴をマルチターン contents に変換する（症状A対策の中核）。
  *
  * - 最終 user ターンには <RUNTIME_CONTEXT>（今回の intent + 現在のキャラデータ）を付記。
  * - それ以前の user ターンには当時の <TURN_INTENT> を付記（過去の文脈として保持）。
  * - assistant ターンはそのまま model ロールへ。
+ * - currentCharacterData は stripPromptHeavyFields で base64 dataURI を omit してから埋め込む。
  */
 export function buildCharacterContents(
   history: ChatMessage[],
@@ -84,13 +118,14 @@ export function buildCharacterContents(
   intent: 'consult' | 'update'
 ): GeminiContent[] {
   const trimmed = trimHistory(history);
+  const safeCurrent = stripPromptHeavyFields(currentCharacterData ?? {});
   return trimmed.map((message, index) => {
     const isLast = index === trimmed.length - 1;
     let text = message.text;
 
     if (isLast) {
       text = `${message.text}\n\n<RUNTIME_CONTEXT>\nintent: ${intent}\ncurrentCharacterData: ${JSON.stringify(
-        currentCharacterData ?? {}
+        safeCurrent
       )}\n</RUNTIME_CONTEXT>`;
     } else if (message.role === 'user') {
       const turnIntent = message.mode === 'write' ? 'update' : 'consult';
