@@ -8,6 +8,8 @@ import {
   trimHistory,
   buildCharacterContents,
   sanitizeCharacterPatch,
+  stripPromptHeavyFields,
+  IMAGE_OMITTED_MARKER,
 } from './characterPrompt';
 
 const u = (text: string, mode: 'write' | 'consult' = 'write'): ChatMessage => ({ role: 'user', text, mode });
@@ -83,6 +85,53 @@ describe('sanitizeCharacterPatch', () => {
   it('keeps falsy-but-meaningful values like empty string, 0, false', () => {
     const patch = { a: '', b: 0, c: false };
     expect(sanitizeCharacterPatch(patch)).toEqual({ a: '', b: 0, c: false });
+  });
+});
+
+describe('stripPromptHeavyFields (token-bomb 対策: base64 dataURI を除外)', () => {
+  it('replaces base64 data: URI in appearance.imageUrl with an omission marker', () => {
+    const big = `data:image/png;base64,${'A'.repeat(1_000_000)}`;
+    const data = { name: 'Alice', appearance: { imageUrl: big, traits: [{ key: '髪', value: '金' }] } };
+    const stripped = stripPromptHeavyFields(data) as typeof data;
+    expect(stripped.appearance.imageUrl).toBe(IMAGE_OMITTED_MARKER);
+    expect(stripped.appearance.traits).toEqual([{ key: '髪', value: '金' }]);
+    expect(stripped.name).toBe('Alice');
+  });
+
+  it('keeps non-dataURI imageUrl (http URL) intact', () => {
+    const data = { appearance: { imageUrl: 'https://example.com/a.png' } };
+    expect((stripPromptHeavyFields(data) as typeof data).appearance.imageUrl).toBe('https://example.com/a.png');
+  });
+
+  it('returns null/undefined/primitive unchanged', () => {
+    expect(stripPromptHeavyFields(null)).toBe(null);
+    expect(stripPromptHeavyFields(undefined)).toBe(undefined);
+    expect(stripPromptHeavyFields('x')).toBe('x');
+    expect(stripPromptHeavyFields(42)).toBe(42);
+  });
+
+  it('does not mutate the original input', () => {
+    const big = `data:image/png;base64,${'A'.repeat(100)}`;
+    const data = { appearance: { imageUrl: big, traits: [{ key: 'k', value: 'v' }] } };
+    stripPromptHeavyFields(data);
+    expect(data.appearance.imageUrl).toBe(big);
+  });
+
+  it('handles data missing appearance gracefully', () => {
+    const data = { name: 'Alice', personality: 'gentle' };
+    expect(stripPromptHeavyFields(data)).toEqual(data);
+  });
+});
+
+describe('buildCharacterContents (token-bomb 対策統合)', () => {
+  it('strips base64 dataURI from currentCharacterData before embedding into RUNTIME_CONTEXT', () => {
+    const big = `data:image/png;base64,${'A'.repeat(500_000)}`;
+    const data = { appearance: { imageUrl: big } };
+    const contents = buildCharacterContents([u('describe her')], data, 'update');
+    const text = contents[0].parts[0].text;
+    expect(text).not.toContain('AAAAA');
+    expect(text).toContain(IMAGE_OMITTED_MARKER);
+    expect(text.length).toBeLessThan(5_000);
   });
 });
 
