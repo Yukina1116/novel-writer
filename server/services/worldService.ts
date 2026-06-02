@@ -1,6 +1,7 @@
 import { Type, GenerateContentResponse } from '@google/genai';
 import { ChatMessage } from '../../types';
 import { getAiClient, TEXT_MODEL } from '../aiClient';
+import { sanitizeForPrompt } from '../utils/promptSafety';
 
 const systemInstruction = `
 You are a world-building assistant AI.
@@ -78,7 +79,7 @@ export const updateWorldData = async (chatHistory: ChatMessage[], currentWorldDa
 ${chatHistory.map(m => `${m.role === 'user' ? 'ユーザー' : 'AI'}: ${m.text}`).join('\n')}
 
 【現在の世界データ】
-${JSON.stringify(currentWorldData || {}, null, 2)}
+${JSON.stringify(sanitizeForPrompt(currentWorldData || {}), null, 2)}
 
 【ユーザーの意図】"${intent}"
 【最新のリクエスト】"${chatHistory[chatHistory.length - 1].text}"
@@ -133,7 +134,7 @@ JSONで返すこと：
 更新内容を踏まえて、コメントと補足を生成してください。
 
 【世界データ】
-${JSON.stringify(updatedWorldData, null, 2)}
+${JSON.stringify(sanitizeForPrompt(updatedWorldData), null, 2)}
 
 出力は JSON オブジェクト1つのみです。
 `;
