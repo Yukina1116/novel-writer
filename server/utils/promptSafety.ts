@@ -11,9 +11,12 @@ import { logger } from './logger';
  * 同種パターンが world (`mapImageUrl` 経由) にも存在し、character/reply にも未対策の経路が
  * 残っていた (Codex セカンドオピニオン指摘)。本モジュールで一元化する。
  *
- * 防御戦略 (Codex 推奨の案 C):
- *   1. 既知フィールド名 + `data:` prefix の **whitelist** 除去 (確実な既知パスを断つ)
- *   2. 任意 leaf string の **size guard** (将来の未知フィールド・SVG dataURI 等のセーフティネット)
+ * 防御戦略 (Issue #134 で content-based 検出に進化):
+ *   1. 任意 path の **`data:image/` prefix 検出** (whitelist 不要、新フィールド自動カバー)
+ *   2. 任意 leaf string の **size guard** (非画像 dataURI・将来の他種 token-bomb の backstop)
+ *
+ * 旧設計 (PR #132/#133) は `IMAGE_FIELD_PATHS` whitelist だったが、新フィールド追加時の
+ * register-or-forget リスクが残った (Issue #134)。content-based に切替で構造的に解消。
  *
  * 引数は mutate しない (pure helpers)。
  */
@@ -39,70 +42,82 @@ export const OVERSIZED_STRING_MARKER = '[oversized-string: truncated to fit toke
 export const MAX_FIELD_BYTES = 100_000;
 
 /**
- * 「ここに画像 dataURI が入りうる」既知フィールドの dot-path。
- * 新規フィールド追加時はここに足すだけで character / world / 他 service 全てに適用される。
+ * 画像 dataURI と判定する prefix。`data:image/` は MIME type の image/* を全てカバー
+ * (png, jpeg, webp, gif, svg+xml, avif, heic 等)。
  */
-const IMAGE_FIELD_PATHS: readonly string[] = [
-  'appearance.imageUrl', // character: Imagen 生成
-  'mapImageUrl', // world: ユーザーアップロード or 生成
-];
+const IMAGE_DATA_URI_PREFIX = 'data:image/';
 
 /**
- * dot-path で指定されたフィールドに `data:` で始まる文字列があれば omission marker に置換。
- * 引数 mutate なし。path 途中が object でない場合は no-op (型不一致 safe)。
+ * false positive 防止: この byte 長未満の `data:image/` 始まり文字列は素通しする。
+ * 理由: ナレッジや description に「`data:image/png` という形式の文字列」が短文として
+ * 含まれる可能性があるため。実 dataURI は base64 payload で必ず数百〜数千 bytes 以上。
  */
-function replaceDataUriAtPath(input: Record<string, unknown>, path: string): Record<string, unknown> {
-  const segments = path.split('.');
-  let cursor: unknown = input;
-  for (let i = 0; i < segments.length - 1; i++) {
-    if (!cursor || typeof cursor !== 'object') return input;
-    cursor = (cursor as Record<string, unknown>)[segments[i]];
-  }
-  if (!cursor || typeof cursor !== 'object') return input;
-  const leafKey = segments[segments.length - 1];
-  const leafValue = (cursor as Record<string, unknown>)[leafKey];
-  if (typeof leafValue !== 'string' || !leafValue.startsWith('data:')) return input;
+const MIN_IMAGE_DATA_URI_BYTES = 100;
 
-  // 観測可能性 (silent fail paired signal): 本番障害再発の早期検知のため、
-  // sanitize 発火を必ず構造化ログに残す。message body は marker 自身を含めず
-  // metric 集計に必要な path / bytes (UTF-8 実バイト数) のみ。
-  logger.warn({
-    message: 'promptSafety: image dataURI stripped',
-    safetyEvent: 'image-omitted',
-    path,
-    bytes: Buffer.byteLength(leafValue, 'utf8'),
-  });
-
-  // 不変性のため path に沿って必要な階層だけ新しいオブジェクトに置換する。
-  function setAtPath(obj: Record<string, unknown>, depth: number): Record<string, unknown> {
-    const key = segments[depth];
-    if (depth === segments.length - 1) {
-      return { ...obj, [key]: IMAGE_OMITTED_MARKER };
-    }
-    const child = obj[key];
-    if (!child || typeof child !== 'object') return obj;
-    return { ...obj, [key]: setAtPath(child as Record<string, unknown>, depth + 1) };
-  }
-  return setAtPath(input, 0);
+/**
+ * 任意 leaf string が「画像 dataURI と判定すべきか」を返す。
+ * - `data:image/` で始まる
+ * - UTF-8 byte 長が `MIN_IMAGE_DATA_URI_BYTES` 以上 (false positive 防止)
+ */
+function isImageDataUri(value: string): boolean {
+  return value.startsWith(IMAGE_DATA_URI_PREFIX) && Buffer.byteLength(value, 'utf8') >= MIN_IMAGE_DATA_URI_BYTES;
 }
 
 /**
- * 既知の画像 dataURI フィールド (whitelist) を omission marker に置換する。
- * character の `appearance.imageUrl` と world の `mapImageUrl` を一度に処理。
- * 不変性: 入力を mutate せず、影響パスのみ新オブジェクトに差し替える。
+ * 再帰スキャン中の現在 path を log 用に組み立てる。
+ * object key は dot 区切り、array index は `[i]` で表現する (例: `appearance.gallery[0].url`)。
+ */
+function joinPath(parent: string, segment: string | number): string {
+  if (typeof segment === 'number') return `${parent}[${segment}]`;
+  if (parent === '') return segment;
+  return `${parent}.${segment}`;
+}
+
+/**
+ * 任意 path の `data:image/` 始まり文字列 (一定 byte 数以上) を omission marker に置換する
+ * content-based scanner (Issue #134)。
+ *
+ * - whitelist 不要 → 新フィールド追加時の register-or-forget リスクを構造的に解消
+ * - object / array を再帰、非画像 dataURI (application/pdf 等) と短文 `data:image/...`
+ *   (例: ナレッジに記述された MIME 形式の説明文) は対象外
+ * - 観測可能性: 発火ごとに `safetyEvent: 'image-omitted'` + path (dot-path + array index) を warn ログ
+ * - 不変性: 入力を mutate せず、変更がなければ same reference を返す (perf hint)
  */
 export function stripPromptHeavyFields(data: unknown): unknown {
-  if (!data || typeof data !== 'object') return data;
-  let result = data as Record<string, unknown>;
-  let changed = false;
-  for (const path of IMAGE_FIELD_PATHS) {
-    const replaced = replaceDataUriAtPath(result, path);
-    if (replaced !== result) {
-      changed = true;
-      result = replaced;
+  function recurse(value: unknown, path: string): unknown {
+    if (typeof value === 'string') {
+      if (!isImageDataUri(value)) return value;
+      logger.warn({
+        message: 'promptSafety: image dataURI stripped',
+        safetyEvent: 'image-omitted',
+        path,
+        bytes: Buffer.byteLength(value, 'utf8'),
+      });
+      return IMAGE_OMITTED_MARKER;
     }
+    if (Array.isArray(value)) {
+      let changed = false;
+      const next = value.map((item, idx) => {
+        const replaced = recurse(item, joinPath(path, idx));
+        if (replaced !== item) changed = true;
+        return replaced;
+      });
+      return changed ? next : value;
+    }
+    if (value && typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      let changed = false;
+      const next: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        const replaced = recurse(v, joinPath(path, k));
+        if (replaced !== v) changed = true;
+        next[k] = replaced;
+      }
+      return changed ? next : value;
+    }
+    return value;
   }
-  return changed ? result : data;
+  return recurse(data, '');
 }
 
 /**

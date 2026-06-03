@@ -9,8 +9,8 @@ import {
   sanitizeForPrompt,
 } from './promptSafety';
 
-describe('stripPromptHeavyFields - whitelist 既知フィールド除去', () => {
-  it('replaces character appearance.imageUrl dataURI with marker', () => {
+describe('stripPromptHeavyFields - content-based 画像 dataURI 検出 (Issue #134)', () => {
+  it('replaces character appearance.imageUrl dataURI with marker (legacy whitelist field still works)', () => {
     const big = `data:image/png;base64,${'A'.repeat(1_000_000)}`;
     const data = { name: 'Alice', appearance: { imageUrl: big, traits: [{ key: '髪', value: '金' }] } };
     const out = stripPromptHeavyFields(data) as typeof data;
@@ -19,7 +19,7 @@ describe('stripPromptHeavyFields - whitelist 既知フィールド除去', () =>
     expect(out.name).toBe('Alice');
   });
 
-  it('replaces world mapImageUrl dataURI with marker', () => {
+  it('replaces world mapImageUrl dataURI with marker (legacy whitelist field still works)', () => {
     const big = `data:image/jpeg;base64,${'B'.repeat(500_000)}`;
     const data = { name: '王国', mapImageUrl: big, exportDescription: '広大な大陸' };
     const out = stripPromptHeavyFields(data) as typeof data;
@@ -28,10 +28,11 @@ describe('stripPromptHeavyFields - whitelist 既知フィールド除去', () =>
     expect(out.exportDescription).toBe('広大な大陸');
   });
 
-  it('handles both character and world fields simultaneously (safe no-op if absent)', () => {
+  it('handles both character and world fields simultaneously', () => {
+    const big = `data:image/png;base64,${'C'.repeat(1000)}`;
     const both = {
-      appearance: { imageUrl: 'data:image/png;base64,XYZ' },
-      mapImageUrl: 'data:image/png;base64,QQQ',
+      appearance: { imageUrl: big },
+      mapImageUrl: big,
     };
     const out = stripPromptHeavyFields(both) as typeof both;
     expect(out.appearance.imageUrl).toBe(IMAGE_OMITTED_MARKER);
@@ -48,6 +49,74 @@ describe('stripPromptHeavyFields - whitelist 既知フィールド除去', () =>
     expect(out.mapImageUrl).toBe('https://maps.example.com/world.png');
   });
 
+  // === Issue #134: content-based 検出 (register-or-forget 解消) ===
+
+  it('detects dataURI at ANY unknown field (no whitelist required)', () => {
+    // 将来追加されうるフィールド (PR #134 想定: characterPortraitDataUrl 等)
+    const big = `data:image/png;base64,${'A'.repeat(1000)}`;
+    const data = { characterPortraitDataUrl: big, name: 'Alice' };
+    const out = stripPromptHeavyFields(data) as typeof data;
+    expect(out.characterPortraitDataUrl).toBe(IMAGE_OMITTED_MARKER);
+    expect(out.name).toBe('Alice');
+  });
+
+  it('detects dataURI inside deeply nested arrays (e.g. gallery[].url)', () => {
+    const big = `data:image/jpeg;base64,${'X'.repeat(1000)}`;
+    const data = {
+      appearance: {
+        gallery: [
+          { url: big, caption: '正面' },
+          { url: 'https://cdn.example.com/b.png', caption: '横向き' },
+        ],
+      },
+    };
+    const out = stripPromptHeavyFields(data) as typeof data;
+    expect(out.appearance.gallery[0].url).toBe(IMAGE_OMITTED_MARKER);
+    expect(out.appearance.gallery[0].caption).toBe('正面');
+    expect(out.appearance.gallery[1].url).toBe('https://cdn.example.com/b.png');
+  });
+
+  it('detects multiple image variants (png / jpeg / webp / svg+xml / gif)', () => {
+    const variants = [
+      `data:image/png;base64,${'A'.repeat(200)}`,
+      `data:image/jpeg;base64,${'B'.repeat(200)}`,
+      `data:image/webp;base64,${'C'.repeat(200)}`,
+      `data:image/svg+xml;base64,${'D'.repeat(200)}`,
+      `data:image/gif;base64,${'E'.repeat(200)}`,
+    ];
+    for (const v of variants) {
+      const out = stripPromptHeavyFields({ field: v }) as { field: string };
+      expect(out.field).toBe(IMAGE_OMITTED_MARKER);
+    }
+  });
+
+  it('does NOT replace non-image dataURI (e.g. application/pdf, audio, video)', () => {
+    // 非画像の dataURI は image marker を出さない。
+    // size guard が backstop として truncate するため、ここでは image marker 経路にだけ
+    // 該当しないことを確認する (出力は素通し)。
+    const data = {
+      pdf: `data:application/pdf;base64,${'A'.repeat(200)}`,
+      audio: `data:audio/mp3;base64,${'B'.repeat(200)}`,
+      text: 'data:text/plain;base64,SGVsbG8=',
+    };
+    const out = stripPromptHeavyFields(data) as typeof data;
+    expect(out.pdf).not.toBe(IMAGE_OMITTED_MARKER);
+    expect(out.audio).not.toBe(IMAGE_OMITTED_MARKER);
+    expect(out.text).not.toBe(IMAGE_OMITTED_MARKER);
+  });
+
+  it('does NOT replace short strings that incidentally start with "data:image/" (false positive guard)', () => {
+    // ナレッジ等に「`data:image/png` という形式の文字列」が短文として含まれる可能性。
+    // 100 bytes 未満は素通し (real dataURI は base64 payload で必ず数百 bytes 以上)。
+    const data = {
+      knowledge: 'data:image/png は base64 形式',
+      hint: 'data:image/jpeg;base64,QQ==', // 構文的には有効だが極小
+    };
+    const out = stripPromptHeavyFields(data) as typeof data;
+    expect(out.knowledge).toBe('data:image/png は base64 形式');
+    expect(out.hint).toBe('data:image/jpeg;base64,QQ==');
+  });
+
   it('returns null/undefined/primitive unchanged', () => {
     expect(stripPromptHeavyFields(null)).toBe(null);
     expect(stripPromptHeavyFields(undefined)).toBe(undefined);
@@ -56,7 +125,7 @@ describe('stripPromptHeavyFields - whitelist 既知フィールド除去', () =>
   });
 
   it('does not mutate input (immutability)', () => {
-    const big = `data:image/png;base64,${'A'.repeat(100)}`;
+    const big = `data:image/png;base64,${'A'.repeat(1000)}`;
     const data = { appearance: { imageUrl: big, traits: [{ key: 'k', value: 'v' }] }, mapImageUrl: big };
     const snapshot = JSON.stringify(data);
     stripPromptHeavyFields(data);
@@ -148,6 +217,18 @@ describe('observability (silent fail paired signal)', () => {
       expect.objectContaining({
         safetyEvent: 'image-omitted',
         path: 'appearance.imageUrl',
+        bytes: Buffer.byteLength(big, 'utf8'),
+      })
+    );
+  });
+
+  it('emits warn log with dot-path + array index for nested detection (Issue #134)', () => {
+    const big = `data:image/png;base64,${'A'.repeat(1000)}`;
+    stripPromptHeavyFields({ appearance: { gallery: [{ url: big }] } });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        safetyEvent: 'image-omitted',
+        path: 'appearance.gallery[0].url',
         bytes: Buffer.byteLength(big, 'utf8'),
       })
     );
