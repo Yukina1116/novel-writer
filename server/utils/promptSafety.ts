@@ -79,6 +79,36 @@ const MAX_RECURSION_DEPTH = 1000;
 export const RECURSION_DEPTH_EXCEEDED_MARKER = '[recursion-depth-exceeded: nested data truncated to fit safety limit]';
 
 /**
+ * 単一 sanitize 関数呼出あたりの個別 warn ログ発火上限。これを超えると個別 warn を抑制し、
+ * 関数末尾で集約 log 1 件 (`*-batch`) に切替える。
+ *
+ * 理由 (Issue #137 #3): 旧 PR #136 の content-based 再帰スキャンは O(N leaves) で全 leaf に
+ * 対し warn を emit する設計のため、攻撃者が array に多数の `data:image/...` を詰めると
+ * Cloud Logging に同名 warn が 1 リクエストで数千〜数万件発火する amplification 経路がある。
+ * 旧 whitelist 設計 (PR #132/#133) は path 2 件で暗黙の O(1) 契約だった。
+ *
+ * 50 は通常の character / world データで発火する image-omitted 件数 (実用 0〜2 件) に十分
+ * 余裕があり、攻撃 amplification 上限としても観測上の代表性 (最初の 50 件で path 分布が
+ * 十分わかる) を保つ妥協点。
+ *
+ * ## 量的上限 (1 sanitize 関数呼出 vs 1 sanitizeForPrompt 呼出 vs 1 HTTP request)
+ *
+ * - **1 関数呼出 (stripPromptHeavyFields or truncateOversizedStrings)**:
+ *   - image-omitted 個別 ≤ 50 件 + image-omitted-batch 1 件
+ *   - recursion-depth-exceeded 個別 ≤ 50 件 + recursion-depth-exceeded-batch 1 件
+ *   - 合計 ≤ 102 件
+ * - **1 `sanitizeForPrompt` 呼出**: 2 関数を直列に走らせるため最大 ≤ 204 件
+ *   - (stripPromptHeavyFields の depth-exceeded marker は短文なので truncate 側の oversized
+ *     経路は通常発火せず、実測上は ~100 件帯)
+ * - **1 HTTP request**: `character/reply` は `sanitizeForPrompt` を 2 回呼ぶため最大 ≤ 408 件
+ *
+ * いずれも旧 amplification 経路の数千〜数万件と比べ 1-2 桁削減。本上限は per-function-call
+ * での design であり per-request の構造的 cap ではない (per-request cap を求める場合は
+ * logger 側の rate-limited wrapper が altitude を上げる方向、Issue #137 で別途検討)。
+ */
+const MAX_WARN_PER_CALL = 50;
+
+/**
  * Object.prototype 汚染になりうる特殊 key (`__proto__` / `constructor` / `prototype`)。
  *
  * 理由 (Issue #134 part 1 code-review PLAUSIBLE): JSON.parse は `__proto__` を own enumerable
@@ -121,24 +151,40 @@ function joinPath(parent: string, segment: string | number): string {
  * - 不変性: 入力を mutate せず、変更がなければ same reference を返す (perf hint)
  */
 export function stripPromptHeavyFields(data: unknown): unknown {
+  // Issue #137 #3: per-call warn 集約のためのカウンタ。closure で共有。
+  // image-omitted / recursion-depth-exceeded はそれぞれ独立カウンタで管理し、
+  // batch log の safetyEvent を分離して観測上明確にする (code-review #139 CONFIRMED 対応)。
+  let totalCount = 0;
+  let loggedCount = 0;
+  let depthExceededCount = 0;
+  let depthExceededLogged = 0;
+
   function recurse(value: unknown, path: string, depth: number): unknown {
     if (depth > MAX_RECURSION_DEPTH) {
-      logger.warn({
-        message: 'promptSafety: recursion depth exceeded',
-        safetyEvent: 'recursion-depth-exceeded',
-        path,
-        depth,
-      });
+      depthExceededCount++;
+      if (depthExceededLogged < MAX_WARN_PER_CALL) {
+        logger.warn({
+          message: 'promptSafety: recursion depth exceeded',
+          safetyEvent: 'recursion-depth-exceeded',
+          path,
+          depth,
+        });
+        depthExceededLogged++;
+      }
       return RECURSION_DEPTH_EXCEEDED_MARKER;
     }
     if (typeof value === 'string') {
       if (!isImageDataUri(value)) return value;
-      logger.warn({
-        message: 'promptSafety: image dataURI stripped',
-        safetyEvent: 'image-omitted',
-        path,
-        bytes: Buffer.byteLength(value, 'utf8'),
-      });
+      totalCount++;
+      if (loggedCount < MAX_WARN_PER_CALL) {
+        logger.warn({
+          message: 'promptSafety: image dataURI stripped',
+          safetyEvent: 'image-omitted',
+          path,
+          bytes: Buffer.byteLength(value, 'utf8'),
+        });
+        loggedCount++;
+      }
       return IMAGE_OMITTED_MARKER;
     }
     if (Array.isArray(value)) {
@@ -167,7 +213,28 @@ export function stripPromptHeavyFields(data: unknown): unknown {
     }
     return value;
   }
-  return recurse(data, '', 0);
+  const result = recurse(data, '', 0);
+
+  // 集約 log: 上限超過時のみ 1 件 emit (個別 warn を抑制した分の omitted 数を報告)。
+  if (totalCount > MAX_WARN_PER_CALL) {
+    logger.warn({
+      message: 'promptSafety: image-omitted warn amplification suppressed',
+      safetyEvent: 'image-omitted-batch',
+      totalCount,
+      loggedCount,
+      omittedCount: totalCount - loggedCount,
+    });
+  }
+  if (depthExceededCount > MAX_WARN_PER_CALL) {
+    logger.warn({
+      message: 'promptSafety: recursion-depth-exceeded warn amplification suppressed',
+      safetyEvent: 'recursion-depth-exceeded-batch',
+      totalCount: depthExceededCount,
+      loggedCount: depthExceededLogged,
+      omittedCount: depthExceededCount - depthExceededLogged,
+    });
+  }
+  return result;
 }
 
 /**
@@ -185,24 +252,40 @@ export function stripPromptHeavyFields(data: unknown): unknown {
  * 不変性: 入力を mutate しない。
  */
 export function truncateOversizedStrings(data: unknown, maxBytes: number = MAX_FIELD_BYTES): unknown {
+  // Issue #137 #3: per-call warn 集約のためのカウンタ。closure で共有。
+  // oversized-truncated / recursion-depth-exceeded はそれぞれ独立カウンタで管理
+  // (code-review #139 CONFIRMED: depth-exceeded amplification も対称化)。
+  let totalCount = 0;
+  let loggedCount = 0;
+  let depthExceededCount = 0;
+  let depthExceededLogged = 0;
+
   function recurse(value: unknown, depth: number): unknown {
     if (depth > MAX_RECURSION_DEPTH) {
-      logger.warn({
-        message: 'promptSafety: recursion depth exceeded',
-        safetyEvent: 'recursion-depth-exceeded',
-        depth,
-      });
+      depthExceededCount++;
+      if (depthExceededLogged < MAX_WARN_PER_CALL) {
+        logger.warn({
+          message: 'promptSafety: recursion depth exceeded',
+          safetyEvent: 'recursion-depth-exceeded',
+          depth,
+        });
+        depthExceededLogged++;
+      }
       return RECURSION_DEPTH_EXCEEDED_MARKER;
     }
     if (typeof value === 'string') {
       const utf8Bytes = Buffer.byteLength(value, 'utf8');
       if (utf8Bytes > maxBytes) {
-        logger.warn({
-          message: 'promptSafety: oversized string truncated',
-          safetyEvent: 'oversized-truncated',
-          bytes: utf8Bytes,
-          maxBytes,
-        });
+        totalCount++;
+        if (loggedCount < MAX_WARN_PER_CALL) {
+          logger.warn({
+            message: 'promptSafety: oversized string truncated',
+            safetyEvent: 'oversized-truncated',
+            bytes: utf8Bytes,
+            maxBytes,
+          });
+          loggedCount++;
+        }
         return OVERSIZED_STRING_MARKER;
       }
       return value;
@@ -233,7 +316,28 @@ export function truncateOversizedStrings(data: unknown, maxBytes: number = MAX_F
     }
     return value;
   }
-  return recurse(data, 0);
+  const result = recurse(data, 0);
+
+  // 集約 log: 上限超過時のみ 1 件 emit。
+  if (totalCount > MAX_WARN_PER_CALL) {
+    logger.warn({
+      message: 'promptSafety: oversized-truncated warn amplification suppressed',
+      safetyEvent: 'oversized-truncated-batch',
+      totalCount,
+      loggedCount,
+      omittedCount: totalCount - loggedCount,
+    });
+  }
+  if (depthExceededCount > MAX_WARN_PER_CALL) {
+    logger.warn({
+      message: 'promptSafety: recursion-depth-exceeded warn amplification suppressed',
+      safetyEvent: 'recursion-depth-exceeded-batch',
+      totalCount: depthExceededCount,
+      loggedCount: depthExceededLogged,
+      omittedCount: depthExceededCount - depthExceededLogged,
+    });
+  }
+  return result;
 }
 
 /**
