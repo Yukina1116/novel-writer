@@ -5,6 +5,7 @@ import {
   NON_IMAGE_DATA_URI_MARKER,
   OVERSIZED_STRING_MARKER,
   RECURSION_DEPTH_EXCEEDED_MARKER,
+  COLLECTION_OVERFLOW_MARKER,
   MAX_FIELD_BYTES,
   stripPromptHeavyFields,
   truncateOversizedStrings,
@@ -503,11 +504,13 @@ describe('observability (silent fail paired signal)', () => {
       (Buffer as any).byteLength = originalByteLength;
     }
 
-    // 旧 eager 設計: 100 leaf × 2 回 = 200 回
-    // 新 lazy 設計: 100 leaf × 1 回 (isImageDataUri) + 50 leaf × 1 回 (tick builder) = 150 回
-    // 厳密に 150 回でなくても、200 回未満であれば lazy 化は効いている
-    expect(byteLengthCalls).toBeLessThan(200);
-    expect(byteLengthCalls).toBeGreaterThanOrEqual(150);
+    // 旧 eager 設計 (PR #140 以前): 100 leaf × 2 回 = 200 回
+    // 新 lazy 設計 (PR #140): 100 leaf × 1 回 (isImageDataUri) + 50 leaf × 1 回 (tick builder) = 150 回
+    // PR #145 (Issue #137 #2 collection-level guard): + 100 leaf × 1 回 (estimateElementBytes 経由) = 250 回
+    // lazy 化の本質 (threshold 超後の tick builder skip) は維持されているため、350 未満であれば
+    // 退行していない。collection-overflow guard は array recurse 内の独立計算で、別 baseline を持つ。
+    expect(byteLengthCalls).toBeLessThan(350);
+    expect(byteLengthCalls).toBeGreaterThanOrEqual(250);
   });
 
   it('image and depth aggregators are independent (one event burst does not exhaust the other quota)', () => {
@@ -1171,5 +1174,251 @@ describe('createWarnAggregator path histogram (Issue #137 #5)', () => {
     );
     expect(case1).toBeDefined();
     expect((case1![0] as { truncatedBucketCount: number }).truncatedBucketCount).toBe(0);
+  });
+});
+
+describe('stripPromptHeavyFields - collection-level guard (Issue #137 #2 残り)', () => {
+  // 設計文書 §5 prose / pseudo-code が境界 semantics の正本: `cumulativeBytes > MAX_COLLECTION_BYTES`
+  // 演算子なので「閾値ちょうど (=200,000) は保持、次から marker」。各 element X byte のとき
+  // floor(200,000 / X) + 1 件目までは保持 (入口で cumulative ≤ 200,000) され、その次が marker。
+  // 設計文書 AC-3 table の "201 件×1000B → 200 件保持" は pseudo-code と矛盾し誤植扱い (実機では 202 件で
+  // 初めて 1 件 marker)。handoff に記録する。
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+  });
+
+  function buildElementOfBytes(byteLength: number): string {
+    // JSON.stringify(s) で `"..."` の前後の quote 2 byte 込で byte 計測されることを考慮し、
+    // estimateElementBytes(s) = byteLength + 2 になる。ここでは raw byte 長で指定して
+    // テスト側で +2 を含めた cumulative 計算をする規律にする (テスト名で byte 数を明示)。
+    return 'a'.repeat(byteLength);
+  }
+
+  it('AC-1: 199KB array (cumulative < 200,000) → 全 element 保持、collection-overflow 不発火', () => {
+    // 1000B raw 文字列 200 件で JSON.stringify 後は 1002B/件 × 200 = 200,400 byte
+    // → cumulative 200,400 で fire するが、AC-1 は「199KB の領域」の確認なので 800B raw × 200 件
+    // (= 802B/件 × 200 = 160,400 cumulative) を使う。閾値内で全保持を pin する。
+    const arr = Array.from({ length: 200 }, () => buildElementOfBytes(800));
+    const out = stripPromptHeavyFields({ list: arr }) as { list: string[] };
+    expect(out.list).toHaveLength(200);
+    expect(out.list.every((s) => s === 'a'.repeat(800))).toBe(true);
+    const fired = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'collection-overflow'
+    );
+    expect(fired).toBeUndefined();
+  });
+
+  it('AC-2: ~1MB array (500 件 × 2000B) → 閾値到達後 element が COLLECTION_OVERFLOW_MARKER に置換', () => {
+    const elem = buildElementOfBytes(2000); // estimateElementBytes(elem) = 2002
+    const arr = Array.from({ length: 500 }, () => elem);
+    const out = stripPromptHeavyFields({ list: arr }) as { list: string[] };
+    // 先頭 N 件は保持、残りは marker。N は cumulative ≤ 200,000 を満たす最大件数 + 1。
+    // 2002 * 100 = 200,200 > 200,000、2002 * 99 = 198,198 ≤ 200,000。
+    // idx=99 入口 cumulative=198,198 → 保持 → 200,200。idx=100 入口 200,200 > 200,000 → marker。
+    expect(out.list).toHaveLength(500);
+    expect(out.list[0]).toBe(elem); // 保持
+    expect(out.list[99]).toBe(elem); // 最後の保持 (cumulative ちょうど超え)
+    expect(out.list[100]).toBe(COLLECTION_OVERFLOW_MARKER); // 1 件目 marker
+    expect(out.list[499]).toBe(COLLECTION_OVERFLOW_MARKER); // 末尾も marker
+  });
+
+  it('AC-3a: 200 件 × 999B raw (estimateElementBytes 1001 × 200 = 200,200) → idx=199 までは入口で <=200,000 で保持、idx=200 はないので全 200 件保持', () => {
+    // 1001 × 199 = 199,199 ≤ 200,000、idx=199 入口 199,199 → 保持 → 200,200。終了。
+    const arr = Array.from({ length: 200 }, () => buildElementOfBytes(999));
+    const out = stripPromptHeavyFields({ list: arr }) as { list: string[] };
+    expect(out.list).toHaveLength(200);
+    expect(out.list.every((s) => s === 'a'.repeat(999))).toBe(true);
+  });
+
+  it('AC-3b: 閾値超で部分 marker — 250 件 × 1000B → 先頭 N 件保持後 marker', () => {
+    // 1002 × 199 = 199,398 ≤ 200,000、idx=199 入口 199,398 → 保持 → 200,400。
+    // idx=200 入口 200,400 > 200,000 → marker。droppedIndex=200。
+    const arr = Array.from({ length: 250 }, () => buildElementOfBytes(1000));
+    const out = stripPromptHeavyFields({ list: arr }) as { list: string[] };
+    expect(out.list).toHaveLength(250);
+    expect(out.list[199]).toBe('a'.repeat(1000));
+    expect(out.list[200]).toBe(COLLECTION_OVERFLOW_MARKER);
+    expect(out.list[249]).toBe(COLLECTION_OVERFLOW_MARKER);
+  });
+
+  it('AC-4: nested object in array → per-element JSON.stringify 累積で評価', () => {
+    // 各 element = { value: 'a'.repeat(1000) } → JSON.stringify は {"value":"a..a"} ≈ 1012 byte
+    // 1012 × 197 = 199,364 ≤ 200,000、idx=197 入口 199,364 → 保持 → 200,376。
+    // idx=198 入口 200,376 > 200,000 → marker。droppedIndex=198。
+    const arr = Array.from({ length: 250 }, () => ({ value: 'a'.repeat(1000) }));
+    const out = stripPromptHeavyFields({ list: arr }) as { list: Array<unknown> };
+    expect(out.list[197]).toEqual({ value: 'a'.repeat(1000) });
+    expect(out.list[198]).toBe(COLLECTION_OVERFLOW_MARKER);
+  });
+
+  it('AC-5: image dataURI marker と co-existence — leaf 化された marker (~60B) で cumulative を圧迫しない', () => {
+    // 各 element が大型 dataURI (5000B raw) → IMAGE_OMITTED_MARKER (~58B) に marker 化
+    // marker 化後の processed element 1 件は約 60B、JSON.stringify で 62B 程度
+    // → 62 × N で N=3000 でも cumulative ≈ 186,000 で閾値以下、collection-overflow 不発火
+    const bigImage = `data:image/png;base64,${'A'.repeat(5000)}`;
+    const arr = Array.from({ length: 1000 }, () => bigImage);
+    const out = stripPromptHeavyFields({ list: arr }) as { list: string[] };
+    expect(out.list).toHaveLength(1000);
+    expect(out.list.every((s) => s === IMAGE_OMITTED_MARKER)).toBe(true);
+    // collection-overflow は発火していない (image-omitted marker 化で cumulative が圧迫されない)
+    const collectionFired = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'collection-overflow'
+    );
+    expect(collectionFired).toBeUndefined();
+  });
+
+  it('AC-6: warn log payload に 6 フィールド (path / arrayLength / cumulativeBytes / droppedIndex / maxCollectionBytes / keptCount) が含まれる', () => {
+    const arr = Array.from({ length: 250 }, () => buildElementOfBytes(1000));
+    stripPromptHeavyFields({ items: arr });
+    const overflowCall = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'collection-overflow'
+    );
+    expect(overflowCall).toBeDefined();
+    const payload = overflowCall![0] as {
+      path: string;
+      arrayLength: number;
+      cumulativeBytes: number;
+      droppedIndex: number;
+      maxCollectionBytes: number;
+      keptCount: number;
+      safetyEvent: string;
+      message: string;
+    };
+    expect(payload.safetyEvent).toBe('collection-overflow');
+    expect(payload.message).toContain('cumulative byte threshold');
+    expect(payload.path).toBe('items[200]');
+    expect(payload.arrayLength).toBe(250);
+    expect(payload.droppedIndex).toBe(200);
+    expect(payload.maxCollectionBytes).toBe(200_000);
+    expect(payload.keptCount).toBe(200);
+    expect(payload.cumulativeBytes).toBeGreaterThan(200_000);
+  });
+
+  it('AC-7: sibling array 独立 — {a: [overflow], b: [overflow]} は batch.pathPrefixes で各々観測', () => {
+    // 個別 warn は MAX_WARN_PER_CALL=50 で打ち止まるため (a[] 50 件で枯渇)、sibling 独立性は
+    // batch event の pathPrefixes histogram で観測する規律 (PR #144 で確立)。
+    const elem = buildElementOfBytes(1000); // 1002 byte/件
+    const data = {
+      a: Array.from({ length: 250 }, () => elem),
+      b: Array.from({ length: 250 }, () => elem),
+    };
+    stripPromptHeavyFields(data);
+    const batchCall = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'collection-overflow-batch'
+    );
+    expect(batchCall).toBeDefined();
+    const pathPrefixes = (batchCall![0] as { pathPrefixes: Array<{ path: string; count: number }> }).pathPrefixes;
+    const paths = pathPrefixes.map((p) => p.path);
+    // a[*] と b[*] が両方とも histogram bucket に存在 (sibling array で独立に counter が回る)
+    expect(paths).toContain('a[*]');
+    expect(paths).toContain('b[*]');
+  });
+
+  it('AC-8: nested array — 内側 array の collection guard は外側 cumulative counter とは独立 closure', () => {
+    // 「内側 array で 200,000 を超えて counter が回っても、外側 array に counter が持ち越されない」を
+    // pin する。外側 array を **1 件構成** にすることで「外側自身は overflow せず、内側だけが overflow」を
+    // 観測する。外側に複数 inner を入れると inner recurse 結果 (~200KB) が外側 cumulative を圧迫して
+    // 外側も overflow するため、AC-8 の本質 (内側 closure 独立性) が観測できない。
+    const inner = Array.from({ length: 250 }, () => buildElementOfBytes(1000));
+    const data = { matrix: [inner] };
+    const out = stripPromptHeavyFields(data) as { matrix: string[][] };
+    expect(out.matrix).toHaveLength(1);
+    expect(out.matrix[0]).toHaveLength(250);
+    // 内側 array で閾値到達後 marker
+    expect(out.matrix[0][199]).toBe('a'.repeat(1000));
+    expect(out.matrix[0][200]).toBe(COLLECTION_OVERFLOW_MARKER);
+    expect(out.matrix[0][249]).toBe(COLLECTION_OVERFLOW_MARKER);
+  });
+
+  it('AC-9: non-array (object/scalar) には影響なし、collection-overflow 不発火', () => {
+    const data = {
+      name: 'Alice',
+      age: 42,
+      profile: { bio: 'a'.repeat(50_000) },
+      nullField: null,
+      undefinedField: undefined,
+    };
+    const out = stripPromptHeavyFields(data) as typeof data;
+    expect(out.name).toBe('Alice');
+    expect(out.age).toBe(42);
+    expect(out.profile.bio).toBe('a'.repeat(50_000));
+    const collectionFired = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'collection-overflow'
+    );
+    expect(collectionFired).toBeUndefined();
+  });
+
+  it('AC-11: 51 件超 collection-overflow → batch event "collection-overflow-batch" 発火 + pathPrefixes 自動継承', () => {
+    // 1 つの array 内で 51 件超の overflow を発生させる必要がある。
+    // 1002B × 200 件で cumulative ちょうど超え → idx=200 以降 marker、合計 100 件 marker
+    // 個別 warn 50 件まで + batch 1 件 (= total >50 で batch fire)。
+    const arr = Array.from({ length: 300 }, () => buildElementOfBytes(1000));
+    stripPromptHeavyFields({ bulk: arr });
+    const batchCall = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'collection-overflow-batch'
+    );
+    expect(batchCall).toBeDefined();
+    const payload = batchCall![0] as {
+      totalCount: number;
+      loggedCount: number;
+      omittedCount: number;
+      pathPrefixes: Array<{ path: string; count: number }>;
+    };
+    expect(payload.totalCount).toBeGreaterThan(50);
+    expect(payload.loggedCount).toBe(50);
+    expect(payload.pathPrefixes.length).toBeGreaterThan(0);
+    // pathPrefixes は array index を `[*]` に正規化済 (PR #144 規律継承)
+    expect(payload.pathPrefixes[0].path).toBe('bulk[*]');
+  });
+
+  it('AC-12: collection-overflow と image-omitted の cross-event independence (別 histogram / 別 counter)', () => {
+    // image-omitted (large dataURI × 多数) と collection-overflow (大量 raw string array) を同時発火
+    const bigImage = `data:image/png;base64,${'A'.repeat(600)}`;
+    const data = {
+      images: Array.from({ length: 60 }, () => bigImage), // image-omitted のみ発火 (marker 後 cumulative 小)
+      bulk: Array.from({ length: 300 }, () => buildElementOfBytes(1000)), // collection-overflow も発火
+    };
+    stripPromptHeavyFields(data);
+    const imageBatch = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'image-omitted-batch'
+    );
+    const collectionBatch = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'collection-overflow-batch'
+    );
+    expect(imageBatch).toBeDefined();
+    expect(collectionBatch).toBeDefined();
+    // 別 histogram: image-omitted-batch.pathPrefixes は `images[*]`、collection-overflow-batch.pathPrefixes は `bulk[*]`
+    const imagePaths = (imageBatch![0] as { pathPrefixes: Array<{ path: string }> }).pathPrefixes.map((p) => p.path);
+    const collectionPaths = (collectionBatch![0] as { pathPrefixes: Array<{ path: string }> }).pathPrefixes.map(
+      (p) => p.path
+    );
+    expect(imagePaths).toContain('images[*]');
+    expect(collectionPaths).toContain('bulk[*]');
+    expect(imagePaths).not.toContain('bulk[*]');
+    expect(collectionPaths).not.toContain('images[*]');
+  });
+
+  it('AC-13 defensive: [undefined, ...] 含む array でも throw せず処理完了 (undefined は estimateElementBytes で "null" 相当 4 byte)', () => {
+    const data = {
+      mixed: [undefined, 'a'.repeat(2000), undefined, undefined],
+    };
+    expect(() => stripPromptHeavyFields(data)).not.toThrow();
+    const out = stripPromptHeavyFields(data) as { mixed: Array<string | undefined | null> };
+    expect(out.mixed).toHaveLength(4);
+    // undefined は保持される (JSON.stringify は undefined を返すが配列で書くと null になる規律は今回は適用外、
+    // recurse が undefined を素通す)
+    expect(out.mixed[1]).toBe('a'.repeat(2000));
+  });
+
+  it('AC-14 defensive: [BigInt, ...] 含む array でも throw せず処理完了 (BigInt は try-catch fallback で 4 byte 扱い)', () => {
+    const data = {
+      mixed: [1n, 'a'.repeat(2000), 2n],
+    };
+    expect(() => stripPromptHeavyFields(data)).not.toThrow();
+    const out = stripPromptHeavyFields(data) as { mixed: unknown[] };
+    expect(out.mixed).toHaveLength(3);
+    expect(out.mixed[1]).toBe('a'.repeat(2000));
   });
 });

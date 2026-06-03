@@ -100,6 +100,55 @@ const MAX_RECURSION_DEPTH = 1000;
 export const RECURSION_DEPTH_EXCEEDED_MARKER = '[recursion-depth-exceeded: nested data truncated to fit safety limit]';
 
 /**
+ * array 1 つあたりの累積 byte 上限 (Issue #137 #2 残り collection-level guard)。
+ *
+ * 背景: PR #138 で `MIN_IMAGE_DATA_URI_BYTES` を 100→500 に引き上げ、99B 弱 dataURI cumulative
+ * bypass 帯域を ~5x 縮小したが、≤499B dataURI を多数並べた累積 token-bomb (例 2000 件 × 80B
+ * dataURI で ~1MB / ~50K tokens) は leaf-level guard を素通しできる残課題があった。
+ *
+ * 200KB の根拠:
+ * - 通常 character.skills[] / world.lore[] の array は実用 ~50KB 以下、200KB は十分余裕
+ *   (false positive 実質ゼロ)
+ * - `MAX_FIELD_BYTES=100KB` (単一 leaf 上限) の 2x altitude で「単一 vs 集合」を区別
+ * - Gemini 131K context の ~1.5x 相当の ~50K tokens 目安をターゲット
+ * - ≥200KB の array は通常データで起きえない (~400 件の 499B dataURI 相当)
+ *
+ * Issue #134 register-or-forget 解消理念とは直交軸: leaf-level whitelist→content-based は
+ * 「leaf 検出の自動カバー」軸、本定数は「累積 byte の構造的制限」軸で、新フィールド追加でも
+ * 自動的にカバーされる (whitelist 不要)。
+ */
+const MAX_COLLECTION_BYTES = 200_000;
+
+/**
+ * 累積 byte 閾値到達後の array element 代替マーカー (Issue #137 #2 残り)。
+ *
+ * 閾値以下の element は image / non-image marker 化 (既存) を経由して保持される。閾値を超えた
+ * index 以降を本 marker で置換し「同じ array にまだ要素があった」事実だけ AI に伝える。
+ */
+export const COLLECTION_OVERFLOW_MARKER =
+  '[collection-overflow: subsequent items omitted to fit token budget]';
+
+/**
+ * processed element の byte 計測 (Issue #137 #2 残り、codex セカンドオピニオン High 1-2 解消)。
+ *
+ * JSON-safe ではない element (`undefined` / `function` / `symbol` / `BigInt` / 循環参照) で
+ * `Buffer.byteLength` が throw しないよう二重 defensive:
+ * - `JSON.stringify(value) ?? 'null'`: undefined / function / symbol で stringify が undefined を
+ *   返したら `'null'` 文字列 (4 byte) で代替
+ * - try-catch: BigInt や循環参照で stringify が throw する場合は 4 byte fallback で防御
+ *
+ * `processed element` = recurse 通過後の値 (image / non-image marker 化後の短文を含む) を想定。
+ * 「leaf-level marker 化済の element は cumulative 圧迫しない」を保証する。
+ */
+function estimateElementBytes(value: unknown): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(value) ?? 'null', 'utf8');
+  } catch {
+    return 4; // 'null' 相当
+  }
+}
+
+/**
  * 単一 sanitize 関数呼出あたりの個別 warn ログ発火上限。これを超えると個別 warn を抑制し、
  * 関数末尾で集約 log 1 件 (`*-batch`) に切替える。
  *
@@ -429,6 +478,13 @@ export function stripPromptHeavyFields(data: unknown): unknown {
     'promptSafety: non-image dataURI stripped'
   );
   const depthAggregator = createDepthExceededAggregator();
+  // Issue #137 #2 残り: array 単位の累積 byte threshold 超過を集約。aggregator instance は
+  // stripPromptHeavyFields 呼出全体で 1 つ共有 (cumulative byte counter は array ごとに別
+  // closure 変数で管理するので干渉しない)。image / non-image / depth と並列 flush。
+  const collectionAggregator = createWarnAggregator(
+    'collection-overflow',
+    'promptSafety: collection-level cumulative byte threshold exceeded'
+  );
 
   function recurse(value: unknown, path: string, depth: number): unknown {
     if (depth > MAX_RECURSION_DEPTH) {
@@ -455,12 +511,45 @@ export function stripPromptHeavyFields(data: unknown): unknown {
       return value;
     }
     if (Array.isArray(value)) {
+      // Issue #137 #2 残り collection-level guard: 各 array で independent な cumulative byte
+      // counter を回し、`MAX_COLLECTION_BYTES` 超過後の index は recurse skip + marker 置換。
+      // sibling array は parent ループ側で別 closure 経由で独立に評価され、nested array (array
+      // of array) も内側 array が recurse 内でこのブロックに入り直すので cumulative は独立。
+      let cumulativeBytes = 0;
+      let keptCount = 0;
       let changed = false;
-      const next = value.map((item, idx) => {
-        const replaced = recurse(item, joinPath(path, idx), depth + 1);
-        if (replaced !== item) changed = true;
-        return replaced;
-      });
+      const next: unknown[] = [];
+      for (let idx = 0; idx < value.length; idx++) {
+        if (cumulativeBytes > MAX_COLLECTION_BYTES) {
+          // 閾値超: 当該 index 以降を marker 置換。recurse skip で perf も改善 (攻撃 payload 時こそ
+          // stringify 呼出が頭打ちになる)。lazy builder で payload 計算を threshold 内のみ実行。
+          const overflowIdx = idx;
+          const overflowPath = joinPath(path, overflowIdx);
+          const arrayLength = value.length;
+          const observedKeptCount = keptCount;
+          const observedCumulativeBytes = cumulativeBytes;
+          collectionAggregator.tick(
+            () => ({
+              path: overflowPath,
+              arrayLength,
+              cumulativeBytes: observedCumulativeBytes,
+              droppedIndex: overflowIdx,
+              maxCollectionBytes: MAX_COLLECTION_BYTES,
+              keptCount: observedKeptCount,
+            }),
+            overflowPath
+          );
+          next.push(COLLECTION_OVERFLOW_MARKER);
+          changed = true;
+          continue;
+        }
+        const replaced = recurse(value[idx], joinPath(path, idx), depth + 1);
+        next.push(replaced);
+        if (replaced !== value[idx]) changed = true;
+        // processed element の byte を加算 (marker 化された短文も計上、二重防御の補完)。
+        cumulativeBytes += estimateElementBytes(replaced);
+        keptCount++;
+      }
       return changed ? next : value;
     }
     if (value && typeof value === 'object') {
@@ -484,6 +573,7 @@ export function stripPromptHeavyFields(data: unknown): unknown {
   imageAggregator.flush();
   nonImageAggregator.flush();
   depthAggregator.flush();
+  collectionAggregator.flush();
   return result;
 }
 
