@@ -74,8 +74,11 @@ if ! [[ "$PROJECT" =~ ^[a-z][-a-z0-9]{4,28}[a-z0-9]$ ]]; then
     exit 1
 fi
 
-if ! command -v gcloud >/dev/null 2>&1; then
-    echo "[error] gcloud CLI required but not found in PATH" >&2
+# gcloud 不在チェック: --dry-run 時は副作用ゼロのため skip (CI 環境で
+# gcloud が未 install でも tests/static/safety-events-bash-syntax.test.ts の
+# dry-run 検証が通るようにする)。実適用 (非 dry-run) 時のみ必須。
+if (( ! DRY_RUN )) && ! command -v gcloud >/dev/null 2>&1; then
+    echo "[error] gcloud CLI required but not found in PATH (use --dry-run if you only want to preview)" >&2
     exit 1
 fi
 

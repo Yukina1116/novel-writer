@@ -261,7 +261,9 @@ alert 発火時に何を確認するか。
 
 ### 7.3 新規 safetyEvent 追加手順
 
-1. `server/utils/promptSafetyEvents.ts` の `SAFETY_EVENTS` に 1 行追加
+**命名規約 (必須)**: 新規 event 名は `^[a-z][a-z0-9-]*$` (英小文字始まり、英小文字 / 数字 / hyphen のみ) を満たすこと。`.` `*` 等の regex メタ文字を含めると `event_to_filter()` で生成される Cloud Logging filter regex が意図せず広がる risk あり (evaluator LOW 指摘、Issue #137 #7 評価)。`[A-Z]` も `event_to_metric_name()` の `tr '-' '_'` 変換と組合せで GCP metric 名規約 (英小文字) に違反するため不可。
+
+1. `server/utils/promptSafetyEvents.ts` の `SAFETY_EVENTS` に 1 行追加 (命名規約を満たす値)
 2. `scripts/setup-safety-event-metrics.sh` の `SAFETY_EVENTS=( ... )` array に 1 行追加 (順序を合わせる)
 3. 本 runbook §1 metric 表 / §3 解説 / §6 トリアージに対応する row 追加
 4. design-doc (`docs/spec/promptSafety/2026-06-04-observability-metric-counter-design.md`) を更新 (or 後継 spec を新規作成)
