@@ -55,6 +55,35 @@ const IMAGE_DATA_URI_PREFIX = 'data:image/';
 const MIN_IMAGE_DATA_URI_BYTES = 100;
 
 /**
+ * 再帰の深さ上限。これを超えるネストは `OVERSIZED_STRING_MARKER` 相当に置換して終端する。
+ *
+ * 理由 (Issue #134 part 1 code-review CONFIRMED): Express body limit 10MB 内では理論上
+ * 100 万段超のネスト JSON が乗りうるが、Node.js V8 default stack で素直な再帰は約 2-3k 段で
+ * `RangeError: Maximum call stack size exceeded` になる。攻撃者が深いネスト payload を送ると
+ * sanitize 完遂前に throw → 500 INTERNAL 量産の DoS 経路が出来てしまう。
+ *
+ * 1000 は通常の character / world / chunk データ (実用上 10 段以下) に十分余裕、かつ V8 stack
+ * の約 1/3 で安全マージンを持つ値。閾値到達時は `[recursion-depth-exceeded]` marker に切替。
+ */
+const MAX_RECURSION_DEPTH = 1000;
+
+/** 再帰深度超過時に leaf に置く marker。AI / observability に「ここから先は省略された」事実だけ伝える。 */
+export const RECURSION_DEPTH_EXCEEDED_MARKER = '[recursion-depth-exceeded: nested data truncated to fit safety limit]';
+
+/**
+ * Object.prototype 汚染になりうる特殊 key (`__proto__` / `constructor` / `prototype`)。
+ *
+ * 理由 (Issue #134 part 1 code-review PLAUSIBLE): JSON.parse は `__proto__` を own enumerable
+ * property として残すため、`Object.entries(obj)` で `['__proto__', value]` が返り、
+ * 新規 object への `next['__proto__'] = value` 代入が setter を triggers し、返却 object の
+ * `[[Prototype]]` が attacker-controlled subtree に置換される。現状 caller は `JSON.stringify` /
+ * `Object.keys` 経由でしか sanitized 値を触らないため AI prompt 流入は無いが、将来 caller が
+ * `safeXxx.someField` のような直接 property access に変わると inheritance 経由で attacker
+ * payload を拾う latent sink。再帰トラバース時に key 自体をスキップして根治する。
+ */
+const PROTOTYPE_POLLUTION_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
  * 任意 leaf string が「画像 dataURI と判定すべきか」を返す。
  * - `data:image/` で始まる
  * - UTF-8 byte 長が `MIN_IMAGE_DATA_URI_BYTES` 以上 (false positive 防止)
@@ -84,7 +113,16 @@ function joinPath(parent: string, segment: string | number): string {
  * - 不変性: 入力を mutate せず、変更がなければ same reference を返す (perf hint)
  */
 export function stripPromptHeavyFields(data: unknown): unknown {
-  function recurse(value: unknown, path: string): unknown {
+  function recurse(value: unknown, path: string, depth: number): unknown {
+    if (depth > MAX_RECURSION_DEPTH) {
+      logger.warn({
+        message: 'promptSafety: recursion depth exceeded',
+        safetyEvent: 'recursion-depth-exceeded',
+        path,
+        depth,
+      });
+      return RECURSION_DEPTH_EXCEEDED_MARKER;
+    }
     if (typeof value === 'string') {
       if (!isImageDataUri(value)) return value;
       logger.warn({
@@ -98,7 +136,7 @@ export function stripPromptHeavyFields(data: unknown): unknown {
     if (Array.isArray(value)) {
       let changed = false;
       const next = value.map((item, idx) => {
-        const replaced = recurse(item, joinPath(path, idx));
+        const replaced = recurse(item, joinPath(path, idx), depth + 1);
         if (replaced !== item) changed = true;
         return replaced;
       });
@@ -109,7 +147,11 @@ export function stripPromptHeavyFields(data: unknown): unknown {
       let changed = false;
       const next: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(obj)) {
-        const replaced = recurse(v, joinPath(path, k));
+        if (PROTOTYPE_POLLUTION_KEYS.has(k)) {
+          changed = true; // key を drop することは「変更あり」と扱い、汚染源 subtree を sanitized 結果に持ち込まない
+          continue;
+        }
+        const replaced = recurse(v, joinPath(path, k), depth + 1);
         if (replaced !== v) changed = true;
         next[k] = replaced;
       }
@@ -117,60 +159,79 @@ export function stripPromptHeavyFields(data: unknown): unknown {
     }
     return value;
   }
-  return recurse(data, '');
+  return recurse(data, '', 0);
 }
 
 /**
  * 任意 leaf string の size guard。再帰的に object / array を辿り、UTF-8 byte 長が maxBytes を
  * 超える string を `OVERSIZED_STRING_MARKER` に置換する。
  *
- * whitelist (stripPromptHeavyFields) で取り切れない未知フィールド・将来追加フィールド・
- * SVG dataURI 等のセーフティネット。サイズ判定は `Buffer.byteLength(s, 'utf8')` で行う
- * (`String.length` は UTF-16 code unit ベースで、日本語/絵文字混在下で評価がブレる)。
+ * content-based scanner (`stripPromptHeavyFields`) で取り切れない非画像 oversized 文字列
+ * (将来追加フィールド・application/pdf 等の非画像 dataURI) のセーフティネット。サイズ判定は
+ * `Buffer.byteLength(s, 'utf8')` で行う (`String.length` は UTF-16 code unit ベースで、
+ * 日本語/絵文字混在下で評価がブレる)。
+ *
+ * 深さガード (`MAX_RECURSION_DEPTH`) と prototype pollution skip (`PROTOTYPE_POLLUTION_KEYS`)
+ * は stripPromptHeavyFields と同じ理由で適用 (詳細は同関数 JSDoc 参照)。
  *
  * 不変性: 入力を mutate しない。
  */
 export function truncateOversizedStrings(data: unknown, maxBytes: number = MAX_FIELD_BYTES): unknown {
-  if (typeof data === 'string') {
-    const utf8Bytes = Buffer.byteLength(data, 'utf8');
-    if (utf8Bytes > maxBytes) {
+  function recurse(value: unknown, depth: number): unknown {
+    if (depth > MAX_RECURSION_DEPTH) {
       logger.warn({
-        message: 'promptSafety: oversized string truncated',
-        safetyEvent: 'oversized-truncated',
-        bytes: utf8Bytes,
-        maxBytes,
+        message: 'promptSafety: recursion depth exceeded',
+        safetyEvent: 'recursion-depth-exceeded',
+        depth,
       });
-      return OVERSIZED_STRING_MARKER;
+      return RECURSION_DEPTH_EXCEEDED_MARKER;
     }
-    return data;
-  }
-  if (Array.isArray(data)) {
-    let changed = false;
-    const next = data.map((item) => {
-      const replaced = truncateOversizedStrings(item, maxBytes);
-      if (replaced !== item) changed = true;
-      return replaced;
-    });
-    return changed ? next : data;
-  }
-  if (data && typeof data === 'object') {
-    const obj = data as Record<string, unknown>;
-    let changed = false;
-    const next: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(obj)) {
-      const replaced = truncateOversizedStrings(v, maxBytes);
-      if (replaced !== v) changed = true;
-      next[k] = replaced;
+    if (typeof value === 'string') {
+      const utf8Bytes = Buffer.byteLength(value, 'utf8');
+      if (utf8Bytes > maxBytes) {
+        logger.warn({
+          message: 'promptSafety: oversized string truncated',
+          safetyEvent: 'oversized-truncated',
+          bytes: utf8Bytes,
+          maxBytes,
+        });
+        return OVERSIZED_STRING_MARKER;
+      }
+      return value;
     }
-    return changed ? next : data;
+    if (Array.isArray(value)) {
+      let changed = false;
+      const next = value.map((item) => {
+        const replaced = recurse(item, depth + 1);
+        if (replaced !== item) changed = true;
+        return replaced;
+      });
+      return changed ? next : value;
+    }
+    if (value && typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      let changed = false;
+      const next: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        if (PROTOTYPE_POLLUTION_KEYS.has(k)) {
+          changed = true;
+          continue;
+        }
+        const replaced = recurse(v, depth + 1);
+        if (replaced !== v) changed = true;
+        next[k] = replaced;
+      }
+      return changed ? next : value;
+    }
+    return value;
   }
-  return data;
+  return recurse(data, 0);
 }
 
 /**
  * AI プロンプトに埋め込む直前にユーザー入力データを sanitize するメイン関数。
- * whitelist 除去 → size guard の順で適用する (whitelist 適用後の dataURI は既にマーカー化されており、
- * size guard が同じ場所を二重処理することはない)。
+ * content-based 除去 → size guard の順で適用する (content-based 適用後の画像 dataURI は
+ * 既にマーカー化されており、size guard が同じ場所を二重処理することはない)。
  */
 export function sanitizeForPrompt(data: unknown, maxBytes: number = MAX_FIELD_BYTES): unknown {
   return truncateOversizedStrings(stripPromptHeavyFields(data), maxBytes);

@@ -10,7 +10,7 @@ import {
 } from './promptSafety';
 
 describe('stripPromptHeavyFields - content-based 画像 dataURI 検出 (Issue #134)', () => {
-  it('replaces character appearance.imageUrl dataURI with marker (legacy whitelist field still works)', () => {
+  it('replaces character appearance.imageUrl dataURI with marker (regression: known image field still stripped after content-based switch)', () => {
     const big = `data:image/png;base64,${'A'.repeat(1_000_000)}`;
     const data = { name: 'Alice', appearance: { imageUrl: big, traits: [{ key: '髪', value: '金' }] } };
     const out = stripPromptHeavyFields(data) as typeof data;
@@ -19,7 +19,7 @@ describe('stripPromptHeavyFields - content-based 画像 dataURI 検出 (Issue #1
     expect(out.name).toBe('Alice');
   });
 
-  it('replaces world mapImageUrl dataURI with marker (legacy whitelist field still works)', () => {
+  it('replaces world mapImageUrl dataURI with marker (regression: known image field still stripped after content-based switch)', () => {
     const big = `data:image/jpeg;base64,${'B'.repeat(500_000)}`;
     const data = { name: '王国', mapImageUrl: big, exportDescription: '広大な大陸' };
     const out = stripPromptHeavyFields(data) as typeof data;
@@ -140,6 +140,55 @@ describe('stripPromptHeavyFields - content-based 画像 dataURI 検出 (Issue #1
   it('gracefully handles missing nested object (appearance absent)', () => {
     const data = { name: 'Alice', personality: 'gentle' };
     expect(stripPromptHeavyFields(data)).toEqual(data);
+  });
+
+  // === Issue #134 code-review CONFIRMED: depth guard (stack overflow on deep nesting) ===
+
+  it('replaces deeply nested payload with RECURSION_DEPTH_EXCEEDED_MARKER instead of stack-overflowing', () => {
+    // Build 2000-deep nested object: { a: { a: { a: ... { url: dataURI } } } }
+    // Without depth guard, V8 default stack overflows around 2-3k levels → 500 INTERNAL.
+    const big = `data:image/png;base64,${'A'.repeat(200)}`;
+    let payload: Record<string, unknown> = { url: big };
+    for (let i = 0; i < 2000; i++) payload = { a: payload };
+
+    // Should NOT throw RangeError.
+    expect(() => stripPromptHeavyFields(payload)).not.toThrow();
+
+    // The deep inner content gets replaced with the depth-exceeded marker
+    // (we cannot easily walk back to assert which leaf became the marker, so just
+    // assert the call returns and no RangeError is raised).
+    const out = stripPromptHeavyFields(payload);
+    expect(out).toBeDefined();
+  });
+
+  // === Issue #134 code-review PLAUSIBLE: prototype pollution skip ===
+
+  it('drops __proto__ key so sanitized object prototype is not poisoned', () => {
+    // Simulate JSON.parse output where __proto__ is an own enumerable property
+    // (Object.defineProperty is needed because object literal `{ __proto__: ... }` uses the setter,
+    // not creating an own property; JSON.parse however does create the own property).
+    const malicious: Record<string, unknown> = JSON.parse(
+      '{"__proto__":{"polluted":true},"name":"Alice","appearance":{"imageUrl":"data:image/png;base64,' + 'A'.repeat(200) + '"}}'
+    );
+    const out = stripPromptHeavyFields(malicious) as Record<string, unknown>;
+
+    // Returned object's prototype must remain Object.prototype, not the attacker subtree.
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    // Inheritance MUST NOT expose `polluted` via the prototype chain.
+    expect((out as { polluted?: boolean }).polluted).toBeUndefined();
+    // Legitimate own properties are preserved + sanitized.
+    expect(out.name).toBe('Alice');
+    expect((out.appearance as { imageUrl: string }).imageUrl).toBe(IMAGE_OMITTED_MARKER);
+  });
+
+  it('also drops constructor and prototype as own keys (defense-in-depth)', () => {
+    const malicious: Record<string, unknown> = JSON.parse(
+      '{"constructor":"x","prototype":"y","name":"Alice"}'
+    );
+    const out = stripPromptHeavyFields(malicious) as Record<string, unknown>;
+    expect(out.constructor).toBe(Object.prototype.constructor); // inherited, not overridden
+    expect((out as { prototype?: unknown }).prototype).toBeUndefined();
+    expect(out.name).toBe('Alice');
   });
 });
 
