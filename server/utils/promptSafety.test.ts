@@ -77,12 +77,13 @@ describe('stripPromptHeavyFields - content-based 画像 dataURI 検出 (Issue #1
   });
 
   it('detects multiple image variants (png / jpeg / webp / svg+xml / gif)', () => {
+    // payload は MIN_IMAGE_DATA_URI_BYTES (500) を超える必要があるため 600 chars に統一。
     const variants = [
-      `data:image/png;base64,${'A'.repeat(200)}`,
-      `data:image/jpeg;base64,${'B'.repeat(200)}`,
-      `data:image/webp;base64,${'C'.repeat(200)}`,
-      `data:image/svg+xml;base64,${'D'.repeat(200)}`,
-      `data:image/gif;base64,${'E'.repeat(200)}`,
+      `data:image/png;base64,${'A'.repeat(600)}`,
+      `data:image/jpeg;base64,${'B'.repeat(600)}`,
+      `data:image/webp;base64,${'C'.repeat(600)}`,
+      `data:image/svg+xml;base64,${'D'.repeat(600)}`,
+      `data:image/gif;base64,${'E'.repeat(600)}`,
     ];
     for (const v of variants) {
       const out = stripPromptHeavyFields({ field: v }) as { field: string };
@@ -107,7 +108,7 @@ describe('stripPromptHeavyFields - content-based 画像 dataURI 検出 (Issue #1
 
   it('does NOT replace short strings that incidentally start with "data:image/" (false positive guard)', () => {
     // ナレッジ等に「`data:image/png` という形式の文字列」が短文として含まれる可能性。
-    // 100 bytes 未満は素通し (real dataURI は base64 payload で必ず数百 bytes 以上)。
+    // 500 bytes 未満は素通し (Issue #137 #2 で 100 → 500 へ引き上げ、cumulative bypass 縮小)。
     const data = {
       knowledge: 'data:image/png は base64 形式',
       hint: 'data:image/jpeg;base64,QQ==', // 構文的には有効だが極小
@@ -115,6 +116,33 @@ describe('stripPromptHeavyFields - content-based 画像 dataURI 検出 (Issue #1
     const out = stripPromptHeavyFields(data) as typeof data;
     expect(out.knowledge).toBe('data:image/png は base64 形式');
     expect(out.hint).toBe('data:image/jpeg;base64,QQ==');
+  });
+
+  // === Issue #137 #2: 境界値テスト (MIN_IMAGE_DATA_URI_BYTES = 500) ===
+
+  it('boundary: dataURI of exactly MIN_IMAGE_DATA_URI_BYTES bytes IS replaced', () => {
+    // prefix `data:image/png;base64,` = 22 bytes, payload 478 bytes → total 500 bytes ちょうど。
+    // 仕様 `>= MIN_IMAGE_DATA_URI_BYTES` で marker 化される。
+    const exactlyMin = `data:image/png;base64,${'A'.repeat(478)}`;
+    expect(Buffer.byteLength(exactlyMin, 'utf8')).toBe(500);
+    const out = stripPromptHeavyFields({ field: exactlyMin }) as { field: string };
+    expect(out.field).toBe(IMAGE_OMITTED_MARKER);
+  });
+
+  it('boundary: dataURI 1 byte below MIN_IMAGE_DATA_URI_BYTES passes through unchanged', () => {
+    // 499 bytes = prefix 22 + payload 477 → 素通し。
+    const justBelow = `data:image/png;base64,${'A'.repeat(477)}`;
+    expect(Buffer.byteLength(justBelow, 'utf8')).toBe(499);
+    const out = stripPromptHeavyFields({ field: justBelow }) as { field: string };
+    expect(out.field).toBe(justBelow);
+  });
+
+  it('boundary: dataURI 1 byte above MIN_IMAGE_DATA_URI_BYTES IS replaced', () => {
+    // 501 bytes = prefix 22 + payload 479 → marker 化される。
+    const justAbove = `data:image/png;base64,${'A'.repeat(479)}`;
+    expect(Buffer.byteLength(justAbove, 'utf8')).toBe(501);
+    const out = stripPromptHeavyFields({ field: justAbove }) as { field: string };
+    expect(out.field).toBe(IMAGE_OMITTED_MARKER);
   });
 
   it('returns null/undefined/primitive unchanged', () => {
@@ -167,8 +195,9 @@ describe('stripPromptHeavyFields - content-based 画像 dataURI 検出 (Issue #1
     // Simulate JSON.parse output where __proto__ is an own enumerable property
     // (Object.defineProperty is needed because object literal `{ __proto__: ... }` uses the setter,
     // not creating an own property; JSON.parse however does create the own property).
+    // appearance.imageUrl payload は MIN_IMAGE_DATA_URI_BYTES (500) を超える必要があるため 600 chars。
     const malicious: Record<string, unknown> = JSON.parse(
-      '{"__proto__":{"polluted":true},"name":"Alice","appearance":{"imageUrl":"data:image/png;base64,' + 'A'.repeat(200) + '"}}'
+      '{"__proto__":{"polluted":true},"name":"Alice","appearance":{"imageUrl":"data:image/png;base64,' + 'A'.repeat(600) + '"}}'
     );
     const out = stripPromptHeavyFields(malicious) as Record<string, unknown>;
 
