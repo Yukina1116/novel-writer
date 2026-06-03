@@ -141,6 +141,70 @@ function joinPath(parent: string, segment: string | number): string {
 }
 
 /**
+ * per-call warn 集約を行う aggregator (Issue #137 #4 / code-review PR #139 CONFIRMED 対応)。
+ *
+ * 旧設計 (PR #139 直後): stripPromptHeavyFields と truncateOversizedStrings の各 recurse closure
+ * 内に `totalCount` / `loggedCount` を持ち、3 種類の safetyEvent (image-omitted /
+ * oversized-truncated / recursion-depth-exceeded) ごとに counter scaffolding を手書きしていた。
+ * これは Issue #134 で whitelist 廃止して構造的に閉じたはずの register-or-forget pattern が
+ * log aggregation 層で再発する原因だった。
+ *
+ * 本 factory に括り出すことで:
+ * - callsite は `aggregator.tick(payload)` 1 行で個別 warn (上限超は自動 skip)
+ * - 関数末尾で `aggregator.flush()` 1 行で集約 log emit
+ * - 新規 sanitize 関数 / 新規 safetyEvent 追加時に counter scaffolding をコピペする必要なし
+ *
+ * 不変条件:
+ * - `tick()` 呼出は totalCount を必ず inc、loggedCount は MAX_WARN_PER_CALL 超で打ち止め
+ * - `flush()` は totalCount > MAX_WARN_PER_CALL の時のみ 1 件 emit (totalCount=0 や ≤MAX では何もしない)
+ *
+ * @param individualEvent 個別 warn の safetyEvent (例: 'image-omitted')
+ * @param batchEvent 集約 warn の safetyEvent (例: 'image-omitted-batch')
+ * @param individualMessage 個別 warn の message (例: 'promptSafety: image dataURI stripped')
+ * @param batchMessage 集約 warn の message
+ */
+interface WarnAggregator {
+  /** 1 件検出時に呼ぶ。上限超は個別 warn を skip、totalCount だけ inc。 */
+  tick: (payload: Record<string, unknown>) => void;
+  /** 関数末尾で 1 回呼ぶ。totalCount > MAX_WARN_PER_CALL の時のみ 1 件集約 log を emit。 */
+  flush: () => void;
+}
+
+function createWarnAggregator(
+  individualEvent: string,
+  batchEvent: string,
+  individualMessage: string,
+  batchMessage: string,
+): WarnAggregator {
+  let totalCount = 0;
+  let loggedCount = 0;
+  return {
+    tick(payload: Record<string, unknown>) {
+      totalCount++;
+      if (loggedCount < MAX_WARN_PER_CALL) {
+        logger.warn({
+          message: individualMessage,
+          safetyEvent: individualEvent,
+          ...payload,
+        });
+        loggedCount++;
+      }
+    },
+    flush() {
+      if (totalCount > MAX_WARN_PER_CALL) {
+        logger.warn({
+          message: batchMessage,
+          safetyEvent: batchEvent,
+          totalCount,
+          loggedCount,
+          omittedCount: totalCount - loggedCount,
+        });
+      }
+    },
+  };
+}
+
+/**
  * 任意 path の `data:image/` 始まり文字列 (一定 byte 数以上) を omission marker に置換する
  * content-based scanner (Issue #134)。
  *
@@ -151,40 +215,27 @@ function joinPath(parent: string, segment: string | number): string {
  * - 不変性: 入力を mutate せず、変更がなければ same reference を返す (perf hint)
  */
 export function stripPromptHeavyFields(data: unknown): unknown {
-  // Issue #137 #3: per-call warn 集約のためのカウンタ。closure で共有。
-  // image-omitted / recursion-depth-exceeded はそれぞれ独立カウンタで管理し、
-  // batch log の safetyEvent を分離して観測上明確にする (code-review #139 CONFIRMED 対応)。
-  let totalCount = 0;
-  let loggedCount = 0;
-  let depthExceededCount = 0;
-  let depthExceededLogged = 0;
+  const imageAggregator = createWarnAggregator(
+    'image-omitted',
+    'image-omitted-batch',
+    'promptSafety: image dataURI stripped',
+    'promptSafety: image-omitted warn amplification suppressed',
+  );
+  const depthAggregator = createWarnAggregator(
+    'recursion-depth-exceeded',
+    'recursion-depth-exceeded-batch',
+    'promptSafety: recursion depth exceeded',
+    'promptSafety: recursion-depth-exceeded warn amplification suppressed',
+  );
 
   function recurse(value: unknown, path: string, depth: number): unknown {
     if (depth > MAX_RECURSION_DEPTH) {
-      depthExceededCount++;
-      if (depthExceededLogged < MAX_WARN_PER_CALL) {
-        logger.warn({
-          message: 'promptSafety: recursion depth exceeded',
-          safetyEvent: 'recursion-depth-exceeded',
-          path,
-          depth,
-        });
-        depthExceededLogged++;
-      }
+      depthAggregator.tick({ path, depth });
       return RECURSION_DEPTH_EXCEEDED_MARKER;
     }
     if (typeof value === 'string') {
       if (!isImageDataUri(value)) return value;
-      totalCount++;
-      if (loggedCount < MAX_WARN_PER_CALL) {
-        logger.warn({
-          message: 'promptSafety: image dataURI stripped',
-          safetyEvent: 'image-omitted',
-          path,
-          bytes: Buffer.byteLength(value, 'utf8'),
-        });
-        loggedCount++;
-      }
+      imageAggregator.tick({ path, bytes: Buffer.byteLength(value, 'utf8') });
       return IMAGE_OMITTED_MARKER;
     }
     if (Array.isArray(value)) {
@@ -214,26 +265,8 @@ export function stripPromptHeavyFields(data: unknown): unknown {
     return value;
   }
   const result = recurse(data, '', 0);
-
-  // 集約 log: 上限超過時のみ 1 件 emit (個別 warn を抑制した分の omitted 数を報告)。
-  if (totalCount > MAX_WARN_PER_CALL) {
-    logger.warn({
-      message: 'promptSafety: image-omitted warn amplification suppressed',
-      safetyEvent: 'image-omitted-batch',
-      totalCount,
-      loggedCount,
-      omittedCount: totalCount - loggedCount,
-    });
-  }
-  if (depthExceededCount > MAX_WARN_PER_CALL) {
-    logger.warn({
-      message: 'promptSafety: recursion-depth-exceeded warn amplification suppressed',
-      safetyEvent: 'recursion-depth-exceeded-batch',
-      totalCount: depthExceededCount,
-      loggedCount: depthExceededLogged,
-      omittedCount: depthExceededCount - depthExceededLogged,
-    });
-  }
+  imageAggregator.flush();
+  depthAggregator.flush();
   return result;
 }
 
@@ -252,40 +285,28 @@ export function stripPromptHeavyFields(data: unknown): unknown {
  * 不変性: 入力を mutate しない。
  */
 export function truncateOversizedStrings(data: unknown, maxBytes: number = MAX_FIELD_BYTES): unknown {
-  // Issue #137 #3: per-call warn 集約のためのカウンタ。closure で共有。
-  // oversized-truncated / recursion-depth-exceeded はそれぞれ独立カウンタで管理
-  // (code-review #139 CONFIRMED: depth-exceeded amplification も対称化)。
-  let totalCount = 0;
-  let loggedCount = 0;
-  let depthExceededCount = 0;
-  let depthExceededLogged = 0;
+  const oversizedAggregator = createWarnAggregator(
+    'oversized-truncated',
+    'oversized-truncated-batch',
+    'promptSafety: oversized string truncated',
+    'promptSafety: oversized-truncated warn amplification suppressed',
+  );
+  const depthAggregator = createWarnAggregator(
+    'recursion-depth-exceeded',
+    'recursion-depth-exceeded-batch',
+    'promptSafety: recursion depth exceeded',
+    'promptSafety: recursion-depth-exceeded warn amplification suppressed',
+  );
 
   function recurse(value: unknown, depth: number): unknown {
     if (depth > MAX_RECURSION_DEPTH) {
-      depthExceededCount++;
-      if (depthExceededLogged < MAX_WARN_PER_CALL) {
-        logger.warn({
-          message: 'promptSafety: recursion depth exceeded',
-          safetyEvent: 'recursion-depth-exceeded',
-          depth,
-        });
-        depthExceededLogged++;
-      }
+      depthAggregator.tick({ depth });
       return RECURSION_DEPTH_EXCEEDED_MARKER;
     }
     if (typeof value === 'string') {
       const utf8Bytes = Buffer.byteLength(value, 'utf8');
       if (utf8Bytes > maxBytes) {
-        totalCount++;
-        if (loggedCount < MAX_WARN_PER_CALL) {
-          logger.warn({
-            message: 'promptSafety: oversized string truncated',
-            safetyEvent: 'oversized-truncated',
-            bytes: utf8Bytes,
-            maxBytes,
-          });
-          loggedCount++;
-        }
+        oversizedAggregator.tick({ bytes: utf8Bytes, maxBytes });
         return OVERSIZED_STRING_MARKER;
       }
       return value;
@@ -317,26 +338,8 @@ export function truncateOversizedStrings(data: unknown, maxBytes: number = MAX_F
     return value;
   }
   const result = recurse(data, 0);
-
-  // 集約 log: 上限超過時のみ 1 件 emit。
-  if (totalCount > MAX_WARN_PER_CALL) {
-    logger.warn({
-      message: 'promptSafety: oversized-truncated warn amplification suppressed',
-      safetyEvent: 'oversized-truncated-batch',
-      totalCount,
-      loggedCount,
-      omittedCount: totalCount - loggedCount,
-    });
-  }
-  if (depthExceededCount > MAX_WARN_PER_CALL) {
-    logger.warn({
-      message: 'promptSafety: recursion-depth-exceeded warn amplification suppressed',
-      safetyEvent: 'recursion-depth-exceeded-batch',
-      totalCount: depthExceededCount,
-      loggedCount: depthExceededLogged,
-      omittedCount: depthExceededCount - depthExceededLogged,
-    });
-  }
+  oversizedAggregator.flush();
+  depthAggregator.flush();
   return result;
 }
 

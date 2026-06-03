@@ -472,6 +472,35 @@ describe('observability (silent fail paired signal)', () => {
       })
     );
   });
+
+  // === Issue #137 #4: createWarnAggregator factory の不変条件 (cross-event 独立性) ===
+
+  it('image and depth aggregators are independent (one event burst does not exhaust the other quota)', () => {
+    // image-omitted 51 件 + recursion-depth-exceeded 51 件を同 payload に混在させると、
+    // 各 aggregator が独立 50 件 + 各 batch 1 件 = 計 102 件 (個別 100 + batch 2) emit される。
+    // factory が closure 別個に counter を保持していることを cross-event burst で pin。
+    const big = `data:image/png;base64,${'A'.repeat(600)}`;
+    const deep = buildDeepChain(1500);
+    const payload: Record<string, unknown> = {};
+    for (let i = 0; i < 51; i++) payload[`img${i}`] = big;
+    for (let i = 0; i < 51; i++) payload[`deep${i}`] = deep;
+    stripPromptHeavyFields(payload);
+
+    const imageIndividual = warnSpy.mock.calls.filter(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'image-omitted'
+    );
+    const depthIndividual = warnSpy.mock.calls.filter(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'recursion-depth-exceeded'
+    );
+    expect(imageIndividual).toHaveLength(50);
+    expect(depthIndividual).toHaveLength(50);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ safetyEvent: 'image-omitted-batch', totalCount: 51 })
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ safetyEvent: 'recursion-depth-exceeded-batch', totalCount: 51 })
+    );
+  });
 });
 
 describe('sanitizeForPrompt - composite (whitelist + size guard)', () => {
