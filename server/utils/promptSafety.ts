@@ -49,10 +49,18 @@ const IMAGE_DATA_URI_PREFIX = 'data:image/';
 
 /**
  * false positive 防止: この byte 長未満の `data:image/` 始まり文字列は素通しする。
+ *
  * 理由: ナレッジや description に「`data:image/png` という形式の文字列」が短文として
- * 含まれる可能性があるため。実 dataURI は base64 payload で必ず数百〜数千 bytes 以上。
+ * 含まれる可能性があるため。実 dataURI は base64 payload で必ず数百〜数千 bytes 以上で、
+ * 500B 未満では pixel 数十個レベルの絵にしかならず実用画像にはならない (1×1 transparent
+ * GIF が ~78 bytes だが、実プロダクトデータには登場しない極限値)。
+ *
+ * 100 → 500 への引き上げ (Issue #137 #2): 99B 弱の `data:image/...` を array で多数並べる
+ * cumulative token-bomb の bypass 帯域を 99B/個 → 499B/個 に狭め、同じ累積 token 量を
+ * 出すために必要な array 要素数を ~5 倍に押し上げる。size guard backstop (MAX_FIELD_BYTES)
+ * との 200 倍 gap を維持しつつ false positive ゼロを保つ妥協点。
  */
-const MIN_IMAGE_DATA_URI_BYTES = 100;
+const MIN_IMAGE_DATA_URI_BYTES = 500;
 
 /**
  * 再帰の深さ上限。これを超えるネストは `OVERSIZED_STRING_MARKER` 相当に置換して終端する。
