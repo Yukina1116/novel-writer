@@ -164,8 +164,16 @@ function joinPath(parent: string, segment: string | number): string {
  * @param batchMessage 集約 warn の message
  */
 interface WarnAggregator {
-  /** 1 件検出時に呼ぶ。上限超は個別 warn を skip、totalCount だけ inc。 */
-  tick: (payload: Record<string, unknown>) => void;
+  /**
+   * 1 件検出時に呼ぶ。totalCount は必ず inc、loggedCount は MAX_WARN_PER_CALL 超で打ち止め。
+   *
+   * payload は **lazy builder closure** で受け取る (code-review PR #140 CONFIRMED 対応):
+   * 旧 `tick(payload)` 設計だと callsite で毎 leaf object literal + 重い計算
+   * (Buffer.byteLength(50KB)) を eager 評価してしまい、threshold 超後も無駄な work が走る
+   * regression があった。`tick(() => ({ ... }))` に変えることで threshold 内のみ closure を
+   * 呼び出し、上限超後は closure 自体を skip (Buffer.byteLength も走らない)。
+   */
+  tick: (buildPayload: () => Record<string, unknown>) => void;
   /** 関数末尾で 1 回呼ぶ。totalCount > MAX_WARN_PER_CALL の時のみ 1 件集約 log を emit。 */
   flush: () => void;
 }
@@ -179,13 +187,13 @@ function createWarnAggregator(
   let totalCount = 0;
   let loggedCount = 0;
   return {
-    tick(payload: Record<string, unknown>) {
+    tick(buildPayload: () => Record<string, unknown>) {
       totalCount++;
       if (loggedCount < MAX_WARN_PER_CALL) {
         logger.warn({
           message: individualMessage,
           safetyEvent: individualEvent,
-          ...payload,
+          ...buildPayload(),
         });
         loggedCount++;
       }
@@ -230,12 +238,13 @@ export function stripPromptHeavyFields(data: unknown): unknown {
 
   function recurse(value: unknown, path: string, depth: number): unknown {
     if (depth > MAX_RECURSION_DEPTH) {
-      depthAggregator.tick({ path, depth });
+      depthAggregator.tick(() => ({ path, depth }));
       return RECURSION_DEPTH_EXCEEDED_MARKER;
     }
     if (typeof value === 'string') {
       if (!isImageDataUri(value)) return value;
-      imageAggregator.tick({ path, bytes: Buffer.byteLength(value, 'utf8') });
+      // lazy builder: threshold 超後は Buffer.byteLength(50KB級) 再計算が skip される
+      imageAggregator.tick(() => ({ path, bytes: Buffer.byteLength(value, 'utf8') }));
       return IMAGE_OMITTED_MARKER;
     }
     if (Array.isArray(value)) {
@@ -300,13 +309,14 @@ export function truncateOversizedStrings(data: unknown, maxBytes: number = MAX_F
 
   function recurse(value: unknown, depth: number): unknown {
     if (depth > MAX_RECURSION_DEPTH) {
-      depthAggregator.tick({ depth });
+      depthAggregator.tick(() => ({ depth }));
       return RECURSION_DEPTH_EXCEEDED_MARKER;
     }
     if (typeof value === 'string') {
       const utf8Bytes = Buffer.byteLength(value, 'utf8');
       if (utf8Bytes > maxBytes) {
-        oversizedAggregator.tick({ bytes: utf8Bytes, maxBytes });
+        // utf8Bytes は threshold 判定で既に必須計算済なので lazy 化しても eager 化しても同コスト
+        oversizedAggregator.tick(() => ({ bytes: utf8Bytes, maxBytes }));
         return OVERSIZED_STRING_MARKER;
       }
       return value;

@@ -475,6 +475,40 @@ describe('observability (silent fail paired signal)', () => {
 
   // === Issue #137 #4: createWarnAggregator factory の不変条件 (cross-event 独立性) ===
 
+  it('lazy builder skips payload evaluation when threshold exceeded (Buffer.byteLength regression fix)', () => {
+    // PR #140 code-review CONFIRMED: tick({...}) の eager evaluation で旧 PR #139 から
+    // perf regression が入っていた。tick(() => ({...})) に切り替えて threshold 超後は
+    // payload builder closure を呼ばない (Buffer.byteLength も走らない) ことを pin する。
+    const big = `data:image/png;base64,${'A'.repeat(600)}`;
+    // 100 個 (= MAX_WARN_PER_CALL の 2 倍) を array に詰める
+    const items = Array.from({ length: 100 }, () => ({ url: big }));
+
+    // Buffer.byteLength の呼出回数を spy で観測
+    // (isImageDataUri 内 1 回 + tick builder 内 1 回 = 旧コードでは leaf あたり 2 回、
+    //  新コードでは threshold 超後は isImageDataUri のみ 1 回)
+    const originalByteLength = Buffer.byteLength;
+    let byteLengthCalls = 0;
+    // Buffer.byteLength は多 overload (string / Buffer / TypedArray ...) のため any 経由で差し替え。
+    // 検証目的の単純 spy なので型安全性は犠牲にする。
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (Buffer as any).byteLength = (str: any, encoding?: BufferEncoding) => {
+      byteLengthCalls++;
+      return originalByteLength(str, encoding as BufferEncoding);
+    };
+    try {
+      stripPromptHeavyFields({ gallery: items });
+    } finally {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (Buffer as any).byteLength = originalByteLength;
+    }
+
+    // 旧 eager 設計: 100 leaf × 2 回 = 200 回
+    // 新 lazy 設計: 100 leaf × 1 回 (isImageDataUri) + 50 leaf × 1 回 (tick builder) = 150 回
+    // 厳密に 150 回でなくても、200 回未満であれば lazy 化は効いている
+    expect(byteLengthCalls).toBeLessThan(200);
+    expect(byteLengthCalls).toBeGreaterThanOrEqual(150);
+  });
+
   it('image and depth aggregators are independent (one event burst does not exhaust the other quota)', () => {
     // image-omitted 51 件 + recursion-depth-exceeded 51 件を同 payload に混在させると、
     // 各 aggregator が独立 50 件 + 各 batch 1 件 = 計 102 件 (個別 100 + batch 2) emit される。
