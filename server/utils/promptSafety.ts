@@ -147,17 +147,45 @@ const PATH_PREFIX_TOP_N = 5;
  * (Issue #137 #5)。同 subtree で `gallery[0].url` / `gallery[1].url` / `gallery[2].url` ... が
  * 並ぶと bucket が cardinality 爆発するため、array index は集約 prefix にまとめる。末尾の
  * property 名 (`url` / `caption` 等) は意味的に異なるため normalize 対象外で残す。
+ *
+ * 例: `gallery[0].url` → `gallery[*].url` / `gallery[1].caption` → `gallery[*].caption`
+ * 例: array index を含まない dot-path (`users.profile.avatar`) はそのまま `users.profile.avatar` で残る
+ *     (dot-path 構造は意味情報として保持し、prefix 集約は array index 専用)。
  */
 const ARRAY_INDEX_PATTERN = /\[\d+\]/g;
 
 /**
  * path histogram で path に渡されなかった集約 bucket (Issue #137 #5)。
  *
- * `truncateOversizedStrings` 等の path 未追跡 caller では tick の path 引数が渡されないため、
- * `(no-path)` 専用 bucket に集約する。これにより「path 追跡未実装の経路がどの程度発火しているか」
- * が Cloud Logging で観測可能になる (将来 path 追跡を入れるべき経路の優先度判定材料)。
+ * 現状の path 未追跡 caller は `truncateOversizedStrings` の 2 callsite のみだが、将来 sanitize
+ * 関数が増えた際にも path 引数を渡さない caller があれば本 bucket に集約される。これにより
+ * 「path 追跡未実装の経路がどの程度発火しているか」が Cloud Logging で観測可能になる (将来 path
+ * 追跡を入れるべき経路の優先度判定材料)。
  */
 const NO_PATH_BUCKET = '(no-path)';
+
+/**
+ * path histogram の cardinality 爆発防御の最大 bucket 数 (Issue #137 #5 / PR #144 review-pr High 指摘の解消)。
+ *
+ * 旧設計: `pathHistogram = new Map<string, number>()` に上限なし。攻撃ペイロード (1500 段 ×
+ * 1000 sibling 等で unique path を爆発させる) で aggregator 自身の Map size が暴走し
+ * RSS 上昇するが silent に許容される構造的弱点があった (silent-failure-hunter High)。
+ *
+ * 256 は通常の character / world データの per-call unique path 数 (実用 ~50 未満) に十分余裕、
+ * かつ Cloud Logging 1 row payload size の制約 (top-5 抽出後 + truncatedBucketCount field 等) と
+ * 整合する妥協点。超過時は新規 bucket を `(overflow)` bucket に集約し、本 sanitize call 内で
+ * `histogram-overflow` warn を 1 度だけ emit (paired signal 規律、`feedback_silent_fail_paired_signal`)。
+ */
+const MAX_HISTOGRAM_BUCKETS = 256;
+
+/**
+ * histogram cardinality 上限超過時の集約 bucket (Issue #137 #5 / PR #144 review-pr High)。
+ *
+ * `MAX_HISTOGRAM_BUCKETS` 到達後の新規 path は本 bucket に inc される。Cloud Logging で
+ * `(overflow)` bucket に大量 count が並んでいたら「histogram が飽和した = path 追跡しきれない
+ * トラフィックがあった」を示す early-detection シグナル。
+ */
+const OVERFLOW_BUCKET = '(overflow)';
 
 /**
  * path を histogram bucket key に正規化する (Issue #137 #5)。
@@ -317,12 +345,30 @@ export function createWarnAggregator(individualEvent: string, individualMessage:
   let loggedCount = 0;
   // Issue #137 #5: per-call の path 分布を蓄積し、batch log に top-N histogram を残す。
   const pathHistogram = new Map<string, number>();
+  // PR #144 review-pr High: cardinality 爆発で aggregator が OOM しないよう bucket 数を cap し、
+  // 超過時は (overflow) に集約 + 1 度だけ histogram-overflow warn (paired signal)。
+  let overflowEmitted = false;
   return {
     tick(buildPayload: () => WarnAggregatorPayload, path?: string) {
       totalCount++;
       // Issue #137 #5: lazy builder の altitude を破壊せず軽量 path のみ常時集計。
-      const bucket = normalizePathForHistogram(path);
+      const desired = normalizePathForHistogram(path);
+      // PR #144 review-pr High: 新規 bucket 作成は MAX_HISTOGRAM_BUCKETS で cap、超過は (overflow)。
+      // 既存 bucket への inc は cap 対象外 (同じ bucket は cardinality を増やさない)。
+      const isNewBucket = !pathHistogram.has(desired);
+      const bucket =
+        isNewBucket && pathHistogram.size >= MAX_HISTOGRAM_BUCKETS ? OVERFLOW_BUCKET : desired;
       pathHistogram.set(bucket, (pathHistogram.get(bucket) ?? 0) + 1);
+      if (bucket === OVERFLOW_BUCKET && !overflowEmitted) {
+        // paired early-detection signal (silent_fail_paired_signal): 飽和を 1 度だけ通知。
+        overflowEmitted = true;
+        logger.warn({
+          message: 'promptSafety: path histogram saturation — new buckets aggregated into (overflow)',
+          safetyEvent: 'histogram-overflow',
+          parentEvent: individualEvent,
+          maxBuckets: MAX_HISTOGRAM_BUCKETS,
+        });
+      }
       if (loggedCount < MAX_WARN_PER_CALL) {
         // (a) spread 順反転で固定 message / safetyEvent が payload から上書きされない構造を保証。
         logger.warn({
@@ -335,10 +381,12 @@ export function createWarnAggregator(individualEvent: string, individualMessage:
     },
     flush() {
       if (totalCount > MAX_WARN_PER_CALL) {
-        // Issue #137 #5: top-N path prefix を count 降順で抽出して batch payload に同梱。
-        const pathPrefixes = Array.from(pathHistogram.entries())
-          .sort(([, a], [, b]) => b - a)
-          .slice(0, PATH_PREFIX_TOP_N);
+        // Issue #137 #5: top-N path prefix を count 降順で抽出。
+        // PR #144 review-pr Important: payload は {path, count} object 配列で Cloud Logging クエリ容易化。
+        const sorted = Array.from(pathHistogram.entries()).sort(([, a], [, b]) => b - a);
+        const pathPrefixes = sorted.slice(0, PATH_PREFIX_TOP_N).map(([path, count]) => ({ path, count }));
+        // PR #144 review-pr Medium: top-N に入りきらなかった distinct bucket 数を observability 用に併記。
+        const truncatedBucketCount = Math.max(0, pathHistogram.size - PATH_PREFIX_TOP_N);
         logger.warn({
           message: batchMessage,
           safetyEvent: batchEvent,
@@ -346,6 +394,7 @@ export function createWarnAggregator(individualEvent: string, individualMessage:
           loggedCount,
           omittedCount: totalCount - loggedCount,
           pathPrefixes,
+          truncatedBucketCount,
         });
       }
     },
@@ -383,7 +432,7 @@ export function stripPromptHeavyFields(data: unknown): unknown {
 
   function recurse(value: unknown, path: string, depth: number): unknown {
     if (depth > MAX_RECURSION_DEPTH) {
-      // Issue #137 #5: path を第 2 引数で渡して batch log の pathPrefixes histogram に集計。
+      // path 引数で histogram 集計 (WarnAggregator.tick JSDoc 参照)。
       depthAggregator.tick(() => ({ path, depth }), path);
       return RECURSION_DEPTH_EXCEEDED_MARKER;
     }

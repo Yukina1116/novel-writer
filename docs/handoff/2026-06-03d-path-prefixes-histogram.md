@@ -80,6 +80,24 @@ PR #140 で「`tick(() => payload)` の builder は threshold 超後は呼ばな
 - **#137 #7** Statsig/metric counter — 起票済 (https://github.com/Yukina1116/novel-writer/issues/137#issuecomment-4610248160)
 - **#137 #8 (新規候補)** `truncateOversizedStrings` の path 追跡 — 本 PR で `(no-path)` bucket になる経路。enhancement レベル
 
+## /review-pr 5 エージェント並列レビュー → 指摘反映 (追加 commit)
+
+| 指摘 | 重要度 | 反映 |
+|---|---|---|
+| histogram cardinality 爆発 silent 受容 | High (pr-test-analyzer Critical + silent-failure-hunter High 重複) | `MAX_HISTOGRAM_BUCKETS=256` + `(overflow)` bucket + 1 度だけ `histogram-overflow` warn emit (paired signal) |
+| AC-1 タイトルと実装の不一致 | comment-analyzer Critical | payload を `[{ url: big }, ...]` に拡張、bucket は `gallery[*].url` で AC-4 と end-to-end 整合 |
+| pathPrefixes payload shape tuple → object | code-reviewer Important | `Array<{ path, count }>` 形式に変更。Cloud Logging クエリ容易化 |
+| sort 安定性 (count 同値での top-N 選出) | pr-test-analyzer Critical | AC-11 で Map insertion order × stable sort を pin |
+| truncatedBucketCount 観測 | silent-failure-hunter Medium | flush payload に `truncatedBucketCount: max(0, pathHistogram.size - PATH_PREFIX_TOP_N)` 追加。AC-12 で 0 / 1 をそれぞれ pin |
+| inline comment 重複 / JSDoc 例補完 | comment-analyzer Improvement | recurse 内コメント簡略化 + ARRAY_INDEX_PATTERN JSDoc に dot-path 例追加 |
+| NO_PATH_BUCKET 文言 future-proof 化 | comment-analyzer Rot | 「現状 truncateOversizedStrings の 2 callsite のみ」を「将来 sanitize 関数が増えた際にも」に変更 |
+
+### スコープ外 (本 PR で反映せず、別 Issue / future PR 候補)
+
+- root path `''` (空文字) のテスト追加 — pr-test-analyzer Important
+- prototype pollution × pathHistogram regression test — pr-test-analyzer Important
+- `(no-path)` bucket と他正規 bucket の混在分離 (field 分離) — silent-failure-hunter Medium
+
 ## 次のアクション
 
 1. **U4**: `git push -u origin feature/path-prefixes-histogram` + `gh pr create`
