@@ -10,32 +10,20 @@
 // (2) scripts/setup-safety-event-metrics.sh の SAFETY_EVENTS 配列
 // (3) docs/runbook/cloud-logging-safety-event-metrics.md の metric 名表
 // を同時に更新する規律。本テストが drift を機械的に検知する。
+//
+// 規律:
+//   TS 側は import で値を取得 (構文表現の変化に頑健)、sh 側は regex で抽出 (text なので)。
 
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { SAFETY_EVENTS, ALL_SAFETY_EVENT_NAMES } from '../../server/utils/promptSafetyEvents';
 
 const PROJECT_ROOT = resolve(__dirname, '../..');
-const TS_PATH = resolve(PROJECT_ROOT, 'server/utils/promptSafetyEvents.ts');
 const SH_PATH = resolve(PROJECT_ROOT, 'scripts/setup-safety-event-metrics.sh');
 
-function extractTsEventValues(): Set<string> {
-    const src = readFileSync(TS_PATH, 'utf-8');
-    // SAFETY_EVENTS の object literal から 'event-name' を抽出。
-    // 形式: KEY: 'event-name',
-    // SCREAMING_SNAKE_CASE key + kebab-case 値 のみマッチ (誤検出防止)。
-    const blockMatch = src.match(/SAFETY_EVENTS\s*=\s*\{([\s\S]*?)\}\s*as\s+const/);
-    if (!blockMatch) {
-        throw new Error('SAFETY_EVENTS const block not found in promptSafetyEvents.ts');
-    }
-    const block = blockMatch[1];
-    const valueRegex = /[A-Z][A-Z0-9_]*\s*:\s*'([a-z][a-z0-9-]*)'/g;
-    const values = new Set<string>();
-    let match: RegExpExecArray | null;
-    while ((match = valueRegex.exec(block)) !== null) {
-        values.add(match[1]);
-    }
-    return values;
+function tsEventValues(): Set<string> {
+    return new Set(Object.values(SAFETY_EVENTS));
 }
 
 function extractShEventValues(): Set<string> {
@@ -57,26 +45,29 @@ function extractShEventValues(): Set<string> {
 }
 
 describe('safety-events lockstep — TS enum ↔ bash script SAFETY_EVENTS (AC-4c)', () => {
-    it('extracts exactly 6 values from TS SAFETY_EVENTS', () => {
-        const tsValues = extractTsEventValues();
-        expect(tsValues.size).toBe(6);
+    it('TS SAFETY_EVENTS has exactly ALL_SAFETY_EVENT_NAMES.length entries', () => {
+        const ts = tsEventValues();
+        expect(ts.size).toBe(ALL_SAFETY_EVENT_NAMES.length);
     });
 
-    it('extracts exactly 6 values from bash SAFETY_EVENTS', () => {
-        const shValues = extractShEventValues();
-        expect(shValues.size).toBe(6);
+    it('extracts the same number of values from bash SAFETY_EVENTS as TS', () => {
+        const ts = tsEventValues();
+        const sh = extractShEventValues();
+        expect(sh.size).toBe(ts.size);
     });
 
     it('TS and bash SAFETY_EVENTS contain identical sets', () => {
-        const tsValues = extractTsEventValues();
-        const shValues = extractShEventValues();
-        const onlyInTs = [...tsValues].filter((v) => !shValues.has(v));
-        const onlyInSh = [...shValues].filter((v) => !tsValues.has(v));
+        const ts = tsEventValues();
+        const sh = extractShEventValues();
+        const onlyInTs = [...ts].filter((v) => !sh.has(v));
+        const onlyInSh = [...sh].filter((v) => !ts.has(v));
         expect(onlyInTs).toEqual([]);
         expect(onlyInSh).toEqual([]);
     });
 
-    it('values match the design-doc canonical 6 entries', () => {
+    it('values match the design-doc canonical entries', () => {
+        // 設計文書 AC-2 の 6 entries (current). enum 拡張時はここを更新する規律
+        // (runbook §7.3 のチェックリスト項目)。
         const expected = new Set([
             'image-omitted',
             'non-image-data-uri-omitted',
@@ -85,7 +76,7 @@ describe('safety-events lockstep — TS enum ↔ bash script SAFETY_EVENTS (AC-4
             'collection-overflow',
             'histogram-overflow',
         ]);
-        expect(extractTsEventValues()).toEqual(expected);
+        expect(tsEventValues()).toEqual(expected);
         expect(extractShEventValues()).toEqual(expected);
     });
 });

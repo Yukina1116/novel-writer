@@ -54,6 +54,26 @@ if [[ -z "$PROJECT" ]]; then
     exit 1
 fi
 
+# M-1 (safe-refactor): --project の値が次フラグ (`--dry-run` 等) を誤吸収していないか
+# 検出。`--project --dry-run` のような誤入力で flag 値がプロジェクト ID として
+# 通ってしまうのを防ぐ。
+if [[ "$PROJECT" == --* ]]; then
+    echo "[error] --project value looks like a flag: '$PROJECT'" >&2
+    echo "  did you forget the project ID? Usage: $0 --project <PROJECT_ID> [--dry-run]" >&2
+    exit 1
+fi
+
+# GCP project ID 形式バリデーション
+# https://cloud.google.com/resource-manager/docs/creating-managing-projects
+#   - 6-30 文字
+#   - 小文字 / 数字 / hyphen
+#   - 先頭は小文字、末尾 hyphen 不可
+if ! [[ "$PROJECT" =~ ^[a-z][-a-z0-9]{4,28}[a-z0-9]$ ]]; then
+    echo "[error] invalid GCP project ID format: '$PROJECT'" >&2
+    echo "  expected: 6-30 chars, lowercase/digit/hyphen, starts with lowercase, no trailing hyphen" >&2
+    exit 1
+fi
+
 if ! command -v gcloud >/dev/null 2>&1; then
     echo "[error] gcloud CLI required but not found in PATH" >&2
     exit 1
