@@ -329,6 +329,84 @@ describe('observability (silent fail paired signal)', () => {
     truncateOversizedStrings({ name: 'Alice', personality: 'gentle' });
     expect(warnSpy).not.toHaveBeenCalled();
   });
+
+  // === Issue #137 #3: log amplification 対策 (per-call warn 集約) ===
+
+  it('emits individual warn for each finding when total ≤ MAX_WARN_PER_CALL (50)', () => {
+    // 50 個ちょうど = 全件個別 warn、集約 log 出ない (boundary 直下)。
+    const big = `data:image/png;base64,${'A'.repeat(600)}`;
+    const items = Array.from({ length: 50 }, () => ({ url: big }));
+    stripPromptHeavyFields({ gallery: items });
+    expect(warnSpy).toHaveBeenCalledTimes(50);
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ safetyEvent: 'image-omitted-batch' })
+    );
+  });
+
+  it('suppresses individual warns and emits aggregate log when total > MAX_WARN_PER_CALL (boundary 51)', () => {
+    // 51 個 = 50 件個別 warn + 1 件集約 log (boundary 直上)。
+    const big = `data:image/png;base64,${'A'.repeat(600)}`;
+    const items = Array.from({ length: 51 }, () => ({ url: big }));
+    stripPromptHeavyFields({ gallery: items });
+    // 個別 image-omitted は 50 件で打ち止め
+    const individualCalls = warnSpy.mock.calls.filter(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'image-omitted'
+    );
+    expect(individualCalls).toHaveLength(50);
+    // 集約 log が 1 件出る
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        safetyEvent: 'image-omitted-batch',
+        totalCount: 51,
+        loggedCount: 50,
+        omittedCount: 1,
+      })
+    );
+  });
+
+  it('aggregate log carries accurate totalCount / omittedCount for large bursts (100 items)', () => {
+    const big = `data:image/png;base64,${'A'.repeat(600)}`;
+    const items = Array.from({ length: 100 }, () => ({ url: big }));
+    stripPromptHeavyFields({ gallery: items });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        safetyEvent: 'image-omitted-batch',
+        totalCount: 100,
+        loggedCount: 50,
+        omittedCount: 50,
+      })
+    );
+  });
+
+  it('truncateOversizedStrings also aggregates oversized-truncated warns', () => {
+    // truncate 側も同じ pattern: 51 件超で集約 log。
+    const big = 'Y'.repeat(MAX_FIELD_BYTES + 1);
+    const items = Array.from({ length: 51 }, () => ({ note: big }));
+    truncateOversizedStrings({ list: items });
+    const individualCalls = warnSpy.mock.calls.filter(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'oversized-truncated'
+    );
+    expect(individualCalls).toHaveLength(50);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        safetyEvent: 'oversized-truncated-batch',
+        totalCount: 51,
+        loggedCount: 50,
+        omittedCount: 1,
+      })
+    );
+  });
+
+  it('boundary: exactly 49 items emits 49 individual warns and NO aggregate log', () => {
+    // 49 = 集約しきい値手前 -1
+    const big = `data:image/png;base64,${'A'.repeat(600)}`;
+    const items = Array.from({ length: 49 }, () => ({ url: big }));
+    stripPromptHeavyFields({ gallery: items });
+    expect(warnSpy).toHaveBeenCalledTimes(49);
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ safetyEvent: 'image-omitted-batch' })
+    );
+  });
 });
 
 describe('sanitizeForPrompt - composite (whitelist + size guard)', () => {
