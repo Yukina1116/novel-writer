@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { logger } from './logger';
 import {
   IMAGE_OMITTED_MARKER,
+  NON_IMAGE_DATA_URI_MARKER,
   OVERSIZED_STRING_MARKER,
   MAX_FIELD_BYTES,
   stripPromptHeavyFields,
@@ -656,5 +657,181 @@ describe('createWarnAggregator factory unit (Issue #137 #4 残り)', () => {
     for (let i = 0; i < 100; i++) agg.tick(buildPayload);
     // 最初の 50 件のみ builder が呼ばれる
     expect(buildCalls).toBe(50);
+  });
+});
+
+// === Issue #137 #1: 非画像 dataURI 検出層 (PDF / audio / font 等の 500B〜100KB 帯 gap 閉鎖) ===
+
+describe('stripPromptHeavyFields - 非画像 dataURI 検出 (Issue #137 #1)', () => {
+  // AC-1〜3: 主要 MIME 種別での marker 置換 (基本動作)
+
+  it('AC-1: replaces non-image dataURI (application/pdf, 800B) with NON_IMAGE_DATA_URI_MARKER', () => {
+    const big = `data:application/pdf;base64,${'A'.repeat(800)}`;
+    const out = stripPromptHeavyFields({ pdf: big }) as { pdf: string };
+    expect(out.pdf).toBe(NON_IMAGE_DATA_URI_MARKER);
+  });
+
+  it('AC-2: replaces non-image dataURI (audio/mp3, 800B) with NON_IMAGE_DATA_URI_MARKER', () => {
+    const big = `data:audio/mp3;base64,${'B'.repeat(800)}`;
+    const out = stripPromptHeavyFields({ audio: big }) as { audio: string };
+    expect(out.audio).toBe(NON_IMAGE_DATA_URI_MARKER);
+  });
+
+  it('AC-3: replaces non-image dataURI (font/woff2, 800B) with NON_IMAGE_DATA_URI_MARKER', () => {
+    const big = `data:font/woff2;base64,${'C'.repeat(800)}`;
+    const out = stripPromptHeavyFields({ font: big }) as { font: string };
+    expect(out.font).toBe(NON_IMAGE_DATA_URI_MARKER);
+  });
+
+  // AC-4, AC-5: false positive guard (既存規律の維持 pin)
+
+  it('AC-4: pdf 200B (~228B, < 500) passes through unchanged (false positive guard)', () => {
+    const data = { pdf: `data:application/pdf;base64,${'A'.repeat(200)}` };
+    const out = stripPromptHeavyFields(data) as typeof data;
+    expect(out.pdf).toBe(data.pdf);
+    expect(out.pdf).not.toBe(NON_IMAGE_DATA_URI_MARKER);
+  });
+
+  it('AC-5: data:text/plain;base64,SGVsbG8= (~30B) passes through unchanged (短文 MIME 説明)', () => {
+    const data = { text: 'data:text/plain;base64,SGVsbG8=' };
+    const out = stripPromptHeavyFields(data) as typeof data;
+    expect(out.text).toBe(data.text);
+    expect(out.text).not.toBe(NON_IMAGE_DATA_URI_MARKER);
+  });
+
+  // AC-6: 境界値 (MIN_NON_IMAGE_DATA_URI_BYTES = 500)
+
+  it('AC-6a: non-image dataURI of exactly 499 bytes passes through unchanged', () => {
+    // prefix `data:application/pdf;base64,` = 28 bytes, payload 471 bytes → total 499 bytes
+    const justBelow = `data:application/pdf;base64,${'A'.repeat(471)}`;
+    expect(Buffer.byteLength(justBelow, 'utf8')).toBe(499);
+    const out = stripPromptHeavyFields({ pdf: justBelow }) as { pdf: string };
+    expect(out.pdf).toBe(justBelow);
+  });
+
+  it('AC-6b: non-image dataURI of exactly 500 bytes IS replaced with marker', () => {
+    const exactlyMin = `data:application/pdf;base64,${'A'.repeat(472)}`;
+    expect(Buffer.byteLength(exactlyMin, 'utf8')).toBe(500);
+    const out = stripPromptHeavyFields({ pdf: exactlyMin }) as { pdf: string };
+    expect(out.pdf).toBe(NON_IMAGE_DATA_URI_MARKER);
+  });
+
+  it('AC-6c: non-image dataURI of exactly 501 bytes IS replaced with marker', () => {
+    const justAbove = `data:application/pdf;base64,${'A'.repeat(473)}`;
+    expect(Buffer.byteLength(justAbove, 'utf8')).toBe(501);
+    const out = stripPromptHeavyFields({ pdf: justAbove }) as { pdf: string };
+    expect(out.pdf).toBe(NON_IMAGE_DATA_URI_MARKER);
+  });
+
+  // AC-7: 判定順 regression pin (image 先評価)
+
+  it('AC-7: image dataURI gets IMAGE_OMITTED_MARKER (not NON_IMAGE_DATA_URI_MARKER, image 先評価 pin)', () => {
+    const big = `data:image/png;base64,${'X'.repeat(800)}`;
+    const out = stripPromptHeavyFields({ image: big }) as { image: string };
+    expect(out.image).toBe(IMAGE_OMITTED_MARKER);
+    expect(out.image).not.toBe(NON_IMAGE_DATA_URI_MARKER);
+  });
+
+  // AC-11〜14: codex セカンドオピニオン Medium 指摘の test 化
+
+  it('AC-11: DATA:application/pdf;base64,... (大文字 prefix, 800B) is replaced with NON_IMAGE_DATA_URI_MARKER (case insensitive)', () => {
+    const big = `DATA:application/pdf;base64,${'A'.repeat(800)}`;
+    const out = stripPromptHeavyFields({ pdf: big }) as { pdf: string };
+    expect(out.pdf).toBe(NON_IMAGE_DATA_URI_MARKER);
+  });
+
+  it('AC-12: leading whitespace + data:... (\\n + space prefix, 800B) is replaced with NON_IMAGE_DATA_URI_MARKER', () => {
+    const big = `\n data:application/pdf;base64,${'A'.repeat(800)}`;
+    const out = stripPromptHeavyFields({ pdf: big }) as { pdf: string };
+    expect(out.pdf).toBe(NON_IMAGE_DATA_URI_MARKER);
+  });
+
+  it('AC-13: data:;base64,... (空 MIME, 800B) is replaced with NON_IMAGE_DATA_URI_MARKER', () => {
+    const big = `data:;base64,${'A'.repeat(800)}`;
+    const out = stripPromptHeavyFields({ empty: big }) as { empty: string };
+    expect(out.empty).toBe(NON_IMAGE_DATA_URI_MARKER);
+  });
+
+  it('AC-14: data:,... (no mediatype/base64, byte ≥ 500) is replaced with NON_IMAGE_DATA_URI_MARKER', () => {
+    const big = `data:,${'A'.repeat(800)}`;
+    const out = stripPromptHeavyFields({ noB64: big }) as { noB64: string };
+    expect(out.noB64).toBe(NON_IMAGE_DATA_URI_MARKER);
+  });
+});
+
+describe('stripPromptHeavyFields - 画像 dataURI 検出 case insensitive 化 (Issue #137 #1 / codex 指摘)', () => {
+  it('AC-15: DATA:IMAGE/PNG;base64,... (image 大文字, 800B) is replaced with IMAGE_OMITTED_MARKER (existing isImageDataUri case insensitive 化の regression pin)', () => {
+    const big = `DATA:IMAGE/PNG;base64,${'X'.repeat(800)}`;
+    const out = stripPromptHeavyFields({ image: big }) as { image: string };
+    expect(out.image).toBe(IMAGE_OMITTED_MARKER);
+  });
+});
+
+describe('non-image dataURI observability + cross-event independence (Issue #137 #1)', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+  });
+
+  it('AC-8: image array 100 + non-image array 100 emits image-omitted-batch と non-image-data-uri-omitted-batch 別 event で集約 (cross-event independence)', () => {
+    const imageBig = `data:image/png;base64,${'A'.repeat(600)}`;
+    const nonImageBig = `data:application/pdf;base64,${'B'.repeat(600)}`;
+    const payload = {
+      images: Array.from({ length: 100 }, () => imageBig),
+      pdfs: Array.from({ length: 100 }, () => nonImageBig),
+    };
+    stripPromptHeavyFields(payload);
+
+    // image-omitted: 50 個別 + 1 batch
+    const imageIndividual = warnSpy.mock.calls.filter(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'image-omitted'
+    );
+    expect(imageIndividual).toHaveLength(50);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        safetyEvent: 'image-omitted-batch',
+        totalCount: 100,
+        loggedCount: 50,
+        omittedCount: 50,
+      })
+    );
+
+    // non-image-data-uri-omitted: 50 個別 + 1 batch
+    const nonImageIndividual = warnSpy.mock.calls.filter(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'non-image-data-uri-omitted'
+    );
+    expect(nonImageIndividual).toHaveLength(50);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        safetyEvent: 'non-image-data-uri-omitted-batch',
+        totalCount: 100,
+        loggedCount: 50,
+        omittedCount: 50,
+      })
+    );
+  });
+
+  it('AC-9: path log differentiates image (appearance.imageUrl) from non-image (memo) in individual warn', () => {
+    const imageBig = `data:image/png;base64,${'A'.repeat(800)}`;
+    const nonImageBig = `data:application/pdf;base64,${'B'.repeat(800)}`;
+    stripPromptHeavyFields({
+      appearance: { imageUrl: imageBig },
+      memo: nonImageBig,
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        safetyEvent: 'image-omitted',
+        path: 'appearance.imageUrl',
+        bytes: Buffer.byteLength(imageBig, 'utf8'),
+      })
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        safetyEvent: 'non-image-data-uri-omitted',
+        path: 'memo',
+        bytes: Buffer.byteLength(nonImageBig, 'utf8'),
+      })
+    );
   });
 });

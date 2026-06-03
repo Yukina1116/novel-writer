@@ -24,6 +24,12 @@ import { logger } from './logger';
 /** AI プロンプトから除外された生成画像の代替マーカー。AI に「画像が存在する」事実だけ伝える。 */
 export const IMAGE_OMITTED_MARKER = '[generated-image: omitted from prompt to fit token budget]';
 
+/**
+ * AI プロンプトから除外された非画像 dataURI (PDF / audio / font 等) の代替マーカー (Issue #137 #1)。
+ * 画像系の `IMAGE_OMITTED_MARKER` と対称に「非画像 dataURI が存在する」事実だけ AI に伝える。
+ */
+export const NON_IMAGE_DATA_URI_MARKER = '[non-image-data-uri: omitted from prompt to fit token budget]';
+
 /** size guard で truncate した文字列の代替マーカー。 */
 export const OVERSIZED_STRING_MARKER = '[oversized-string: truncated to fit token budget]';
 
@@ -42,10 +48,25 @@ export const OVERSIZED_STRING_MARKER = '[oversized-string: truncated to fit toke
 export const MAX_FIELD_BYTES = 100_000;
 
 /**
+ * dataURI 共通 prefix。`isImageDataUri` / `isNonImageDataUri` の判定で normalize 後の
+ * 先頭 prefix 識別に使う (Issue #137 #1)。
+ */
+const DATA_URI_PREFIX = 'data:';
+
+/**
  * 画像 dataURI と判定する prefix。`data:image/` は MIME type の image/* を全てカバー
  * (png, jpeg, webp, gif, svg+xml, avif, heic 等)。
  */
 const IMAGE_DATA_URI_PREFIX = 'data:image/';
+
+/**
+ * 非画像 dataURI false positive guard の最小 byte 数 (Issue #137 #1)。
+ *
+ * image 側の `MIN_IMAGE_DATA_URI_BYTES` (500) と対称に設定し、ナレッジ等に「`data:application/pdf`
+ * という形式の文字列」が短文として含まれる可能性に備える。500B 未満の非画像 dataURI は
+ * 実プロダクトデータとして登場しない極限値 (実 PDF/audio は数 KB 以上が前提)。
+ */
+const MIN_NON_IMAGE_DATA_URI_BYTES = 500;
 
 /**
  * false positive 防止: この byte 長未満の `data:image/` 始まり文字列は素通しする。
@@ -122,12 +143,48 @@ const MAX_WARN_PER_CALL = 50;
 const PROTOTYPE_POLLUTION_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 /**
- * 任意 leaf string が「画像 dataURI と判定すべきか」を返す。
- * - `data:image/` で始まる
- * - UTF-8 byte 長が `MIN_IMAGE_DATA_URI_BYTES` 以上 (false positive 防止)
+ * dataURI 判定のための文字列 normalize (Issue #137 #1 / codex セカンドオピニオン Medium 指摘):
+ *
+ * - `trimStart()` で先頭空白吸収 (`\n data:...` 等を素通しさせない)
+ * - `toLowerCase()` で case insensitive 化 (`DATA:application/pdf` / `DATA:IMAGE/PNG` 等を捕捉)
+ *
+ * 根拠: RFC 2397 で data URI の media type は case-insensitive、RFC 3986 で scheme 部 (`data:`) も
+ * case-insensitive と規定されている。byte 計測も normalize 後 string で行うことで image / non-image
+ * 側の判定基準を揃え、先頭空白が payload byte 数に混入することを防ぐ。
+ */
+function normalizeForDataUriDetection(value: string): string {
+  return value.trimStart().toLowerCase();
+}
+
+/**
+ * 任意 leaf string が「画像 dataURI と判定すべきか」を返す (Issue #137 #1 で case insensitive 化)。
+ * - normalize 後 `data:image/` で始まる
+ * - normalize 後 UTF-8 byte 長が `MIN_IMAGE_DATA_URI_BYTES` 以上 (false positive 防止)
  */
 function isImageDataUri(value: string): boolean {
-  return value.startsWith(IMAGE_DATA_URI_PREFIX) && Buffer.byteLength(value, 'utf8') >= MIN_IMAGE_DATA_URI_BYTES;
+  const normalized = normalizeForDataUriDetection(value);
+  return (
+    normalized.startsWith(IMAGE_DATA_URI_PREFIX) &&
+    Buffer.byteLength(normalized, 'utf8') >= MIN_IMAGE_DATA_URI_BYTES
+  );
+}
+
+/**
+ * 任意 leaf string が「非画像 dataURI と判定すべきか」を返す (Issue #137 #1)。
+ * - normalize 後 `data:` で始まり `data:image/` で始まらない
+ * - normalize 後 UTF-8 byte 長が `MIN_NON_IMAGE_DATA_URI_BYTES` 以上
+ *
+ * 判定順は呼出側で image → non-image の順に評価することを前提とする (recurse 経路で先評価)。
+ * 本関数単独では「画像でない dataURI」かどうかしか判定せず、空 MIME (`data:;base64,...`) や
+ * no-mediatype (`data:,...`) も「非画像」として扱う (prompt token を食う以上 marker 化が妥当)。
+ */
+function isNonImageDataUri(value: string): boolean {
+  const normalized = normalizeForDataUriDetection(value);
+  return (
+    normalized.startsWith(DATA_URI_PREFIX) &&
+    !normalized.startsWith(IMAGE_DATA_URI_PREFIX) &&
+    Buffer.byteLength(normalized, 'utf8') >= MIN_NON_IMAGE_DATA_URI_BYTES
+  );
 }
 
 /**
@@ -263,6 +320,10 @@ function createDepthExceededAggregator(): WarnAggregator {
  */
 export function stripPromptHeavyFields(data: unknown): unknown {
   const imageAggregator = createWarnAggregator('image-omitted', 'promptSafety: image dataURI stripped');
+  const nonImageAggregator = createWarnAggregator(
+    'non-image-data-uri-omitted',
+    'promptSafety: non-image dataURI stripped'
+  );
   const depthAggregator = createDepthExceededAggregator();
 
   function recurse(value: unknown, path: string, depth: number): unknown {
@@ -271,10 +332,19 @@ export function stripPromptHeavyFields(data: unknown): unknown {
       return RECURSION_DEPTH_EXCEEDED_MARKER;
     }
     if (typeof value === 'string') {
-      if (!isImageDataUri(value)) return value;
-      // lazy builder: threshold 超後は Buffer.byteLength(50KB級) 再計算が skip される
-      imageAggregator.tick(() => ({ path, bytes: Buffer.byteLength(value, 'utf8') }));
-      return IMAGE_OMITTED_MARKER;
+      // 判定順は image → non-image (image 側を先評価する規律、AC-7 / AC-15 で pin)。
+      if (isImageDataUri(value)) {
+        // lazy builder: threshold 超後は Buffer.byteLength(50KB級) 再計算が skip される
+        imageAggregator.tick(() => ({ path, bytes: Buffer.byteLength(value, 'utf8') }));
+        return IMAGE_OMITTED_MARKER;
+      }
+      if (isNonImageDataUri(value)) {
+        // Issue #137 #1: 非画像 dataURI (PDF / audio / font 等) を marker 化。
+        // bytes は元 string で計測 (既存 image 側の payload 規律と揃える、normalize の trim 差は無視可能)。
+        nonImageAggregator.tick(() => ({ path, bytes: Buffer.byteLength(value, 'utf8') }));
+        return NON_IMAGE_DATA_URI_MARKER;
+      }
+      return value;
     }
     if (Array.isArray(value)) {
       let changed = false;
@@ -304,6 +374,7 @@ export function stripPromptHeavyFields(data: unknown): unknown {
   }
   const result = recurse(data, '', 0);
   imageAggregator.flush();
+  nonImageAggregator.flush();
   depthAggregator.flush();
   return result;
 }
