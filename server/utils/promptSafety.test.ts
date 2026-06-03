@@ -4,6 +4,7 @@ import {
   IMAGE_OMITTED_MARKER,
   NON_IMAGE_DATA_URI_MARKER,
   OVERSIZED_STRING_MARKER,
+  RECURSION_DEPTH_EXCEEDED_MARKER,
   MAX_FIELD_BYTES,
   stripPromptHeavyFields,
   truncateOversizedStrings,
@@ -833,5 +834,73 @@ describe('non-image dataURI observability + cross-event independence (Issue #137
         bytes: Buffer.byteLength(nonImageBig, 'utf8'),
       })
     );
+  });
+});
+
+// === PR #143 review-pr (pr-test-analyzer Medium) hardening 追加 ===
+
+describe('非画像 dataURI 検出 hardening (PR #143 review-pr 指摘反映)', () => {
+  it('mixed array: image + non-image + plain + 空文字 が混在しても各 marker が正しい位置・順序で置換される', () => {
+    // pr-test-analyzer Medium: 混在 array で aggregator state が乱れず、recursion 順序が保たれることを pin。
+    const imageBig = `data:image/png;base64,${'A'.repeat(600)}`;
+    const nonImageBig = `data:application/pdf;base64,${'B'.repeat(600)}`;
+    const data = {
+      mixed: [imageBig, nonImageBig, 'plain text', '', 'https://x', imageBig],
+    };
+    const out = stripPromptHeavyFields(data) as { mixed: string[] };
+    expect(out.mixed[0]).toBe(IMAGE_OMITTED_MARKER);
+    expect(out.mixed[1]).toBe(NON_IMAGE_DATA_URI_MARKER);
+    expect(out.mixed[2]).toBe('plain text');
+    expect(out.mixed[3]).toBe('');
+    expect(out.mixed[4]).toBe('https://x');
+    expect(out.mixed[5]).toBe(IMAGE_OMITTED_MARKER);
+  });
+
+  it('depth boundary × non-image dataURI: depth === MAX_RECURSION_DEPTH (1000) では non-image marker、depth > では depth marker (guard 順序 pin)', () => {
+    // pr-test-analyzer Medium: depth-exceeded vs non-image marker の判定順 (depth guard が先) を pin。
+    // depth guard は recurse 冒頭で評価される (promptSafety.ts:330)。
+    // 1000 段ネスト内に non-image dataURI を置くと、leaf に到達した時点では depth === 1000 で
+    // guard 内 ((depth > MAX_RECURSION_DEPTH) === false)、よって non-image marker になる。
+    // 1001 段以降のネスト構造を組むと depth > 1000 で depth marker。
+    const nonImageBig = `data:application/pdf;base64,${'A'.repeat(800)}`;
+
+    // depth ちょうど 1000 (recurse 内 depth 値が 1000) — non-image marker になるべき
+    let atLimit: Record<string, unknown> = { leaf: nonImageBig };
+    for (let i = 0; i < 999; i++) atLimit = { a: atLimit };
+    // depth 0 (root) → depth 1 (a.) → ... → depth 999 (.a.) → depth 1000 (leaf)
+    // recurse(value=nonImageBig, path=..., depth=1000) で if (depth > 1000) false → string 判定で non-image marker
+    const outAtLimit = stripPromptHeavyFields(atLimit) as Record<string, unknown>;
+    // 最深 leaf を辿るのは煩雑なので JSON.stringify でマーカー出現を確認
+    const serializedAtLimit = JSON.stringify(outAtLimit);
+    expect(serializedAtLimit).toContain(NON_IMAGE_DATA_URI_MARKER);
+    expect(serializedAtLimit).not.toContain(RECURSION_DEPTH_EXCEEDED_MARKER);
+
+    // depth 1001 超 (over limit) — depth marker になるべき
+    let beyondLimit: Record<string, unknown> = { leaf: nonImageBig };
+    for (let i = 0; i < 1500; i++) beyondLimit = { a: beyondLimit };
+    const outBeyond = stripPromptHeavyFields(beyondLimit) as Record<string, unknown>;
+    const serializedBeyond = JSON.stringify(outBeyond);
+    expect(serializedBeyond).toContain(RECURSION_DEPTH_EXCEEDED_MARKER);
+    // beyondLimit は途中で depth marker に置換されるため、深い non-image leaf は到達せず marker 化されない
+    expect(serializedBeyond).not.toContain(NON_IMAGE_DATA_URI_MARKER);
+  });
+
+  it('prototype pollution skip × non-image dataURI: __proto__ key を持つ payload で non-image dataURI も sanitize される (対称性 pin)', () => {
+    // pr-test-analyzer Medium: 既存テスト (L195 付近) は image dataURI + __proto__。
+    // 非画像 dataURI でも同じ規律 (key drop + 残り subtree の sanitize) が適用されることを pin。
+    const malicious: Record<string, unknown> = JSON.parse(
+      '{"__proto__":{"polluted":true},"name":"Bob","memo":"data:application/pdf;base64,' +
+        'A'.repeat(600) +
+        '"}'
+    );
+    const out = stripPromptHeavyFields(malicious) as Record<string, unknown>;
+
+    // prototype 汚染が防御されている
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    expect((out as { polluted?: boolean }).polluted).toBeUndefined();
+    // 正当な own properties は保持
+    expect(out.name).toBe('Bob');
+    // 非画像 dataURI は marker 置換される (image 側と対称)
+    expect(out.memo).toBe(NON_IMAGE_DATA_URI_MARKER);
   });
 });

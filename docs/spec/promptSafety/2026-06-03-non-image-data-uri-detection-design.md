@@ -68,15 +68,27 @@ stripPromptHeavyFields(data)
 
 | 名前 | 改修内容 |
 |---|---|
-| `isImageDataUri(value: string): boolean` | normalize 後 string を判定し case-insensitive 化。signature 不変、byte 計測も normalize 後 string に統一 |
+| `isImageDataUri(value: string): boolean` | normalize 後 string を判定し case-insensitive 化。signature 不変、**判定 byte 計測** (下記「byte 計測の規律」(a)) も normalize 後 string に統一 |
 
 ### byte 計測の規律
 
+byte 計測は **「判定 byte」** と **「ログ payload bytes」** で対象が異なる。両者は別の目的のため意図的に分離する (PR #143 review-pr comment-analyzer Critical 指摘の解消)。
+
+#### (a) 判定 byte 計測 (`isImageDataUri` / `isNonImageDataUri` 内)
+
 `Buffer.byteLength(normalized, 'utf8')` で **normalize 後 string** を計測する。理由:
 
-1. trimStart で削った先頭空白を payload byte 数に含めるのは「実 payload 評価」として不適切
+1. trimStart で削った先頭空白を判定 byte 数に含めるのは「実 payload 評価」として不適切
 2. image / non-image 側で計測対象を揃えることで判定の一貫性を保つ
 3. trimStart で減る byte は数文字 (現実的に < 10B) であり、500B 閾値に対する影響は無視可能
+
+#### (b) ログ payload bytes 計測 (`tick(() => ({ ..., bytes }))` 内)
+
+`Buffer.byteLength(value, 'utf8')` で **元 string** を計測する。理由:
+
+1. forensic 価値: Cloud Logging で「ユーザーが実際に送った byte 数」を残す方が攻撃面分析・運用観測で有用 (先頭空白を含む真の入力サイズが分かる)
+2. 既存 image 側 (PR #139 / #140) の payload 規律と同じ measurement target を継承し、`safetyEvent: 'image-omitted'` / `'non-image-data-uri-omitted'` で bytes フィールドの意味を統一する
+3. normalize の trim 差は実用上 < 10B で payload 解釈に影響しない
 
 ## 5. インターフェース
 
