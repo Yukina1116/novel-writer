@@ -7,6 +7,7 @@ import {
   stripPromptHeavyFields,
   truncateOversizedStrings,
   sanitizeForPrompt,
+  createWarnAggregator,
 } from './promptSafety';
 
 describe('stripPromptHeavyFields - content-based 画像 dataURI 検出 (Issue #134)', () => {
@@ -570,5 +571,93 @@ describe('sanitizeForPrompt - composite (whitelist + size guard)', () => {
     const serialized = JSON.stringify(sanitizeForPrompt(data));
     expect(serialized.length).toBeLessThan(1_000);
     expect(serialized).toContain(IMAGE_OMITTED_MARKER);
+  });
+});
+
+describe('createWarnAggregator factory unit (Issue #137 #4 残り)', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+  });
+
+  it('flush() emits nothing when tick() was never called (totalCount === 0)', () => {
+    const agg = createWarnAggregator('test-event', 'promptSafety: test event');
+    agg.flush();
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('flush() emits nothing when tick() was called exactly MAX_WARN_PER_CALL (50) times (boundary 直下)', () => {
+    const agg = createWarnAggregator('test-event', 'promptSafety: test event');
+    for (let i = 0; i < 50; i++) agg.tick(() => ({ idx: i }));
+    agg.flush();
+    // 個別 warn 50 件、batch 0 件
+    const batchCalls = warnSpy.mock.calls.filter(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'test-event-batch'
+    );
+    expect(batchCalls).toHaveLength(0);
+    const individualCalls = warnSpy.mock.calls.filter(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'test-event'
+    );
+    expect(individualCalls).toHaveLength(50);
+  });
+
+  it('flush() emits 1 batch when tick() was called 51 times (boundary 直上)', () => {
+    const agg = createWarnAggregator('test-event', 'promptSafety: test event');
+    for (let i = 0; i < 51; i++) agg.tick(() => ({ idx: i }));
+    agg.flush();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        safetyEvent: 'test-event-batch',
+        message: 'promptSafety: test-event warn amplification suppressed',
+        totalCount: 51,
+        loggedCount: 50,
+        omittedCount: 1,
+      })
+    );
+  });
+
+  it('individual warn payload cannot override message or safetyEvent (payload spread shadowing 構造的閉鎖、Issue #137 #4 残り a)', () => {
+    const agg = createWarnAggregator('test-event', 'promptSafety: test event');
+    // 型上は `message?: never` / `safetyEvent?: never` で禁止されているが、
+    // 実行時の構造的防御 (spread 順) も pin する。`as any` で型 guard を bypass して悪意 payload を作る。
+    agg.tick(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      () => ({ message: 'HIJACKED', safetyEvent: 'HIJACKED-event', path: 'a' } as any)
+    );
+    // factory 固定値が必ず残ることを pin
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'promptSafety: test event',
+        safetyEvent: 'test-event',
+      })
+    );
+    // HIJACKED が message / safetyEvent に入っていないことを pin
+    const call = warnSpy.mock.calls[0][0] as { message: string; safetyEvent: string };
+    expect(call.message).not.toBe('HIJACKED');
+    expect(call.safetyEvent).not.toBe('HIJACKED-event');
+  });
+
+  it('derives batchEvent and batchMessage from individualEvent (Issue #137 #4 残り b)', () => {
+    const agg = createWarnAggregator('demo-omitted', 'promptSafety: demo something');
+    for (let i = 0; i < 51; i++) agg.tick(() => ({}));
+    agg.flush();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        safetyEvent: 'demo-omitted-batch',
+        message: 'promptSafety: demo-omitted warn amplification suppressed',
+      })
+    );
+  });
+
+  it('tick() lazy builder is NOT called when threshold exceeded (PR #140 regression fix)', () => {
+    const agg = createWarnAggregator('test-event', 'promptSafety: test event');
+    let buildCalls = 0;
+    const buildPayload = () => {
+      buildCalls++;
+      return { idx: buildCalls };
+    };
+    for (let i = 0; i < 100; i++) agg.tick(buildPayload);
+    // 最初の 50 件のみ builder が呼ばれる
+    expect(buildCalls).toBe(50);
   });
 });
