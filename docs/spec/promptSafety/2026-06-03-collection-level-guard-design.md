@@ -39,6 +39,7 @@ PR #138 で `MIN_IMAGE_DATA_URI_BYTES` を 100→500 に引き上げ、99B 弱 d
 - **NFR-4**: 入力 mutate なし (pure helpers 規律)
 - **NFR-5**: 攻撃 payload (大型 array) の場合、閾値到達後の short-circuit により perf 悪化なし
 - **NFR-6**: 通常データ (~50KB 以下 array、≤1000 element) の perf 影響は 10ms 級 (per-element JSON.stringify trade-off の許容範囲)
+- **NFR-7**: input は **JSON-safe 前提** だが、`undefined` / `function` / `symbol` / `BigInt` / 循環参照 element でも `Buffer.byteLength` が throw しない defensive coding を入れる (codex セカンドオピニオン High 1-2 解消)
 
 ## 3. アーキテクチャ
 
@@ -79,18 +80,44 @@ stripPromptHeavyFields(data)
 
 ### byte 計測の規律
 
-- 各 element について `Buffer.byteLength(JSON.stringify(processed element), 'utf8')` で計測
+- 各 element について `Buffer.byteLength(JSON.stringify(processed element) ?? 'null', 'utf8')` で計測
 - `processed element` = recurse 通過後の値 (image / non-image marker 化後の短文を含む)
 - これにより「leaf-level marker 化済の element は cumulative 圧迫しない」挙動を保証 (二重防御の補完)
+
+### defensive coding (codex セカンドオピニオン High 1-2 反映)
+
+JSON-safe ではない element を防御的に handle して `Buffer.byteLength` の throw を防ぐ:
+
+| element 型 | 挙動 |
+|---|---|
+| `undefined` / `function` / `symbol` | `JSON.stringify` は `undefined` を返す → `?? 'null'` で `'null'` 文字列 (4 byte) を代入 |
+| `BigInt` (`1n` 等) | `JSON.stringify` は throw → **try-catch** で `'null'` 相当の 4 byte fallback |
+| 循環参照 (`a.self = a`) | `JSON.stringify` は throw → 同じ try-catch fallback で防御 |
+| `Uint8Array` / `Buffer` | `JSON.stringify` は `{"0":..., "length":...}` 形式の object 化 → byte 計測は妥当だが scope 外 (本 PR で追加対応せず) |
+
+これにより `stripPromptHeavyFields([1n])` や循環参照 input が**新たに throw する regression**を防ぐ。「JSON-safe input 前提」を NFR でも明記。
 
 ## 5. アルゴリズム
 
 ### array recurse の改修
 
 ```ts
+/**
+ * processed element の byte 計測 (codex セカンドオピニオン High 1-2 解消)。
+ * JSON-safe ではない element (undefined / function / symbol / BigInt / 循環参照) で
+ * Buffer.byteLength が throw しないよう fallback で 'null' (4 byte) を代入する。
+ */
+function estimateElementBytes(value: unknown): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(value) ?? 'null', 'utf8');
+  } catch {
+    return 4; // 'null' 相当
+  }
+}
+
 if (Array.isArray(value)) {
-  const collectionAggregator = ...; // factory 経由 (Section 6)
   let cumulativeBytes = 0;
+  let keptCount = 0;
   let changed = false;
   const next: unknown[] = [];
   for (let idx = 0; idx < value.length; idx++) {
@@ -102,6 +129,8 @@ if (Array.isArray(value)) {
           arrayLength: value.length,
           cumulativeBytes,
           droppedIndex: idx,
+          maxCollectionBytes: MAX_COLLECTION_BYTES,
+          keptCount,
         }),
         path
       );
@@ -112,11 +141,33 @@ if (Array.isArray(value)) {
     const replaced = recurse(value[idx], joinPath(path, idx), depth + 1);
     next.push(replaced);
     if (replaced !== value[idx]) changed = true;
-    cumulativeBytes += Buffer.byteLength(JSON.stringify(replaced), 'utf8');
+    cumulativeBytes += estimateElementBytes(replaced);
+    keptCount++;
   }
   return changed ? next : value;
 }
 ```
+
+### 閾値 semantics (codex セカンドオピニオン High 3 解消)
+
+判定式 `if (cumulativeBytes > MAX_COLLECTION_BYTES)` の意味:
+
+- **cumulativeBytes ≤ 200,000B のとき**: element を保持して recurse 通過、`estimateElementBytes` 加算
+- **cumulativeBytes > 200,000B のとき**: 当該 index 以降を全 marker 化
+
+具体例: 各 element が 100,000B のとき、
+- idx=0 (cumulativeBytes=0): 保持 → cumulative=100,000
+- idx=1 (cumulativeBytes=100,000): 保持 → cumulative=200,000
+- idx=2 (cumulativeBytes=200,000): まだ閾値以下 → 保持 → cumulative=300,000
+- idx=3 (cumulativeBytes=300,000): **閾値超 → marker**
+
+つまり「閾値ちょうどに到達する element は保持、次から marker」semantics。AC-3 は次の数値で pin:
+
+| 入力 array | 各 element byte | 期待 |
+|---|---|---|
+| 200 件 × 1,000B | cumulative 1,000 → 200,000 | 200 件全保持 (閾値ちょうど) |
+| 201 件 × 1,000B | cumulative 1,000 → 200,000 → 201,000 | 200 件保持、201 件目 marker |
+| 200 件 × 999B | cumulative 999 → 199,800 | 200 件全保持 (閾値内) |
 
 ### perf 設計
 
@@ -158,7 +209,7 @@ const collectionAggregator = createWarnAggregator(
 );
 ```
 
-- 個別 warn payload: `{ path, arrayLength, cumulativeBytes, droppedIndex }`
+- 個別 warn payload: `{ path, arrayLength, cumulativeBytes, droppedIndex, maxCollectionBytes, keptCount }` (codex セカンドオピニオン Low 9 反映)
 - batch event: factory 派生 `'collection-overflow-batch'`
 - `pathPrefixes` histogram (PR #144) を自動継承: 攻撃時 array path 分布が batch payload に top-5 で残る
 - `MAX_HISTOGRAM_BUCKETS=256` + `(overflow)` bucket + `histogram-overflow` warn (PR #144 paired signal) も自動継承
@@ -185,14 +236,16 @@ const collectionAggregator = createWarnAggregator(
 |---|---|---|
 | AC-1 | 199KB array (200,000B 未満) → 全 element 保持 | 閾値内、original 全件 |
 | AC-2 | 大型 array (~1MB、500 件 × 2KB) → 閾値到達後 element が marker | 先頭 N 件保持、残りが `COLLECTION_OVERFLOW_MARKER` |
-| AC-3 境界値 | 199,999B / 200,000B / 200,001B (累積) | 200,000B 以内全保持、200,001B 到達次 element が marker |
+| AC-3 境界値 | 200 件 × 1000B (累積 200,000) / 201 件 × 1000B (累積 201,000) / 200 件 × 999B (累積 199,800) | 1: 200 件全保持 (閾値ちょうど) / 2: 200 件保持 + 1 件 marker / 3: 200 件全保持 (閾値内) |
 | AC-4 | nested object in array (`[{value: '<50KB string>'}, ...]`) | per-element JSON.stringify で累積、object 全体 byte で評価 |
 | AC-5 | image dataURI marker と co-existence | leaf-level で IMAGE_OMITTED_MARKER 化後の短文 (~60B) を cumulative に反映、collection guard が早期発火しない |
-| AC-6 | warn log payload (path / arrayLength / cumulativeBytes / droppedIndex) | `collection-overflow` event が個別 warn で発火 |
+| AC-6 | warn log payload (`path / arrayLength / cumulativeBytes / droppedIndex / maxCollectionBytes / keptCount`) | `collection-overflow` event が個別 warn で発火 (6 フィールド全て確認) |
 | AC-7 | sibling array 独立 (`{a: [200K], b: [200K]}`) | array A/B が別々に閾値超 (2 件の collection-overflow event) |
 | AC-8 | nested array of array (`[[...], [...]]`) | 内側 array が独立した cumulative counter |
 | AC-9 | non-array (object/scalar) は影響なし | 既存挙動維持、collection-overflow event 不発火 |
-| AC-10 | 既存 602 件 + 9 新規 = 611 件全 PASS | regression なし |
+| AC-10 | 既存 602 件 + N 新規 = 全 PASS | regression なし |
+| AC-13 defensive | `[undefined, 'A'.repeat(2000)]` (undefined element) | throw せず処理完了、undefined は 'null' 相当 4 byte で cumulative inc |
+| AC-14 defensive | `[1n, 'A'.repeat(2000)]` (BigInt element) | throw せず処理完了、BigInt は try-catch fallback で 4 byte 扱い |
 
 ### 観測性テスト追加 (PR #144 規律継承)
 
@@ -207,12 +260,14 @@ const collectionAggregator = createWarnAggregator(
 |---|---|
 | **JSON 全長プリチェック (元の案 B)** | sanitize 入口で `sanitizeForPrompt(input)` の全長を 1 回チェック。シンプルだが leaf marker 化の意図を 1 取り返しで上書き、別 enhancement 候補 |
 | **object sibling cumulative (元の案 C)** | 同一 parent の下の全 leaf 合計 byte 追跡。array 専用 vs オブジェクト全体の trade-off は別 Issue で検討 |
+| **sibling array × N 配列の全体 payload cap** (codex セカンドオピニオン Medium 6) | 本 PR は **各 array 200KB が独立**。sibling N 個あれば全体 N × 200KB まで増えうる。全体 cap (JSON 全長プリチェック相当) は別 Issue として保留 |
 | **`truncateOversizedStrings` 側 collection-level guard** | 本 PR は `stripPromptHeavyFields` 側のみ。truncate 側は `(no-path)` bucket 同様、別 enhancement |
 | **`MAX_COLLECTION_BYTES` の動的調整** | Gemini context size 変動 (1M context 等) に応じた閾値調整は別 issue |
+| **Uint8Array / Buffer element の handling** (codex セカンドオピニオン Low 11) | 現状 `JSON.stringify` で object 化されるが byte 計測は妥当に行われる。専用 handling は将来必要時に対応 |
 
 ## 10. Open Questions
 
-なし (3 件全確定 + per-element JSON.stringify trade-off は executor 判断で許容)
+なし (3 件全確定 + codex セカンドオピニオン High 3 + Medium 1 + Low 2 反映済)
 
 ## 11. リスクと緩和
 
@@ -222,13 +277,15 @@ const collectionAggregator = createWarnAggregator(
 | per-element JSON.stringify の perf 劣化 | 1000 element の array で ~10ms 級遅延 | 通常データは ≤1000 element 想定、攻撃時は閾値到達後 short-circuit で stringify 呼出が頭打ち |
 | nested array of nested array of nested... の累積 byte 計算が perf 暴走 | 攻撃 payload で各レベル stringify が指数的増殖 | `MAX_RECURSION_DEPTH=1000` で depth guard、超過時は marker 化で recurse 終端 |
 | `COLLECTION_OVERFLOW_MARKER` 自体の byte size 累積評価への影響 | marker 文字列 (~100B) 自体が次 element の cumulative に inc される | marker は閾値超後にしか出ないため、それ以降はどのみち全部 marker。実害なし |
+| **non-JSON-safe element (BigInt / 循環参照) で `JSON.stringify` が throw** (codex High 1-2) | `stripPromptHeavyFields` が突然 throw する regression | `estimateElementBytes` で try-catch + `JSON.stringify(v) ?? 'null'` の二重 defensive、AC-13/14 で pin |
+| **nested array of array で同 subtree が外側 element stringify で再シリアライズ** (codex Medium 4) | ネスト深さ分のコスト増 (指数的ではない) | 通常データ (深さ ≤5) では perf 影響小、深い wide tree は実用シナリオで稀 (`MAX_RECURSION_DEPTH=1000` の depth guard も二重防御) |
 
 ## 12. 実装手順 (Phase 9 で `/impl-plan` に渡す要約)
 
-1. `promptSafety.ts` に `MAX_COLLECTION_BYTES`, `COLLECTION_OVERFLOW_MARKER` を追加
-2. `stripPromptHeavyFields` 内で `collectionAggregator` を `createWarnAggregator('collection-overflow', ...)` で初期化
-3. array recurse loop を改修: 各 element の `Buffer.byteLength(JSON.stringify(replaced), 'utf8')` を cumulative に累積、閾値超で短絡 marker 置換
-4. `promptSafety.test.ts` に AC-1〜12 を TDD で追加 (AC-3 境界値を先に書き境界 pin)
+1. `promptSafety.ts` に `MAX_COLLECTION_BYTES`, `COLLECTION_OVERFLOW_MARKER`, `estimateElementBytes` helper を追加
+2. `stripPromptHeavyFields` 内で `collectionAggregator` を `createWarnAggregator('collection-overflow', ...)` で初期化、関数末尾に `flush()` 追加忘れ防止 (codex セカンドオピニオン Medium 5)
+3. array recurse loop を改修: 各 element の `estimateElementBytes(replaced)` を cumulative に累積、閾値超で短絡 marker 置換 + `keptCount` 追跡
+4. `promptSafety.test.ts` に AC-1〜12 + AC-13/14 (defensive) を TDD で追加 (AC-3 境界値を先に書き境界 pin)
 5. `npm test` / `npm run lint` 全 PASS 確認
 6. handoff 文書を `docs/handoff/` に追加 (実装完了後)
 7. /safe-refactor + /code-review low + /review-pr (large tier 該当時)
