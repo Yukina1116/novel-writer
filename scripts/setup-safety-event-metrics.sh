@@ -139,6 +139,9 @@ for event in "${SAFETY_EVENTS[@]}"; do
         continue
     fi
 
+    # codex review #3: describe → create/update は TOCTOU race。同 project で
+    # 2 名が同時実行すると片方が「Already Exists」で失敗する。create 失敗 →
+    # update へ retry することで concurrency safe な idempotent を達成する。
     if gcloud logging metrics describe "$metric_name" --project="$PROJECT" >/dev/null 2>&1; then
         echo "[apply] update log-based metric: ${metric_name}"
         gcloud logging metrics update "$metric_name" \
@@ -147,10 +150,18 @@ for event in "${SAFETY_EVENTS[@]}"; do
             --log-filter="$filter"
     else
         echo "[apply] create log-based metric: ${metric_name}"
-        gcloud logging metrics create "$metric_name" \
+        if ! gcloud logging metrics create "$metric_name" \
             --project="$PROJECT" \
             --description="$description" \
-            --log-filter="$filter"
+            --log-filter="$filter" 2>&1; then
+            # 並行実行で別プロセスが先に create 完了している場合、Already Exists で
+            # 失敗するため update に retry。両方 fail なら set -e で停止。
+            echo "[apply] create failed (likely race condition), retrying with update: ${metric_name}" >&2
+            gcloud logging metrics update "$metric_name" \
+                --project="$PROJECT" \
+                --description="$description" \
+                --log-filter="$filter"
+        fi
     fi
 done
 

@@ -24,6 +24,30 @@
 
 各 metric は **個別 warn** (`safetyEvent: 'image-omitted'`) と **batch warn** (`safetyEvent: 'image-omitted-batch'`) を **1 metric に合算**する。filter regex: `jsonPayload.safetyEvent=~"^<event>(-batch)?$"`
 
+### ⚠ metric の意味 (重要)
+
+この metric が count するのは **matching log entry 数** (= surge signal) であって **実 event 発生数の絶対値ではない**。
+
+`server/utils/promptSafety.ts` の `createWarnAggregator` factory は **per-call 上限 50 件の個別 warn + 1 件の batch warn** で log amplification を抑制する設計 (PR #139)。このため:
+
+- 1 call で 1000 件発生 → metric count は **50 個別 + 1 batch = 51 件**
+- 1 call で 30 件発生 → metric count は **30 個別 + 0 batch = 30 件** (batch 発火しない)
+- 100 call で各 5 件発生 → metric count は **500 個別 + 0 batch = 500 件**
+
+つまり **per-call で 51 件以上は観測できない**。これは surge 検知 (異常な call rate 検知) には十分だが、**「累積で N 件以上 1 call で起きた」を知りたい時は別経路**を使う。
+
+### 実 event 数を知る方法 (補助手段)
+
+`*-batch` log の payload にある `totalCount` / `omittedCount` / `pathPrefixes` field を Cloud Logging で別途 grep する (§4.3 / §4.4 参照)。例:
+
+```
+resource.type="cloud_run_revision"
+jsonPayload.safetyEvent="image-omitted-batch"
+jsonPayload.totalCount>1000
+```
+
+これで「1 call で 1000 件超の image-omitted が batch 集約された呼出」を時系列で見える。
+
 ### 前提条件
 
 - **gcloud CLI** がインストール済み、本田様アカウントで `gcloud auth login` 済み
@@ -156,17 +180,26 @@ jsonPayload.path=~"^appearance\."
 
 ## 5. alert policy 閾値調整手順
 
-setup script は 6 alert policy を scaffold するが、初期状態は `histogram-overflow` のみ enabled (発火即異常)。他 5 件は **disabled**。
+### ⚠ script の振る舞い (重要)
+
+`setup-safety-event-metrics.sh` は **log-based metric (6 件) を実際に gcloud で create/update する**が、**alert policy は scaffold (stdout 出力のみ) であり、実際に作成しない**。これは notification channel ID が環境依存 (本田様 email / Slack 等) で script に hardcoded できないため。
+
+したがって、`./scripts/setup-safety-event-metrics.sh --project xxx` 実行後の Cloud Monitoring policy 一覧 ([https://console.cloud.google.com/monitoring/alerting/policies](https://console.cloud.google.com/monitoring/alerting/policies)) には **何も増えていない**ことに注意。alert policy 作成は §5.3 以降の手順で Console から手動で実施する。
 
 ### 5.1 baseline 観察 (1〜4 週間)
 
-1. Cloud Logging Console → Logs Explorer で §4.1 query 実行
-2. 1 週間程度の「通常時の発火 rate」を観察 (例: image-omitted が平均 5 件/min)
-3. 「異常と判断したい rate」を baseline の 3〜10x で仮決定
+`prompt_safety_*_count` metric が gcloud script で作成済なので、Metrics Explorer で観察する:
 
-### 5.2 alert policy の閾値編集
+1. [https://console.cloud.google.com/monitoring/metrics-explorer](https://console.cloud.google.com/monitoring/metrics-explorer) を開く
+2. METRIC 選択で `logging.googleapis.com/user/prompt_safety_image_omitted_count` (等) を選択
+3. Time series chart で 1〜4 週間の rate を確認 (例: 平均 5 events/min)
+4. 異常と判断したい rate を baseline の 3〜10x で仮決定
 
-[https://console.cloud.google.com/monitoring/alerting/policies](https://console.cloud.google.com/monitoring/alerting/policies) で各 policy の閾値を編集:
+または Cloud Logging Console → Logs Explorer で §4.1 query を実行して目視で頻度確認も可。
+
+### 5.2 alert policy 新規作成 (Console)
+
+[https://console.cloud.google.com/monitoring/alerting/policies](https://console.cloud.google.com/monitoring/alerting/policies) で **CREATE POLICY** を押下し、metric ごとに以下の閾値で作成:
 
 | event | 閾値設定の目安 (baseline × 3) |
 |---|---|
@@ -176,6 +209,8 @@ setup script は 6 alert policy を scaffold するが、初期状態は `histog
 | `recursion-depth-exceeded` | 例: > 1 / 1 min |
 | `collection-overflow` | 例: > 5 / 1 min |
 | `histogram-overflow` | **>= 1** (初期 enabled) |
+
+⚠ **metric の上限値に注意**: §1 ⚠ で説明した「per-call 51 件上限」のため、上記閾値は metric count = matching log entry 数。「1 call で 1000 件」のような大規模 surge は §1 「実 event 数を知る方法」の batch totalCount 経路で観察する。
 
 ### 5.3 notification channel の設定
 
