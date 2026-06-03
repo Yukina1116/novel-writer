@@ -407,6 +407,71 @@ describe('observability (silent fail paired signal)', () => {
       expect.objectContaining({ safetyEvent: 'image-omitted-batch' })
     );
   });
+
+  // === Issue #137 #3 code-review CONFIRMED: depth-exceeded amplification も同 counter 対象 ===
+
+  /** depth > MAX_RECURSION_DEPTH を確実に踏む payload (1500 段ネスト object) */
+  function buildDeepChain(levels: number): Record<string, unknown> {
+    let node: Record<string, unknown> = { leaf: 'end' };
+    for (let i = 0; i < levels; i++) node = { a: node };
+    return node;
+  }
+
+  it('depth-exceeded warns are aggregated when total > MAX_WARN_PER_CALL (sibling × 51 deep chains)', () => {
+    // 51 個の sibling subtree が各々 depth 1001 超に到達 → 50 件個別 warn + 1 件 batch。
+    const deep = buildDeepChain(1500);
+    const payload: Record<string, unknown> = {};
+    for (let i = 0; i < 51; i++) payload[`sib${i}`] = deep;
+    stripPromptHeavyFields(payload);
+
+    const individualCalls = warnSpy.mock.calls.filter(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'recursion-depth-exceeded'
+    );
+    expect(individualCalls).toHaveLength(50);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        safetyEvent: 'recursion-depth-exceeded-batch',
+        totalCount: 51,
+        loggedCount: 50,
+        omittedCount: 1,
+      })
+    );
+  });
+
+  it('depth-exceeded boundary: 50 sibling deep chains emits 50 individual, NO batch', () => {
+    const deep = buildDeepChain(1500);
+    const payload: Record<string, unknown> = {};
+    for (let i = 0; i < 50; i++) payload[`sib${i}`] = deep;
+    stripPromptHeavyFields(payload);
+
+    const individualCalls = warnSpy.mock.calls.filter(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'recursion-depth-exceeded'
+    );
+    expect(individualCalls).toHaveLength(50);
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ safetyEvent: 'recursion-depth-exceeded-batch' })
+    );
+  });
+
+  it('truncateOversizedStrings also aggregates recursion-depth-exceeded warns', () => {
+    const deep = buildDeepChain(1500);
+    const payload: Record<string, unknown> = {};
+    for (let i = 0; i < 51; i++) payload[`sib${i}`] = deep;
+    truncateOversizedStrings(payload);
+
+    const individualCalls = warnSpy.mock.calls.filter(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'recursion-depth-exceeded'
+    );
+    expect(individualCalls).toHaveLength(50);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        safetyEvent: 'recursion-depth-exceeded-batch',
+        totalCount: 51,
+        loggedCount: 50,
+        omittedCount: 1,
+      })
+    );
+  });
 });
 
 describe('sanitizeForPrompt - composite (whitelist + size guard)', () => {
