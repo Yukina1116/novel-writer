@@ -1,4 +1,5 @@
 import { logger } from './logger';
+import { SAFETY_EVENTS } from './promptSafetyEvents';
 
 /**
  * AI プロンプトに埋め込むユーザー入力データの token-bomb 対策ヘルパー。
@@ -414,7 +415,7 @@ export function createWarnAggregator(individualEvent: string, individualMessage:
         overflowEmitted = true;
         logger.warn({
           message: 'promptSafety: path histogram saturation — new buckets aggregated into (overflow)',
-          safetyEvent: 'histogram-overflow',
+          safetyEvent: SAFETY_EVENTS.HISTOGRAM_OVERFLOW,
           parentEvent: individualEvent,
           maxBuckets: MAX_HISTOGRAM_BUCKETS,
         });
@@ -459,7 +460,7 @@ export function createWarnAggregator(individualEvent: string, individualMessage:
  * depth-exceeded 集約を継承できる。
  */
 function createDepthExceededAggregator(): WarnAggregator {
-  return createWarnAggregator('recursion-depth-exceeded', 'promptSafety: recursion depth exceeded');
+  return createWarnAggregator(SAFETY_EVENTS.RECURSION_DEPTH_EXCEEDED, 'promptSafety: recursion depth exceeded');
 }
 
 /**
@@ -473,9 +474,9 @@ function createDepthExceededAggregator(): WarnAggregator {
  * - 不変性: 入力を mutate せず、変更がなければ same reference を返す (perf hint)
  */
 export function stripPromptHeavyFields(data: unknown): unknown {
-  const imageAggregator = createWarnAggregator('image-omitted', 'promptSafety: image dataURI stripped');
+  const imageAggregator = createWarnAggregator(SAFETY_EVENTS.IMAGE_OMITTED, 'promptSafety: image dataURI stripped');
   const nonImageAggregator = createWarnAggregator(
-    'non-image-data-uri-omitted',
+    SAFETY_EVENTS.NON_IMAGE_DATA_URI_OMITTED,
     'promptSafety: non-image dataURI stripped'
   );
   const depthAggregator = createDepthExceededAggregator();
@@ -483,7 +484,7 @@ export function stripPromptHeavyFields(data: unknown): unknown {
   // stripPromptHeavyFields 呼出全体で 1 つ共有 (cumulative byte counter は array ごとに別
   // closure 変数で管理するので干渉しない)。image / non-image / depth と並列 flush。
   const collectionAggregator = createWarnAggregator(
-    'collection-overflow',
+    SAFETY_EVENTS.COLLECTION_OVERFLOW,
     'promptSafety: collection-level cumulative byte threshold exceeded'
   );
 
@@ -596,7 +597,7 @@ export function stripPromptHeavyFields(data: unknown): unknown {
  * 不変性: 入力を mutate しない。
  */
 export function truncateOversizedStrings(data: unknown, maxBytes: number = MAX_FIELD_BYTES): unknown {
-  const oversizedAggregator = createWarnAggregator('oversized-truncated', 'promptSafety: oversized string truncated');
+  const oversizedAggregator = createWarnAggregator(SAFETY_EVENTS.OVERSIZED_TRUNCATED, 'promptSafety: oversized string truncated');
   const depthAggregator = createDepthExceededAggregator();
 
   function recurse(value: unknown, depth: number): unknown {
