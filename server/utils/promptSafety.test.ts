@@ -904,3 +904,178 @@ describe('非画像 dataURI 検出 hardening (PR #143 review-pr 指摘反映)', 
     expect(out.memo).toBe(NON_IMAGE_DATA_URI_MARKER);
   });
 });
+
+// === Issue #137 #5: batch log の pathPrefixes histogram (51 件目以降の path 喪失復旧) ===
+
+describe('createWarnAggregator path histogram (Issue #137 #5)', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+  });
+
+  it('AC-1: 単一 path 多発 (gallery[0].url × 100) → pathPrefixes に gallery[*].url が count 100 で記録', () => {
+    const big = `data:image/png;base64,${'A'.repeat(600)}`;
+    const items = Array.from({ length: 100 }, () => big);
+    stripPromptHeavyFields({ gallery: items });
+
+    const batchCall = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'image-omitted-batch'
+    );
+    expect(batchCall).toBeDefined();
+    const payload = batchCall![0] as { pathPrefixes: Array<[string, number]> };
+    expect(payload.pathPrefixes).toBeDefined();
+    expect(payload.pathPrefixes).toContainEqual(['gallery[*]', 100]);
+  });
+
+  it('AC-2: 異種 path 混在 → 各 prefix が count とともに記録される (top-5 内に収まるケース)', () => {
+    // 3 種類 × 各 60 件 = 180 件 (>50 で batch 発火)、top-5 内なので全部出る
+    const imageBig = `data:image/png;base64,${'A'.repeat(600)}`;
+    const payload: Record<string, unknown> = {
+      gallery: Array.from({ length: 60 }, () => imageBig),
+      portraits: Array.from({ length: 60 }, () => imageBig),
+      avatars: Array.from({ length: 60 }, () => imageBig),
+    };
+    stripPromptHeavyFields(payload);
+
+    const batchCall = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'image-omitted-batch'
+    );
+    expect(batchCall).toBeDefined();
+    const batchPayload = batchCall![0] as { pathPrefixes: Array<[string, number]> };
+    const map = new Map(batchPayload.pathPrefixes);
+    expect(map.get('gallery[*]')).toBe(60);
+    expect(map.get('portraits[*]')).toBe(60);
+    expect(map.get('avatars[*]')).toBe(60);
+  });
+
+  it('AC-3: top-5 超 → 上位 5 prefix のみ残り、低頻度 path は drop される', () => {
+    // 6 種類の path、各々 count が違う → top-5 を切り捨て
+    const imageBig = `data:image/png;base64,${'A'.repeat(600)}`;
+    const payload: Record<string, unknown> = {
+      a: Array.from({ length: 20 }, () => imageBig), // count 20
+      b: Array.from({ length: 15 }, () => imageBig), // count 15
+      c: Array.from({ length: 10 }, () => imageBig), // count 10
+      d: Array.from({ length: 5 }, () => imageBig),  // count 5
+      e: Array.from({ length: 3 }, () => imageBig),  // count 3
+      f: Array.from({ length: 2 }, () => imageBig),  // count 2 → drop (top-5 圏外)
+    };
+    stripPromptHeavyFields(payload);
+
+    const batchCall = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'image-omitted-batch'
+    );
+    expect(batchCall).toBeDefined();
+    const batchPayload = batchCall![0] as { pathPrefixes: Array<[string, number]> };
+    expect(batchPayload.pathPrefixes).toHaveLength(5);
+    const map = new Map(batchPayload.pathPrefixes);
+    expect(map.has('a[*]')).toBe(true);
+    expect(map.has('b[*]')).toBe(true);
+    expect(map.has('e[*]')).toBe(true);
+    expect(map.has('f[*]')).toBe(false);
+  });
+
+  it('AC-4: array index normalize: gallery[0] / gallery[1] / gallery[2] が同 prefix gallery[*] にまとまる', () => {
+    // 100 件の image (各 idx 違い) → 全部 'gallery[*]' bucket
+    const imageBig = `data:image/png;base64,${'A'.repeat(600)}`;
+    stripPromptHeavyFields({ gallery: Array.from({ length: 100 }, () => imageBig) });
+
+    const batchCall = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'image-omitted-batch'
+    );
+    expect(batchCall).toBeDefined();
+    const batchPayload = batchCall![0] as { pathPrefixes: Array<[string, number]> };
+    // gallery[*] 1 件のみ (array index が normalize されている)
+    expect(batchPayload.pathPrefixes).toEqual([['gallery[*]', 100]]);
+  });
+
+  it('AC-5: path が渡されない aggregator (oversized / truncate 経由) では (no-path) bucket になる', () => {
+    // truncateOversizedStrings は recurse が path を渡さない → (no-path)
+    const big = 'X'.repeat(MAX_FIELD_BYTES + 1);
+    const items = Array.from({ length: 60 }, () => big);
+    truncateOversizedStrings({ list: items });
+
+    const batchCall = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'oversized-truncated-batch'
+    );
+    expect(batchCall).toBeDefined();
+    const batchPayload = batchCall![0] as { pathPrefixes: Array<[string, number]> };
+    expect(batchPayload.pathPrefixes).toContainEqual(['(no-path)', 60]);
+  });
+
+  it('AC-6: 50 件以下 → batch event 自体 emit されない (pathPrefixes も発火しない)', () => {
+    const imageBig = `data:image/png;base64,${'A'.repeat(600)}`;
+    stripPromptHeavyFields({ gallery: Array.from({ length: 50 }, () => imageBig) });
+
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ safetyEvent: 'image-omitted-batch' })
+    );
+  });
+
+  it('AC-7: cross-aggregator independence: image-omitted-batch と non-image-data-uri-omitted-batch の pathPrefixes は別 histogram', () => {
+    const imageBig = `data:image/png;base64,${'A'.repeat(600)}`;
+    const nonImageBig = `data:application/pdf;base64,${'B'.repeat(600)}`;
+    const payload = {
+      images: Array.from({ length: 60 }, () => imageBig),
+      pdfs: Array.from({ length: 60 }, () => nonImageBig),
+    };
+    stripPromptHeavyFields(payload);
+
+    const imageBatch = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'image-omitted-batch'
+    );
+    const nonImageBatch = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'non-image-data-uri-omitted-batch'
+    );
+    expect(imageBatch).toBeDefined();
+    expect(nonImageBatch).toBeDefined();
+
+    const imageMap = new Map((imageBatch![0] as { pathPrefixes: Array<[string, number]> }).pathPrefixes);
+    const nonImageMap = new Map(
+      (nonImageBatch![0] as { pathPrefixes: Array<[string, number]> }).pathPrefixes
+    );
+    // 各 batch は自分の path のみ持ち、互いに混入しない
+    expect(imageMap.get('images[*]')).toBe(60);
+    expect(imageMap.has('pdfs[*]')).toBe(false);
+    expect(nonImageMap.get('pdfs[*]')).toBe(60);
+    expect(nonImageMap.has('images[*]')).toBe(false);
+  });
+
+  it('AC-8: non-image-data-uri-omitted-batch でも pathPrefixes が乗る (PR #143 経路継承)', () => {
+    const nonImageBig = `data:application/pdf;base64,${'A'.repeat(600)}`;
+    stripPromptHeavyFields({ docs: Array.from({ length: 60 }, () => nonImageBig) });
+
+    const batchCall = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'non-image-data-uri-omitted-batch'
+    );
+    expect(batchCall).toBeDefined();
+    const batchPayload = batchCall![0] as { pathPrefixes: Array<[string, number]> };
+    expect(batchPayload.pathPrefixes).toContainEqual(['docs[*]', 60]);
+  });
+
+  it('AC-9: recursion-depth-exceeded-batch でも pathPrefixes が乗る (stripPromptHeavyFields 経路は path 付き)', () => {
+    /** 1500 段ネスト object */
+    function buildDeepChain(levels: number): Record<string, unknown> {
+      let node: Record<string, unknown> = { leaf: 'end' };
+      for (let i = 0; i < levels; i++) node = { a: node };
+      return node;
+    }
+    const deep = buildDeepChain(1500);
+    const payload: Record<string, unknown> = {};
+    for (let i = 0; i < 60; i++) payload[`sib${i}`] = deep;
+    stripPromptHeavyFields(payload);
+
+    const batchCall = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'recursion-depth-exceeded-batch'
+    );
+    expect(batchCall).toBeDefined();
+    const batchPayload = batchCall![0] as { pathPrefixes: Array<[string, number]> };
+    expect(batchPayload.pathPrefixes).toBeDefined();
+    expect(batchPayload.pathPrefixes.length).toBeGreaterThan(0);
+    // sib0.a.a.... の prefix なので 'sib*' 等にはならず 'sib0.a.a.a.a...' のような長い path が並ぶ
+    // (sib0 / sib1 ... は dot-path 区切りで array index 表記でないため normalize 対象外)
+    // top-5 に何が並ぶかは実装の hash 順序依存だが、合計 60 を pathPrefixes count 合計が満たすことを pin
+    const totalCount = batchPayload.pathPrefixes.reduce((sum, [, c]) => sum + c, 0);
+    expect(totalCount).toBeLessThanOrEqual(60);
+    expect(totalCount).toBeGreaterThan(0);
+  });
+});
