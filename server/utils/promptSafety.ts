@@ -141,7 +141,21 @@ function joinPath(parent: string, segment: string | number): string {
 }
 
 /**
- * per-call warn 集約を行う aggregator (Issue #137 #4 / code-review PR #139 CONFIRMED 対応)。
+ * tick payload で渡せないキー (factory が固定する予約 key)。
+ *
+ * (a) payload spread shadowing 防御 (Issue #137 #4 残り a):
+ * tick の logger.warn では `{ ...buildPayload(), message: individualMessage, safetyEvent: individualEvent }` の
+ * 順で spread し、callsite からの payload が固定 key を上書きできない構造にしている。型レベルでも
+ * `message` / `safetyEvent` を `never` 制約することで compile-time 防御し、server/utils/logger.ts の
+ * 確立規律 (`{ ...payload, severity, timestamp, service }` で予約キー保護) と同じ altitude を保つ。
+ */
+export type WarnAggregatorPayload = Record<string, unknown> & {
+  message?: never;
+  safetyEvent?: never;
+};
+
+/**
+ * per-call warn 集約を行う aggregator (Issue #137 #4 / code-review PR #139 / #140 CONFIRMED 対応)。
  *
  * 旧設計 (PR #139 直後): stripPromptHeavyFields と truncateOversizedStrings の各 recurse closure
  * 内に `totalCount` / `loggedCount` を持ち、3 種類の safetyEvent (image-omitted /
@@ -150,20 +164,33 @@ function joinPath(parent: string, segment: string | number): string {
  * log aggregation 層で再発する原因だった。
  *
  * 本 factory に括り出すことで:
- * - callsite は `aggregator.tick(payload)` 1 行で個別 warn (上限超は自動 skip)
+ * - callsite は `aggregator.tick(buildPayload)` 1 行で個別 warn (上限超は自動 skip)
  * - 関数末尾で `aggregator.flush()` 1 行で集約 log emit
  * - 新規 sanitize 関数 / 新規 safetyEvent 追加時に counter scaffolding をコピペする必要なし
  *
  * 不変条件:
  * - `tick()` 呼出は totalCount を必ず inc、loggedCount は MAX_WARN_PER_CALL 超で打ち止め
  * - `flush()` は totalCount > MAX_WARN_PER_CALL の時のみ 1 件 emit (totalCount=0 や ≤MAX では何もしない)
+ * - callsite payload で `message` / `safetyEvent` を上書き不可 (型 + 実行時 spread 順)
  *
- * @param individualEvent 個別 warn の safetyEvent (例: 'image-omitted')
- * @param batchEvent 集約 warn の safetyEvent (例: 'image-omitted-batch')
- * @param individualMessage 個別 warn の message (例: 'promptSafety: image dataURI stripped')
- * @param batchMessage 集約 warn の message
+ * @param individualEvent 個別 warn の safetyEvent (例: 'image-omitted')。集約 warn の safetyEvent は
+ *   `${individualEvent}-batch` で派生 (Issue #137 #4 残り b)
+ * @param individualMessage 個別 warn の message (例: 'promptSafety: image dataURI stripped')。集約 warn の
+ *   message は `promptSafety: ${individualEvent} warn amplification suppressed` で派生
+ *
+ * ## individualEvent の制約 (派生衝突回避)
+ *
+ * factory が batchEvent / batchMessage を機械生成する性質上、以下の値を渡すと degenerate な
+ * 集約 log になる:
+ * - **空文字 `''`**: `batchEvent = '-batch'` / `batchMessage = 'promptSafety:  warn amplification suppressed'` (double space)
+ * - **`-batch` suffix 付き** (例 `'image-omitted-batch'`): `batchEvent = 'image-omitted-batch-batch'` で個別と batch の区別が曖昧化、
+ *   かつ別 aggregator (例 `image-omitted`) の batchEvent と衝突する
+ *
+ * 現状 callsite はすべて hardcoded literal で degenerate input を渡していないが、factory が
+ * `export` されているため外部 caller では渡さないこと。defensive runtime guard は overkill のため
+ * 入れていない (内部 only かつ 3 callsite で抑止)。
  */
-interface WarnAggregator {
+export interface WarnAggregator {
   /**
    * 1 件検出時に呼ぶ。totalCount は必ず inc、loggedCount は MAX_WARN_PER_CALL 超で打ち止め。
    *
@@ -173,27 +200,28 @@ interface WarnAggregator {
    * regression があった。`tick(() => ({ ... }))` に変えることで threshold 内のみ closure を
    * 呼び出し、上限超後は closure 自体を skip (Buffer.byteLength も走らない)。
    */
-  tick: (buildPayload: () => Record<string, unknown>) => void;
+  tick: (buildPayload: () => WarnAggregatorPayload) => void;
   /** 関数末尾で 1 回呼ぶ。totalCount > MAX_WARN_PER_CALL の時のみ 1 件集約 log を emit。 */
   flush: () => void;
 }
 
-function createWarnAggregator(
-  individualEvent: string,
-  batchEvent: string,
-  individualMessage: string,
-  batchMessage: string,
-): WarnAggregator {
+export function createWarnAggregator(individualEvent: string, individualMessage: string): WarnAggregator {
+  // (b) batchEvent / batchMessage は individualEvent から機械生成 (Issue #137 #4 残り b)。
+  // 旧設計の 4 引数 positional 渡しは batch 名 typo の register-or-forget リスクが残っていた。
+  const batchEvent = `${individualEvent}-batch`;
+  const batchMessage = `promptSafety: ${individualEvent} warn amplification suppressed`;
+
   let totalCount = 0;
   let loggedCount = 0;
   return {
-    tick(buildPayload: () => Record<string, unknown>) {
+    tick(buildPayload: () => WarnAggregatorPayload) {
       totalCount++;
       if (loggedCount < MAX_WARN_PER_CALL) {
+        // (a) spread 順反転で固定 message / safetyEvent が payload から上書きされない構造を保証。
         logger.warn({
+          ...buildPayload(),
           message: individualMessage,
           safetyEvent: individualEvent,
-          ...buildPayload(),
         });
         loggedCount++;
       }
@@ -213,6 +241,17 @@ function createWarnAggregator(
 }
 
 /**
+ * (c) recursion-depth-exceeded aggregator の helper (Issue #137 #4 残り c)。
+ *
+ * stripPromptHeavyFields / truncateOversizedStrings の両方で同じ event + message の aggregator が
+ * 必要なため、helper 経由で literal の重複を避ける。新規 sanitize 関数が増えても 1 行で同じ
+ * depth-exceeded 集約を継承できる。
+ */
+function createDepthExceededAggregator(): WarnAggregator {
+  return createWarnAggregator('recursion-depth-exceeded', 'promptSafety: recursion depth exceeded');
+}
+
+/**
  * 任意 path の `data:image/` 始まり文字列 (一定 byte 数以上) を omission marker に置換する
  * content-based scanner (Issue #134)。
  *
@@ -223,18 +262,8 @@ function createWarnAggregator(
  * - 不変性: 入力を mutate せず、変更がなければ same reference を返す (perf hint)
  */
 export function stripPromptHeavyFields(data: unknown): unknown {
-  const imageAggregator = createWarnAggregator(
-    'image-omitted',
-    'image-omitted-batch',
-    'promptSafety: image dataURI stripped',
-    'promptSafety: image-omitted warn amplification suppressed',
-  );
-  const depthAggregator = createWarnAggregator(
-    'recursion-depth-exceeded',
-    'recursion-depth-exceeded-batch',
-    'promptSafety: recursion depth exceeded',
-    'promptSafety: recursion-depth-exceeded warn amplification suppressed',
-  );
+  const imageAggregator = createWarnAggregator('image-omitted', 'promptSafety: image dataURI stripped');
+  const depthAggregator = createDepthExceededAggregator();
 
   function recurse(value: unknown, path: string, depth: number): unknown {
     if (depth > MAX_RECURSION_DEPTH) {
@@ -294,18 +323,8 @@ export function stripPromptHeavyFields(data: unknown): unknown {
  * 不変性: 入力を mutate しない。
  */
 export function truncateOversizedStrings(data: unknown, maxBytes: number = MAX_FIELD_BYTES): unknown {
-  const oversizedAggregator = createWarnAggregator(
-    'oversized-truncated',
-    'oversized-truncated-batch',
-    'promptSafety: oversized string truncated',
-    'promptSafety: oversized-truncated warn amplification suppressed',
-  );
-  const depthAggregator = createWarnAggregator(
-    'recursion-depth-exceeded',
-    'recursion-depth-exceeded-batch',
-    'promptSafety: recursion depth exceeded',
-    'promptSafety: recursion-depth-exceeded warn amplification suppressed',
-  );
+  const oversizedAggregator = createWarnAggregator('oversized-truncated', 'promptSafety: oversized string truncated');
+  const depthAggregator = createDepthExceededAggregator();
 
   function recurse(value: unknown, depth: number): unknown {
     if (depth > MAX_RECURSION_DEPTH) {
