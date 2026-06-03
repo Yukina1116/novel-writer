@@ -491,7 +491,6 @@ describe('observability (silent fail paired signal)', () => {
     let byteLengthCalls = 0;
     // Buffer.byteLength は多 overload (string / Buffer / TypedArray ...) のため any 経由で差し替え。
     // 検証目的の単純 spy なので型安全性は犠牲にする。
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (Buffer as any).byteLength = (str: any, encoding?: BufferEncoding) => {
       byteLengthCalls++;
       return originalByteLength(str, encoding as BufferEncoding);
@@ -499,7 +498,6 @@ describe('observability (silent fail paired signal)', () => {
     try {
       stripPromptHeavyFields({ gallery: items });
     } finally {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (Buffer as any).byteLength = originalByteLength;
     }
 
@@ -621,7 +619,6 @@ describe('createWarnAggregator factory unit (Issue #137 #4 残り)', () => {
     // 型上は `message?: never` / `safetyEvent?: never` で禁止されているが、
     // 実行時の構造的防御 (spread 順) も pin する。`as any` で型 guard を bypass して悪意 payload を作る。
     agg.tick(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       () => ({ message: 'HIJACKED', safetyEvent: 'HIJACKED-event', path: 'a' } as any)
     );
     // factory 固定値が必ず残ることを pin

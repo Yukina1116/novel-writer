@@ -149,7 +149,7 @@ function joinPath(parent: string, segment: string | number): string {
  * `message` / `safetyEvent` を `never` 制約することで compile-time 防御し、server/utils/logger.ts の
  * 確立規律 (`{ ...payload, severity, timestamp, service }` で予約キー保護) と同じ altitude を保つ。
  */
-type WarnAggregatorPayload = Record<string, unknown> & {
+export type WarnAggregatorPayload = Record<string, unknown> & {
   message?: never;
   safetyEvent?: never;
 };
@@ -177,6 +177,18 @@ type WarnAggregatorPayload = Record<string, unknown> & {
  *   `${individualEvent}-batch` で派生 (Issue #137 #4 残り b)
  * @param individualMessage 個別 warn の message (例: 'promptSafety: image dataURI stripped')。集約 warn の
  *   message は `promptSafety: ${individualEvent} warn amplification suppressed` で派生
+ *
+ * ## individualEvent の制約 (派生衝突回避)
+ *
+ * factory が batchEvent / batchMessage を機械生成する性質上、以下の値を渡すと degenerate な
+ * 集約 log になる:
+ * - **空文字 `''`**: `batchEvent = '-batch'` / `batchMessage = 'promptSafety:  warn amplification suppressed'` (double space)
+ * - **`-batch` suffix 付き** (例 `'image-omitted-batch'`): `batchEvent = 'image-omitted-batch-batch'` で個別と batch の区別が曖昧化、
+ *   かつ別 aggregator (例 `image-omitted`) の batchEvent と衝突する
+ *
+ * 現状 callsite はすべて hardcoded literal で degenerate input を渡していないが、factory が
+ * `export` されているため外部 caller では渡さないこと。defensive runtime guard は overkill のため
+ * 入れていない (内部 only かつ 3 callsite で抑止)。
  */
 export interface WarnAggregator {
   /**
