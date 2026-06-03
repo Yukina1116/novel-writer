@@ -161,13 +161,18 @@ if (Array.isArray(value)) {
 - idx=2 (cumulativeBytes=200,000): まだ閾値以下 → 保持 → cumulative=300,000
 - idx=3 (cumulativeBytes=300,000): **閾値超 → marker**
 
-つまり「閾値ちょうどに到達する element は保持、次から marker」semantics。AC-3 は次の数値で pin:
+つまり「閾値ちょうどに到達する element は保持、次から marker」semantics。AC-3 は次の数値で pin
+(**PR #145 review-pr code-reviewer M-2 訂正**: 初版の table で `201 件 × 1,000B → 200 件保持` と書いていたが pseudo-code と矛盾 (実機では idx=200 入口で cumulative=200,000 → まだ閾値以下で保持 → cumulative=201,000、終了で 201 件全保持)。202 件で初めて 1 件 marker):
 
-| 入力 array | 各 element byte | 期待 |
+| 入力 array | 各 element byte (JSON.stringify 後) | 期待 |
 |---|---|---|
-| 200 件 × 1,000B | cumulative 1,000 → 200,000 | 200 件全保持 (閾値ちょうど) |
-| 201 件 × 1,000B | cumulative 1,000 → 200,000 → 201,000 | 200 件保持、201 件目 marker |
-| 200 件 × 999B | cumulative 999 → 199,800 | 200 件全保持 (閾値内) |
+| 200 件 × 1,000B raw (1,002 byte/件) | cumulative 1,002 → ... → 200,400 (idx=199 後) | 200 件全保持 (idx=199 入口 199,398 で保持、終了) |
+| 202 件 × 1,000B raw (1,002 byte/件) | cumulative 1,002 → ... → 200,400 → 201,402 (idx=201 入口) | 201 件保持、idx=201 で 1 件 marker (droppedIndex=201) |
+| 200 件 × 999B raw (1,001 byte/件) | cumulative 1,001 → ... → 200,200 (idx=199 後) | 200 件全保持 (閾値内) |
+
+実装テストは `AC-3a` (200 件 × 999B 全保持) / `AC-3b` (250 件 × 1000B → idx=200 で marker、droppedIndex=200) で
+pseudo-code と整合した境界値を pin している。
+JSON.stringify("a".repeat(N)) は `"..."` の quote 2 byte 込で N+2 byte になる点に注意。
 
 ### perf 設計
 

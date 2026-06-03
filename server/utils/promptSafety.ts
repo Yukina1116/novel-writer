@@ -198,6 +198,7 @@ const PATH_PREFIX_TOP_N = 5;
  * property 名 (`url` / `caption` 等) は意味的に異なるため normalize 対象外で残す。
  *
  * 例: `gallery[0].url` → `gallery[*].url` / `gallery[1].caption` → `gallery[*].caption`
+ * 例: `items[200]` → `items[*]` (末尾 index で終わる path、collection-overflow 経路で発生)
  * 例: array index を含まない dot-path (`users.profile.avatar`) はそのまま `users.profile.avatar` で残る
  *     (dot-path 構造は意味情報として保持し、prefix 集約は array index 専用)。
  */
@@ -520,30 +521,33 @@ export function stripPromptHeavyFields(data: unknown): unknown {
       let changed = false;
       const next: unknown[] = [];
       for (let idx = 0; idx < value.length; idx++) {
+        // loop 先頭で path を 1 度算出し overflow / retention 両分岐で共有 (object recurse 経路と
+        // altitude 整合、joinPath の per-iter 重複呼出を排除)。
+        const itemPath = joinPath(path, idx);
         if (cumulativeBytes > MAX_COLLECTION_BYTES) {
           // 閾値超: 当該 index 以降を marker 置換。recurse skip で perf も改善 (攻撃 payload 時こそ
           // stringify 呼出が頭打ちになる)。lazy builder で payload 計算を threshold 内のみ実行。
-          const overflowIdx = idx;
-          const overflowPath = joinPath(path, overflowIdx);
-          const arrayLength = value.length;
+          // observedKeptCount / observedCumulativeBytes は規律継承の local snapshot (PR #143/#144、
+          // 将来 lazy builder が deferred 化された場合の stale value 防止)。idx / value.length は
+          // for-loop の per-iteration `let` binding で closure-safe のため snapshot 不要。
           const observedKeptCount = keptCount;
           const observedCumulativeBytes = cumulativeBytes;
           collectionAggregator.tick(
             () => ({
-              path: overflowPath,
-              arrayLength,
+              path: itemPath,
+              arrayLength: value.length,
               cumulativeBytes: observedCumulativeBytes,
-              droppedIndex: overflowIdx,
+              droppedIndex: idx,
               maxCollectionBytes: MAX_COLLECTION_BYTES,
               keptCount: observedKeptCount,
             }),
-            overflowPath
+            itemPath
           );
           next.push(COLLECTION_OVERFLOW_MARKER);
           changed = true;
           continue;
         }
-        const replaced = recurse(value[idx], joinPath(path, idx), depth + 1);
+        const replaced = recurse(value[idx], itemPath, depth + 1);
         next.push(replaced);
         if (replaced !== value[idx]) changed = true;
         // processed element の byte を加算 (marker 化された短文も計上、二重防御の補完)。

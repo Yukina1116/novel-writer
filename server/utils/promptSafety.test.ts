@@ -504,13 +504,13 @@ describe('observability (silent fail paired signal)', () => {
       (Buffer as any).byteLength = originalByteLength;
     }
 
-    // 旧 eager 設計 (PR #140 以前): 100 leaf × 2 回 = 200 回
-    // 新 lazy 設計 (PR #140): 100 leaf × 1 回 (isImageDataUri) + 50 leaf × 1 回 (tick builder) = 150 回
-    // PR #145 (Issue #137 #2 collection-level guard): + 100 leaf × 1 回 (estimateElementBytes 経由) = 250 回
-    // lazy 化の本質 (threshold 超後の tick builder skip) は維持されているため、350 未満であれば
-    // 退行していない。collection-overflow guard は array recurse 内の独立計算で、別 baseline を持つ。
-    expect(byteLengthCalls).toBeLessThan(350);
-    expect(byteLengthCalls).toBeGreaterThanOrEqual(250);
+    // 意図ベースの pin (review I-3): 「lazy 化の本質 = threshold 超後の tick builder skip」と
+    // 「2 桁の amplification 退行を block」のみを assert する。具体値は推移するため幅広めに取る。
+    // - 下限 100: 各 leaf の isImageDataUri 必須計算が 100 件確定走る
+    // - 上限 500: 旧 eager amplification (~200) を 2.5x 超える退行を block
+    // - 推移履歴 (参考): PR #140 lazy 化 ~150 → PR #145 collection-overflow ~250 → 将来 sanitize 関数追加で再増加可能性
+    expect(byteLengthCalls).toBeGreaterThanOrEqual(100);
+    expect(byteLengthCalls).toBeLessThan(500);
   });
 
   it('image and depth aggregators are independent (one event burst does not exhaust the other quota)', () => {
@@ -1293,7 +1293,10 @@ describe('stripPromptHeavyFields - collection-level guard (Issue #137 #2 残り)
     expect(payload.droppedIndex).toBe(200);
     expect(payload.maxCollectionBytes).toBe(200_000);
     expect(payload.keptCount).toBe(200);
-    expect(payload.cumulativeBytes).toBeGreaterThan(200_000);
+    // cumulativeBytes 具体値 pin (review I-2): 1002 byte/件 × 200 件 = 200,400 byte
+    // idx=199 を保持して cumulative=200,400 → idx=200 入口で 200,400 > 200,000 で fire。
+    // Cloud Logging 運用 dashboard の信頼性担保のため厳密値で固定。
+    expect(payload.cumulativeBytes).toBe(200_400);
   });
 
   it('AC-7: sibling array 独立 — {a: [overflow], b: [overflow]} は batch.pathPrefixes で各々観測', () => {
@@ -1344,6 +1347,18 @@ describe('stripPromptHeavyFields - collection-level guard (Issue #137 #2 残り)
     expect(out.name).toBe('Alice');
     expect(out.age).toBe(42);
     expect(out.profile.bio).toBe('a'.repeat(50_000));
+    const collectionFired = warnSpy.mock.calls.find(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'collection-overflow'
+    );
+    expect(collectionFired).toBeUndefined();
+  });
+
+  it('AC-9b: empty array [] は collection-overflow 不発火、changed=false で same reference (review I-1)', () => {
+    // for-loop が iteration 0 回で抜けるパスを pin。将来「length===0 で marker 返却」等の bug を block。
+    const inner: unknown[] = [];
+    const data = { list: inner };
+    const out = stripPromptHeavyFields(data) as typeof data;
+    expect(out.list).toBe(inner); // changed=false で same reference
     const collectionFired = warnSpy.mock.calls.find(
       (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'collection-overflow'
     );
@@ -1420,5 +1435,43 @@ describe('stripPromptHeavyFields - collection-level guard (Issue #137 #2 残り)
     const out = stripPromptHeavyFields(data) as { mixed: unknown[] };
     expect(out.mixed).toHaveLength(3);
     expect(out.mixed[1]).toBe('a'.repeat(2000));
+  });
+
+  it('AC-14b defensive: 循環参照を含む array element でも throw せず処理完了 (review C-1)', () => {
+    // 設計文書 §11 Risk row 7 で明示宣言済の defensive 要件。BigInt と並ぶ JSON.stringify throw
+    // パターンを test で hard-pin する。将来 estimateElementBytes の try-catch が「perf 改善」を
+    // 名目に shallow stringify 化されると、循環参照 input で 500 INTERNAL 量産になる regression を CI で block。
+    type CyclicNode = { name: string; self?: CyclicNode };
+    const cyclic: CyclicNode = { name: 'self-ref' };
+    cyclic.self = cyclic;
+    const data = { mixed: [cyclic, 'a'.repeat(2000)] };
+    expect(() => stripPromptHeavyFields(data)).not.toThrow();
+    const out = stripPromptHeavyFields(data) as { mixed: unknown[] };
+    expect(out.mixed).toHaveLength(2);
+  });
+
+  it('AC-15: collection-overflow aggregator も histogram-overflow paired signal を継承する (review I-4)', () => {
+    // MAX_HISTOGRAM_BUCKETS=256 超過時の (overflow) bucket + histogram-overflow paired warn は
+    // PR #144 で確立済の規律。aggregator factory 共通実装で本 PR の collection-overflow 経路も
+    // 対称適用されるはず。257 種類の sibling array を全部 overflow させて pin する。
+    const elem = buildElementOfBytes(1000);
+    const payload: Record<string, unknown> = {};
+    for (let i = 0; i < 257; i++) {
+      payload[`sib${i}`] = Array.from({ length: 250 }, () => elem);
+    }
+    stripPromptHeavyFields(payload);
+    const histogramOverflowCalls = warnSpy.mock.calls.filter(
+      (c) =>
+        (c[0] as { safetyEvent?: string }).safetyEvent === 'histogram-overflow' &&
+        (c[0] as { parentEvent?: string }).parentEvent === 'collection-overflow'
+    );
+    // 飽和は 1 度だけ発火 (paired signal 規律: overflowEmitted で gate される)
+    expect(histogramOverflowCalls).toHaveLength(1);
+    const overflowPayload = histogramOverflowCalls[0]![0] as {
+      maxBuckets: number;
+      parentEvent: string;
+    };
+    expect(overflowPayload.maxBuckets).toBe(256);
+    expect(overflowPayload.parentEvent).toBe('collection-overflow');
   });
 });
