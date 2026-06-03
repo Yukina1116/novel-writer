@@ -11,9 +11,12 @@ import { logger } from './logger';
  * 同種パターンが world (`mapImageUrl` 経由) にも存在し、character/reply にも未対策の経路が
  * 残っていた (Codex セカンドオピニオン指摘)。本モジュールで一元化する。
  *
- * 防御戦略 (Codex 推奨の案 C):
- *   1. 既知フィールド名 + `data:` prefix の **whitelist** 除去 (確実な既知パスを断つ)
- *   2. 任意 leaf string の **size guard** (将来の未知フィールド・SVG dataURI 等のセーフティネット)
+ * 防御戦略 (Issue #134 で content-based 検出に進化):
+ *   1. 任意 path の **`data:image/` prefix 検出** (whitelist 不要、新フィールド自動カバー)
+ *   2. 任意 leaf string の **size guard** (非画像 dataURI・将来の他種 token-bomb の backstop)
+ *
+ * 旧設計 (PR #132/#133) は `IMAGE_FIELD_PATHS` whitelist だったが、新フィールド追加時の
+ * register-or-forget リスクが残った (Issue #134)。content-based に切替で構造的に解消。
  *
  * 引数は mutate しない (pure helpers)。
  */
@@ -39,123 +42,196 @@ export const OVERSIZED_STRING_MARKER = '[oversized-string: truncated to fit toke
 export const MAX_FIELD_BYTES = 100_000;
 
 /**
- * 「ここに画像 dataURI が入りうる」既知フィールドの dot-path。
- * 新規フィールド追加時はここに足すだけで character / world / 他 service 全てに適用される。
+ * 画像 dataURI と判定する prefix。`data:image/` は MIME type の image/* を全てカバー
+ * (png, jpeg, webp, gif, svg+xml, avif, heic 等)。
  */
-const IMAGE_FIELD_PATHS: readonly string[] = [
-  'appearance.imageUrl', // character: Imagen 生成
-  'mapImageUrl', // world: ユーザーアップロード or 生成
-];
+const IMAGE_DATA_URI_PREFIX = 'data:image/';
 
 /**
- * dot-path で指定されたフィールドに `data:` で始まる文字列があれば omission marker に置換。
- * 引数 mutate なし。path 途中が object でない場合は no-op (型不一致 safe)。
+ * false positive 防止: この byte 長未満の `data:image/` 始まり文字列は素通しする。
+ * 理由: ナレッジや description に「`data:image/png` という形式の文字列」が短文として
+ * 含まれる可能性があるため。実 dataURI は base64 payload で必ず数百〜数千 bytes 以上。
  */
-function replaceDataUriAtPath(input: Record<string, unknown>, path: string): Record<string, unknown> {
-  const segments = path.split('.');
-  let cursor: unknown = input;
-  for (let i = 0; i < segments.length - 1; i++) {
-    if (!cursor || typeof cursor !== 'object') return input;
-    cursor = (cursor as Record<string, unknown>)[segments[i]];
-  }
-  if (!cursor || typeof cursor !== 'object') return input;
-  const leafKey = segments[segments.length - 1];
-  const leafValue = (cursor as Record<string, unknown>)[leafKey];
-  if (typeof leafValue !== 'string' || !leafValue.startsWith('data:')) return input;
+const MIN_IMAGE_DATA_URI_BYTES = 100;
 
-  // 観測可能性 (silent fail paired signal): 本番障害再発の早期検知のため、
-  // sanitize 発火を必ず構造化ログに残す。message body は marker 自身を含めず
-  // metric 集計に必要な path / bytes (UTF-8 実バイト数) のみ。
-  logger.warn({
-    message: 'promptSafety: image dataURI stripped',
-    safetyEvent: 'image-omitted',
-    path,
-    bytes: Buffer.byteLength(leafValue, 'utf8'),
-  });
+/**
+ * 再帰の深さ上限。これを超えるネストは `OVERSIZED_STRING_MARKER` 相当に置換して終端する。
+ *
+ * 理由 (Issue #134 part 1 code-review CONFIRMED): Express body limit 10MB 内では理論上
+ * 100 万段超のネスト JSON が乗りうるが、Node.js V8 default stack で素直な再帰は約 2-3k 段で
+ * `RangeError: Maximum call stack size exceeded` になる。攻撃者が深いネスト payload を送ると
+ * sanitize 完遂前に throw → 500 INTERNAL 量産の DoS 経路が出来てしまう。
+ *
+ * 1000 は通常の character / world / chunk データ (実用上 10 段以下) に十分余裕、かつ V8 stack
+ * の約 1/3 で安全マージンを持つ値。閾値到達時は `[recursion-depth-exceeded]` marker に切替。
+ */
+const MAX_RECURSION_DEPTH = 1000;
 
-  // 不変性のため path に沿って必要な階層だけ新しいオブジェクトに置換する。
-  function setAtPath(obj: Record<string, unknown>, depth: number): Record<string, unknown> {
-    const key = segments[depth];
-    if (depth === segments.length - 1) {
-      return { ...obj, [key]: IMAGE_OMITTED_MARKER };
-    }
-    const child = obj[key];
-    if (!child || typeof child !== 'object') return obj;
-    return { ...obj, [key]: setAtPath(child as Record<string, unknown>, depth + 1) };
-  }
-  return setAtPath(input, 0);
+/** 再帰深度超過時に leaf に置く marker。AI / observability に「ここから先は省略された」事実だけ伝える。 */
+export const RECURSION_DEPTH_EXCEEDED_MARKER = '[recursion-depth-exceeded: nested data truncated to fit safety limit]';
+
+/**
+ * Object.prototype 汚染になりうる特殊 key (`__proto__` / `constructor` / `prototype`)。
+ *
+ * 理由 (Issue #134 part 1 code-review PLAUSIBLE): JSON.parse は `__proto__` を own enumerable
+ * property として残すため、`Object.entries(obj)` で `['__proto__', value]` が返り、
+ * 新規 object への `next['__proto__'] = value` 代入が setter を triggers し、返却 object の
+ * `[[Prototype]]` が attacker-controlled subtree に置換される。現状 caller は `JSON.stringify` /
+ * `Object.keys` 経由でしか sanitized 値を触らないため AI prompt 流入は無いが、将来 caller が
+ * `safeXxx.someField` のような直接 property access に変わると inheritance 経由で attacker
+ * payload を拾う latent sink。再帰トラバース時に key 自体をスキップして根治する。
+ */
+const PROTOTYPE_POLLUTION_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * 任意 leaf string が「画像 dataURI と判定すべきか」を返す。
+ * - `data:image/` で始まる
+ * - UTF-8 byte 長が `MIN_IMAGE_DATA_URI_BYTES` 以上 (false positive 防止)
+ */
+function isImageDataUri(value: string): boolean {
+  return value.startsWith(IMAGE_DATA_URI_PREFIX) && Buffer.byteLength(value, 'utf8') >= MIN_IMAGE_DATA_URI_BYTES;
 }
 
 /**
- * 既知の画像 dataURI フィールド (whitelist) を omission marker に置換する。
- * character の `appearance.imageUrl` と world の `mapImageUrl` を一度に処理。
- * 不変性: 入力を mutate せず、影響パスのみ新オブジェクトに差し替える。
+ * 再帰スキャン中の現在 path を log 用に組み立てる。
+ * object key は dot 区切り、array index は `[i]` で表現する (例: `appearance.gallery[0].url`)。
+ */
+function joinPath(parent: string, segment: string | number): string {
+  if (typeof segment === 'number') return `${parent}[${segment}]`;
+  if (parent === '') return segment;
+  return `${parent}.${segment}`;
+}
+
+/**
+ * 任意 path の `data:image/` 始まり文字列 (一定 byte 数以上) を omission marker に置換する
+ * content-based scanner (Issue #134)。
+ *
+ * - whitelist 不要 → 新フィールド追加時の register-or-forget リスクを構造的に解消
+ * - object / array を再帰、非画像 dataURI (application/pdf 等) と短文 `data:image/...`
+ *   (例: ナレッジに記述された MIME 形式の説明文) は対象外
+ * - 観測可能性: 発火ごとに `safetyEvent: 'image-omitted'` + path (dot-path + array index) を warn ログ
+ * - 不変性: 入力を mutate せず、変更がなければ same reference を返す (perf hint)
  */
 export function stripPromptHeavyFields(data: unknown): unknown {
-  if (!data || typeof data !== 'object') return data;
-  let result = data as Record<string, unknown>;
-  let changed = false;
-  for (const path of IMAGE_FIELD_PATHS) {
-    const replaced = replaceDataUriAtPath(result, path);
-    if (replaced !== result) {
-      changed = true;
-      result = replaced;
+  function recurse(value: unknown, path: string, depth: number): unknown {
+    if (depth > MAX_RECURSION_DEPTH) {
+      logger.warn({
+        message: 'promptSafety: recursion depth exceeded',
+        safetyEvent: 'recursion-depth-exceeded',
+        path,
+        depth,
+      });
+      return RECURSION_DEPTH_EXCEEDED_MARKER;
     }
+    if (typeof value === 'string') {
+      if (!isImageDataUri(value)) return value;
+      logger.warn({
+        message: 'promptSafety: image dataURI stripped',
+        safetyEvent: 'image-omitted',
+        path,
+        bytes: Buffer.byteLength(value, 'utf8'),
+      });
+      return IMAGE_OMITTED_MARKER;
+    }
+    if (Array.isArray(value)) {
+      let changed = false;
+      const next = value.map((item, idx) => {
+        const replaced = recurse(item, joinPath(path, idx), depth + 1);
+        if (replaced !== item) changed = true;
+        return replaced;
+      });
+      return changed ? next : value;
+    }
+    if (value && typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      let changed = false;
+      const next: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        if (PROTOTYPE_POLLUTION_KEYS.has(k)) {
+          changed = true; // key を drop することは「変更あり」と扱い、汚染源 subtree を sanitized 結果に持ち込まない
+          continue;
+        }
+        const replaced = recurse(v, joinPath(path, k), depth + 1);
+        if (replaced !== v) changed = true;
+        next[k] = replaced;
+      }
+      return changed ? next : value;
+    }
+    return value;
   }
-  return changed ? result : data;
+  return recurse(data, '', 0);
 }
 
 /**
  * 任意 leaf string の size guard。再帰的に object / array を辿り、UTF-8 byte 長が maxBytes を
  * 超える string を `OVERSIZED_STRING_MARKER` に置換する。
  *
- * whitelist (stripPromptHeavyFields) で取り切れない未知フィールド・将来追加フィールド・
- * SVG dataURI 等のセーフティネット。サイズ判定は `Buffer.byteLength(s, 'utf8')` で行う
- * (`String.length` は UTF-16 code unit ベースで、日本語/絵文字混在下で評価がブレる)。
+ * content-based scanner (`stripPromptHeavyFields`) で取り切れない非画像 oversized 文字列
+ * (将来追加フィールド・application/pdf 等の非画像 dataURI) のセーフティネット。サイズ判定は
+ * `Buffer.byteLength(s, 'utf8')` で行う (`String.length` は UTF-16 code unit ベースで、
+ * 日本語/絵文字混在下で評価がブレる)。
+ *
+ * 深さガード (`MAX_RECURSION_DEPTH`) と prototype pollution skip (`PROTOTYPE_POLLUTION_KEYS`)
+ * は stripPromptHeavyFields と同じ理由で適用 (詳細は同関数 JSDoc 参照)。
  *
  * 不変性: 入力を mutate しない。
  */
 export function truncateOversizedStrings(data: unknown, maxBytes: number = MAX_FIELD_BYTES): unknown {
-  if (typeof data === 'string') {
-    const utf8Bytes = Buffer.byteLength(data, 'utf8');
-    if (utf8Bytes > maxBytes) {
+  function recurse(value: unknown, depth: number): unknown {
+    if (depth > MAX_RECURSION_DEPTH) {
       logger.warn({
-        message: 'promptSafety: oversized string truncated',
-        safetyEvent: 'oversized-truncated',
-        bytes: utf8Bytes,
-        maxBytes,
+        message: 'promptSafety: recursion depth exceeded',
+        safetyEvent: 'recursion-depth-exceeded',
+        depth,
       });
-      return OVERSIZED_STRING_MARKER;
+      return RECURSION_DEPTH_EXCEEDED_MARKER;
     }
-    return data;
-  }
-  if (Array.isArray(data)) {
-    let changed = false;
-    const next = data.map((item) => {
-      const replaced = truncateOversizedStrings(item, maxBytes);
-      if (replaced !== item) changed = true;
-      return replaced;
-    });
-    return changed ? next : data;
-  }
-  if (data && typeof data === 'object') {
-    const obj = data as Record<string, unknown>;
-    let changed = false;
-    const next: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(obj)) {
-      const replaced = truncateOversizedStrings(v, maxBytes);
-      if (replaced !== v) changed = true;
-      next[k] = replaced;
+    if (typeof value === 'string') {
+      const utf8Bytes = Buffer.byteLength(value, 'utf8');
+      if (utf8Bytes > maxBytes) {
+        logger.warn({
+          message: 'promptSafety: oversized string truncated',
+          safetyEvent: 'oversized-truncated',
+          bytes: utf8Bytes,
+          maxBytes,
+        });
+        return OVERSIZED_STRING_MARKER;
+      }
+      return value;
     }
-    return changed ? next : data;
+    if (Array.isArray(value)) {
+      let changed = false;
+      const next = value.map((item) => {
+        const replaced = recurse(item, depth + 1);
+        if (replaced !== item) changed = true;
+        return replaced;
+      });
+      return changed ? next : value;
+    }
+    if (value && typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      let changed = false;
+      const next: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        if (PROTOTYPE_POLLUTION_KEYS.has(k)) {
+          changed = true;
+          continue;
+        }
+        const replaced = recurse(v, depth + 1);
+        if (replaced !== v) changed = true;
+        next[k] = replaced;
+      }
+      return changed ? next : value;
+    }
+    return value;
   }
-  return data;
+  return recurse(data, 0);
 }
 
 /**
  * AI プロンプトに埋め込む直前にユーザー入力データを sanitize するメイン関数。
- * whitelist 除去 → size guard の順で適用する (whitelist 適用後の dataURI は既にマーカー化されており、
- * size guard が同じ場所を二重処理することはない)。
+ * content-based 除去 → size guard の順で適用する (content-based 適用後の画像 dataURI は
+ * 既にマーカー化されており、size guard が同じ場所を二重処理することはない)。
  */
 export function sanitizeForPrompt(data: unknown, maxBytes: number = MAX_FIELD_BYTES): unknown {
   return truncateOversizedStrings(stripPromptHeavyFields(data), maxBytes);
