@@ -30,7 +30,7 @@
 
 - **NFR-1**: `stripPromptHeavyFields(data: unknown): unknown` の signature 不変、既存呼出側 (`worldService`, `characterService`, `characterPrompt`) は無変更
 - **NFR-2**: `truncateOversizedStrings` (size guard backstop) には触れず、`MAX_FIELD_BYTES=100_000` の altitude を維持
-- **NFR-3**: 既存テスト 569 件全 PASS (regression なし)
+- **NFR-3**: 既存テスト 571 件全 PASS (regression なし)。なお `store/backupSlice.test.ts > T5: AwaitingPassphrase → Decrypting → Idle (retry == MAX, force close + toast)` は M6 PR-C 領域の **flaky timeout (5000ms 上限、再実行で 500ms で PASS)** で本 Issue と無関係。本 PR で対応しない
 - **NFR-4**: 入力 mutate なし (pure helpers の規律維持)
 
 ## 3. アーキテクチャ
@@ -139,7 +139,7 @@ codex 指摘 Low-Medium。個別 warn payload に MIME 種別 (`,` までの med
 | AC-7 | `{ image: 'data:image/png;base64,' + 'X'.repeat(800) }` (image 既存 path) | `IMAGE_OMITTED_MARKER` (NON_IMAGE 側でない、判定順 regression pin) |
 | AC-8 | image array 100 件 + non-image array 100 件 | `image-omitted-batch` と `non-image-data-uri-omitted-batch` が**別 event** で集約 emit (cross-event independence) |
 | AC-9 | `{ appearance: { imageUrl: '<image 800B>' }, memo: '<non-image 800B>' }` | path log: 個別 warn (先頭 50 件) に `appearance.imageUrl` と `memo` が含まれる |
-| AC-10 | 既存 569 件全 PASS (regression なし) | `npm test` で確認 |
+| AC-10 | 既存 571 件全 PASS (regression なし)。flaky T5 (M6 backupSlice) は本 Issue 範囲外で除外 | `npm test` で確認 |
 | AC-11 | `{ pdf: 'DATA:application/pdf;base64,' + 'A'.repeat(800) }` (大文字 prefix) | `NON_IMAGE_DATA_URI_MARKER` (case insensitive 化の検証) |
 | AC-12 | `{ pdf: '\n data:application/pdf;base64,' + 'A'.repeat(800) }` (先頭空白) | `NON_IMAGE_DATA_URI_MARKER` (空白吸収) |
 | AC-13 | `{ empty: 'data:;base64,' + 'A'.repeat(800) }` (空 MIME) | `NON_IMAGE_DATA_URI_MARKER` (非画像扱い) |
