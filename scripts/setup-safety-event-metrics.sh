@@ -135,6 +135,11 @@ for event in "${SAFETY_EVENTS[@]}"; do
         echo "  name:        ${metric_name}"
         echo "  description: ${description}"
         echo "  filter:      ${filter}"
+        # paired signal (Issue #149 残-A): 実 gcloud command 文字列を露出させて
+        # CI 環境 (gcloud 不在) で flag rename / quoting bug / metric 命名規約 typo
+        # を grep test で機械検知可能にする。本番適用前の最終確認にも利用できる。
+        # 表示は create 固定 (実行時は describe 結果次第で update へ分岐するが引数規約は同じ)。
+        echo "  command:     gcloud logging metrics create ${metric_name} --project=${PROJECT} --description='${description}' --log-filter='${filter}'"
         echo ""
         continue
     fi
