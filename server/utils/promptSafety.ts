@@ -1,4 +1,5 @@
 import { logger } from './logger';
+import { SAFETY_EVENTS, SAFETY_EVENT_BATCH_SUFFIX, type SafetyEventName } from './promptSafetyEvents';
 
 /**
  * AI プロンプトに埋め込むユーザー入力データの token-bomb 対策ヘルパー。
@@ -385,10 +386,12 @@ export interface WarnAggregator {
   flush: () => void;
 }
 
-export function createWarnAggregator(individualEvent: string, individualMessage: string): WarnAggregator {
-  // (b) batchEvent / batchMessage は individualEvent から機械生成 (Issue #137 #4 残り b)。
+export function createWarnAggregator(individualEvent: SafetyEventName, individualMessage: string): WarnAggregator {
+  // batchEvent / batchMessage は individualEvent から機械生成。
   // 旧設計の 4 引数 positional 渡しは batch 名 typo の register-or-forget リスクが残っていた。
-  const batchEvent = `${individualEvent}-batch`;
+  // batchEvent suffix は SAFETY_EVENT_BATCH_SUFFIX を SoT として参照することで
+  // template literal type `SafetyEventBatchName` と runtime の link を担保。
+  const batchEvent = `${individualEvent}${SAFETY_EVENT_BATCH_SUFFIX}`;
   const batchMessage = `promptSafety: ${individualEvent} warn amplification suppressed`;
 
   let totalCount = 0;
@@ -414,7 +417,7 @@ export function createWarnAggregator(individualEvent: string, individualMessage:
         overflowEmitted = true;
         logger.warn({
           message: 'promptSafety: path histogram saturation — new buckets aggregated into (overflow)',
-          safetyEvent: 'histogram-overflow',
+          safetyEvent: SAFETY_EVENTS.HISTOGRAM_OVERFLOW,
           parentEvent: individualEvent,
           maxBuckets: MAX_HISTOGRAM_BUCKETS,
         });
@@ -459,7 +462,7 @@ export function createWarnAggregator(individualEvent: string, individualMessage:
  * depth-exceeded 集約を継承できる。
  */
 function createDepthExceededAggregator(): WarnAggregator {
-  return createWarnAggregator('recursion-depth-exceeded', 'promptSafety: recursion depth exceeded');
+  return createWarnAggregator(SAFETY_EVENTS.RECURSION_DEPTH_EXCEEDED, 'promptSafety: recursion depth exceeded');
 }
 
 /**
@@ -473,9 +476,9 @@ function createDepthExceededAggregator(): WarnAggregator {
  * - 不変性: 入力を mutate せず、変更がなければ same reference を返す (perf hint)
  */
 export function stripPromptHeavyFields(data: unknown): unknown {
-  const imageAggregator = createWarnAggregator('image-omitted', 'promptSafety: image dataURI stripped');
+  const imageAggregator = createWarnAggregator(SAFETY_EVENTS.IMAGE_OMITTED, 'promptSafety: image dataURI stripped');
   const nonImageAggregator = createWarnAggregator(
-    'non-image-data-uri-omitted',
+    SAFETY_EVENTS.NON_IMAGE_DATA_URI_OMITTED,
     'promptSafety: non-image dataURI stripped'
   );
   const depthAggregator = createDepthExceededAggregator();
@@ -483,7 +486,7 @@ export function stripPromptHeavyFields(data: unknown): unknown {
   // stripPromptHeavyFields 呼出全体で 1 つ共有 (cumulative byte counter は array ごとに別
   // closure 変数で管理するので干渉しない)。image / non-image / depth と並列 flush。
   const collectionAggregator = createWarnAggregator(
-    'collection-overflow',
+    SAFETY_EVENTS.COLLECTION_OVERFLOW,
     'promptSafety: collection-level cumulative byte threshold exceeded'
   );
 
@@ -596,7 +599,7 @@ export function stripPromptHeavyFields(data: unknown): unknown {
  * 不変性: 入力を mutate しない。
  */
 export function truncateOversizedStrings(data: unknown, maxBytes: number = MAX_FIELD_BYTES): unknown {
-  const oversizedAggregator = createWarnAggregator('oversized-truncated', 'promptSafety: oversized string truncated');
+  const oversizedAggregator = createWarnAggregator(SAFETY_EVENTS.OVERSIZED_TRUNCATED, 'promptSafety: oversized string truncated');
   const depthAggregator = createDepthExceededAggregator();
 
   function recurse(value: unknown, depth: number): unknown {
