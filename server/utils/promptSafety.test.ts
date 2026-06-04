@@ -1132,8 +1132,14 @@ describe('createWarnAggregator path histogram (Issue #137 #5)', () => {
     // payload に含まれることを pin。MAX_HISTOGRAM_BUCKETS=256 を超えた最初の path が
     // 含まれていれば、attack payload の path family を Cloud Logging から特定可能。
     expect(depthOverflows[0][0]).toHaveProperty('firstOverflowPath');
-    expect(typeof (depthOverflows[0][0] as { firstOverflowPath?: unknown }).firstOverflowPath).toBe('string');
-    expect((depthOverflows[0][0] as { firstOverflowPath: string }).firstOverflowPath.length).toBeGreaterThan(0);
+    const firstOverflowPath = (depthOverflows[0][0] as { firstOverflowPath: string }).firstOverflowPath;
+    expect(typeof firstOverflowPath).toBe('string');
+    expect(firstOverflowPath.length).toBeGreaterThan(0);
+    // review-pr pr-test-analyzer Rating 7: length > 0 だけだと `(no-path)` / `(overflow)`
+    // sentinel が偶然 emit された場合に silent regression を素通す。実 path が露出して
+    // いることを pin する (forensic 価値の本質: attack payload の path 構造復元可能性)。
+    expect(firstOverflowPath).not.toBe('(no-path)');
+    expect(firstOverflowPath).not.toBe('(overflow)');
 
     // batch payload に (overflow) bucket が含まれる (top-5 の中、または truncated 外に集約)
     const batchCall = warnSpy.mock.calls.find(
