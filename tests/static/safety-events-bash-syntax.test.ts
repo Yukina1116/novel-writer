@@ -121,5 +121,12 @@ describe('setup-safety-event-metrics.sh bash syntax (AC-4a)', () => {
 
         // (d) --project=<value> 形式で project ID が展開されている
         expect(stdout).toContain('--project=test-project-id');
+
+        // (e) flag literal 自体の rename 検知 (review-pr silent-failure §5 / OQ-2)
+        // SDK が --description= → --description-text= に rename された場合、(b)(c) は
+        // 値側を grep するため緑のまま通過する false negative リスクを塞ぐ。
+        // --description=' (quoted form) と --log-filter=' を直接 pin。
+        expect(stdout).toMatch(/--description='promptSafety:/);
+        expect(stdout).toMatch(/--log-filter='resource\.type=/);
     });
 });
