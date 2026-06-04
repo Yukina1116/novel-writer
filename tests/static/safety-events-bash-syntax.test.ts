@@ -89,4 +89,44 @@ describe('setup-safety-event-metrics.sh bash syntax (AC-4a)', () => {
         ).toBe(1);
         expect(result.stderr).toContain('invalid GCP project ID format');
     });
+
+    // Issue #149 残-A: dry-run output に実 gcloud command 文字列が含まれることを pin。
+    // CI 環境 (gcloud 不在) では --dry-run の echo 出力のみが検証対象となる silent
+    // failure path に対し、command 行の paired signal で flag rename / quoting bug /
+    // metric 命名規約 typo / filter regex syntax regression を機械検知する。
+    it('--dry-run output exposes actual gcloud command line for regression detection (Issue #149 残-A)', () => {
+        const stdout = execFileSync(
+            'bash',
+            [SH_PATH, '--project', 'test-project-id', '--dry-run'],
+            { stdio: 'pipe', encoding: 'utf-8' }
+        );
+
+        // (a) command 行が ALL_SAFETY_EVENT_NAMES.length (= 6) 件出力される
+        const cmdLines = stdout.match(/command:\s+gcloud logging metrics create /g);
+        expect(cmdLines).not.toBeNull();
+        expect(cmdLines?.length).toBe(ALL_SAFETY_EVENT_NAMES.length);
+
+        // (b) metric 命名規約 prompt_safety_<event-with-underscores>_count が全 event 分含まれる
+        for (const event of ALL_SAFETY_EVENT_NAMES) {
+            const expectedMetricName = `prompt_safety_${event.replace(/-/g, '_')}_count`;
+            expect(stdout).toContain(`gcloud logging metrics create ${expectedMetricName}`);
+        }
+
+        // (c) filter regex pattern `jsonPayload.safetyEvent=~"^<event>(-batch)?$"` が
+        //     全 event 分含まれる (filter syntax の regression を検知)
+        for (const event of ALL_SAFETY_EVENT_NAMES) {
+            const expectedFilter = `jsonPayload.safetyEvent=~"^${event}(-batch)?$"`;
+            expect(stdout).toContain(expectedFilter);
+        }
+
+        // (d) --project=<value> 形式で project ID が展開されている
+        expect(stdout).toContain('--project=test-project-id');
+
+        // (e) flag literal 自体の rename 検知 (review-pr silent-failure §5 / OQ-2)
+        // SDK が --description= → --description-text= に rename された場合、(b)(c) は
+        // 値側を grep するため緑のまま通過する false negative リスクを塞ぐ。
+        // --description=' (quoted form) と --log-filter=' を直接 pin。
+        expect(stdout).toMatch(/--description='promptSafety:/);
+        expect(stdout).toMatch(/--log-filter='resource\.type=/);
+    });
 });

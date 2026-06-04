@@ -79,6 +79,8 @@ jsonPayload.totalCount>1000
 ./scripts/setup-safety-event-metrics.sh --project novel-writer-dev
 ```
 
+> **paired signal 規律 (Issue #149 残-A)**: `--dry-run` 出力には実 gcloud command 文字列 (`command:` 行) が含まれるため、本番適用前の最終確認 (`--log-filter` / `--description` / metric 名規約の syntax 検証) に利用できる。CI でも grep test (`tests/static/safety-events-bash-syntax.test.ts`) で実 command の regression (flag rename / quoting bug / filter syntax) を機械検知する (silent fail 防止)。
+
 ### 2.2 本番への展開
 
 ```bash
