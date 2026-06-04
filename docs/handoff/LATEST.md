@@ -18,11 +18,13 @@
 
 paired signal pattern 6 段確立 (SAFETY_EVENTS enum + lockstep test / firstOverflowPath / dry-run command echo / bytes-estimation-failed aggregator / 7 件目拡張実証 / review-pr drift 修正)。テスト 619 → 640 (+21)。
 
-## Issue Net 変化 (本セッション最終)
+## Issue Net 変化 (本セッション最終、再開セッション分のみ)
 
 - **Close 数**: 1 件 (#149 umbrella、PR #153 マージで auto-close)
 - **起票数**: 2 件 (#155 AC-3 backward compat gap / #156 callback register-or-forget リスク)
 - **Net**: **-1 件**
+
+(series 全体 = 中断前 + 再開後の通算は handoff series doc 末尾参照)
 
 **Net 負だが構造的価値あり**: 起票 2 件はいずれも PR #153 review-pr 4 並列の Medium 指摘 (本田様承認済 follow-up)。triage 基準満たす (rating ≥ 7 + 構造的 surface)。
 
