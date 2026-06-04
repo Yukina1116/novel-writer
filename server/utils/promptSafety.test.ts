@@ -1128,6 +1128,12 @@ describe('createWarnAggregator path histogram (Issue #137 #5)', () => {
       parentEvent: 'recursion-depth-exceeded',
       maxBuckets: 256,
     });
+    // Issue #149 残-C: 飽和を引き起こした path (firstOverflowPath) が forensic 情報として
+    // payload に含まれることを pin。MAX_HISTOGRAM_BUCKETS=256 を超えた最初の path が
+    // 含まれていれば、attack payload の path family を Cloud Logging から特定可能。
+    expect(depthOverflows[0][0]).toHaveProperty('firstOverflowPath');
+    expect(typeof (depthOverflows[0][0] as { firstOverflowPath?: unknown }).firstOverflowPath).toBe('string');
+    expect((depthOverflows[0][0] as { firstOverflowPath: string }).firstOverflowPath.length).toBeGreaterThan(0);
 
     // batch payload に (overflow) bucket が含まれる (top-5 の中、または truncated 外に集約)
     const batchCall = warnSpy.mock.calls.find(

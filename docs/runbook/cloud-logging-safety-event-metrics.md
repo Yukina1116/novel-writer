@@ -235,8 +235,18 @@ alert 発火時に何を確認するか。
 |---|---|
 | **症状** | aggregator が cardinality cap (256 bucket) を超過 |
 | **原因候補** | (a) path が大量に異種混在 (unique 1000+ leaf) / (b) `(no-path)` bucket への大量集約 / (c) bug で path が generate されている |
-| **確認手順** | §4 query で `parentEvent` field を確認 → どの個別 event 由来かを特定 → batch log の `pathPrefixes` を見る |
+| **確認手順** | §4 query で `parentEvent` field を確認 → どの個別 event 由来かを特定 → batch log の `pathPrefixes` を見る → **`firstOverflowPath` field で飽和を引き起こした path family を特定** (Issue #149 残-C で追加) |
 | **対処** | path 多様性が正当なら `MAX_HISTOGRAM_BUCKETS` 引き上げ検討、bug なら通常修正 |
+
+#### firstOverflowPath grep query 例
+
+```
+resource.type="cloud_run_revision"
+jsonPayload.safetyEvent="histogram-overflow"
+jsonPayload.firstOverflowPath:*
+```
+
+`firstOverflowPath` は 257 個目以降の unique path のうち最初に到達したもの (例: `appearance.gallery[*].metadata.attacker-key-xxx.url`)。これにより 51 件目以降が `(overflow)` bucket に集約されても、攻撃 payload の path 構造を再現可能。
 
 ### 6.2 image-omitted surge (1 分 > 100 件)
 
