@@ -139,9 +139,10 @@ for event in "${SAFETY_EVENTS[@]}"; do
         continue
     fi
 
-    # codex review #3: describe → create/update は TOCTOU race。同 project で
-    # 2 名が同時実行すると片方が「Already Exists」で失敗する。create 失敗 →
-    # update へ retry することで concurrency safe な idempotent を達成する。
+    # describe → create/update は TOCTOU race。同 project で 2 名が同時実行すると
+    # 片方が「Already Exists」で失敗する。create 失敗時は stderr を capture し、
+    # Already Exists pattern のみ update に retry する (review-pr silent-failure
+    # 指摘: 不明 error を race と決め打たない、真の原因を運用者に surface する)。
     if gcloud logging metrics describe "$metric_name" --project="$PROJECT" >/dev/null 2>&1; then
         echo "[apply] update log-based metric: ${metric_name}"
         gcloud logging metrics update "$metric_name" \
@@ -150,17 +151,30 @@ for event in "${SAFETY_EVENTS[@]}"; do
             --log-filter="$filter"
     else
         echo "[apply] create log-based metric: ${metric_name}"
-        if ! gcloud logging metrics create "$metric_name" \
+        # stderr を変数 capture、stdout は素通しで運用者に見せる。
+        create_stderr_file="$(mktemp)"
+        if gcloud logging metrics create "$metric_name" \
             --project="$PROJECT" \
             --description="$description" \
-            --log-filter="$filter" 2>&1; then
-            # 並行実行で別プロセスが先に create 完了している場合、Already Exists で
-            # 失敗するため update に retry。両方 fail なら set -e で停止。
-            echo "[apply] create failed (likely race condition), retrying with update: ${metric_name}" >&2
-            gcloud logging metrics update "$metric_name" \
-                --project="$PROJECT" \
-                --description="$description" \
-                --log-filter="$filter"
+            --log-filter="$filter" 2>"$create_stderr_file"; then
+            rm -f "$create_stderr_file"
+        else
+            create_stderr="$(cat "$create_stderr_file")"
+            rm -f "$create_stderr_file"
+            # Already Exists / already exists を含む場合のみ race と判定して update に retry。
+            # それ以外 (IAM 失効 / API 未有効化 / quota 超過 / filter syntax error 等) は
+            # raw stderr を operator に表示して exit (raw error を握り潰さない)。
+            if [[ "$create_stderr" == *"Already Exists"* || "$create_stderr" == *"already exists"* ]]; then
+                echo "[apply] create failed with Already Exists (race condition confirmed), retrying with update: ${metric_name}" >&2
+                gcloud logging metrics update "$metric_name" \
+                    --project="$PROJECT" \
+                    --description="$description" \
+                    --log-filter="$filter"
+            else
+                echo "[error] create failed for ${metric_name} (NOT a race condition):" >&2
+                printf '%s\n' "$create_stderr" >&2
+                exit 1
+            fi
         fi
     fi
 done

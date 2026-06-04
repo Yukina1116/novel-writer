@@ -1,5 +1,5 @@
 import { logger } from './logger';
-import { SAFETY_EVENTS } from './promptSafetyEvents';
+import { SAFETY_EVENTS, SAFETY_EVENT_BATCH_SUFFIX, type SafetyEventName } from './promptSafetyEvents';
 
 /**
  * AI プロンプトに埋め込むユーザー入力データの token-bomb 対策ヘルパー。
@@ -386,10 +386,12 @@ export interface WarnAggregator {
   flush: () => void;
 }
 
-export function createWarnAggregator(individualEvent: string, individualMessage: string): WarnAggregator {
-  // (b) batchEvent / batchMessage は individualEvent から機械生成 (Issue #137 #4 残り b)。
+export function createWarnAggregator(individualEvent: SafetyEventName, individualMessage: string): WarnAggregator {
+  // batchEvent / batchMessage は individualEvent から機械生成。
   // 旧設計の 4 引数 positional 渡しは batch 名 typo の register-or-forget リスクが残っていた。
-  const batchEvent = `${individualEvent}-batch`;
+  // batchEvent suffix は SAFETY_EVENT_BATCH_SUFFIX を SoT として参照することで
+  // template literal type `SafetyEventBatchName` と runtime の link を担保。
+  const batchEvent = `${individualEvent}${SAFETY_EVENT_BATCH_SUFFIX}`;
   const batchMessage = `promptSafety: ${individualEvent} warn amplification suppressed`;
 
   let totalCount = 0;

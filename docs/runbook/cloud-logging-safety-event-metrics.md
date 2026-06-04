@@ -184,7 +184,7 @@ jsonPayload.path=~"^appearance\."
 
 `setup-safety-event-metrics.sh` は **log-based metric (6 件) を実際に gcloud で create/update する**が、**alert policy は scaffold (stdout 出力のみ) であり、実際に作成しない**。これは notification channel ID が環境依存 (本田様 email / Slack 等) で script に hardcoded できないため。
 
-したがって、`./scripts/setup-safety-event-metrics.sh --project xxx` 実行後の Cloud Monitoring policy 一覧 ([https://console.cloud.google.com/monitoring/alerting/policies](https://console.cloud.google.com/monitoring/alerting/policies)) には **何も増えていない**ことに注意。alert policy 作成は §5.3 以降の手順で Console から手動で実施する。
+したがって、`./scripts/setup-safety-event-metrics.sh --project xxx` 実行後の Cloud Monitoring policy 一覧 ([https://console.cloud.google.com/monitoring/alerting/policies](https://console.cloud.google.com/monitoring/alerting/policies)) には **何も増えていない**ことに注意。alert policy 作成は §5.2 以降の手順で Console から手動で実施する (channel 作成 §5.3 → 各 policy 作成時に attach する流れ)。
 
 ### 5.1 baseline 観察 (1〜4 週間)
 
@@ -290,8 +290,8 @@ alert 発火時に何を確認するか。
 
 ### 7.2 drift 検知 (機械化)
 
-- `tests/static/safety-events-lockstep.test.ts` (T5): TS enum と sh script の SAFETY_EVENTS 集合が一致しないと CI 失敗
-- `tests/static/safety-events-bash-syntax.test.ts` (T6): sh script の bash 構文エラー / dry-run 出力件数 / --project 必須を CI 失敗で検知
+- `tests/static/safety-events-lockstep.test.ts` (T3): TS enum と sh script の SAFETY_EVENTS 集合が一致しないと CI 失敗
+- `tests/static/safety-events-bash-syntax.test.ts` (T4): sh script の bash 構文エラー / dry-run 出力件数 / --project 必須を CI 失敗で検知
 - `server/utils/promptSafetyEvents.test.ts` (T1): enum literal 6 値の byte-for-byte pin
 
 ### 7.3 新規 safetyEvent 追加手順

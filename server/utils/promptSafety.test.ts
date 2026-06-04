@@ -12,6 +12,7 @@ import {
   sanitizeForPrompt,
   createWarnAggregator,
 } from './promptSafety';
+import type { SafetyEventName } from './promptSafetyEvents';
 
 describe('stripPromptHeavyFields - content-based 画像 dataURI 検出 (Issue #134)', () => {
   it('replaces character appearance.imageUrl dataURI with marker (regression: known image field still stripped after content-based switch)', () => {
@@ -583,14 +584,21 @@ describe('createWarnAggregator factory unit (Issue #137 #4 残り)', () => {
     warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
   });
 
+  // factory 自体の internal behavior を pin する test fixture では、本物の SAFETY_EVENTS
+  // とは独立した dummy event 名 (`test-event` / `demo-omitted`) を使う。createWarnAggregator
+  // signature は SafetyEventName narrow されたため、test ファイル内で cast escape hatch
+  // を使用する (review-pr type-design 指摘 B 反映)。
+  const TEST_FIXTURE_EVENT = 'test-event' as SafetyEventName;
+  const DEMO_FIXTURE_EVENT = 'demo-omitted' as SafetyEventName;
+
   it('flush() emits nothing when tick() was never called (totalCount === 0)', () => {
-    const agg = createWarnAggregator('test-event', 'promptSafety: test event');
+    const agg = createWarnAggregator(TEST_FIXTURE_EVENT, 'promptSafety: test event');
     agg.flush();
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it('flush() emits nothing when tick() was called exactly MAX_WARN_PER_CALL (50) times (boundary 直下)', () => {
-    const agg = createWarnAggregator('test-event', 'promptSafety: test event');
+    const agg = createWarnAggregator(TEST_FIXTURE_EVENT, 'promptSafety: test event');
     for (let i = 0; i < 50; i++) agg.tick(() => ({ idx: i }));
     agg.flush();
     // 個別 warn 50 件、batch 0 件
@@ -605,7 +613,7 @@ describe('createWarnAggregator factory unit (Issue #137 #4 残り)', () => {
   });
 
   it('flush() emits 1 batch when tick() was called 51 times (boundary 直上)', () => {
-    const agg = createWarnAggregator('test-event', 'promptSafety: test event');
+    const agg = createWarnAggregator(TEST_FIXTURE_EVENT, 'promptSafety: test event');
     for (let i = 0; i < 51; i++) agg.tick(() => ({ idx: i }));
     agg.flush();
     expect(warnSpy).toHaveBeenCalledWith(
@@ -620,7 +628,7 @@ describe('createWarnAggregator factory unit (Issue #137 #4 残り)', () => {
   });
 
   it('individual warn payload cannot override message or safetyEvent (payload spread shadowing 構造的閉鎖、Issue #137 #4 残り a)', () => {
-    const agg = createWarnAggregator('test-event', 'promptSafety: test event');
+    const agg = createWarnAggregator(TEST_FIXTURE_EVENT, 'promptSafety: test event');
     // 型上は `message?: never` / `safetyEvent?: never` で禁止されているが、
     // 実行時の構造的防御 (spread 順) も pin する。`as any` で型 guard を bypass して悪意 payload を作る。
     agg.tick(
@@ -640,7 +648,7 @@ describe('createWarnAggregator factory unit (Issue #137 #4 残り)', () => {
   });
 
   it('derives batchEvent and batchMessage from individualEvent (Issue #137 #4 残り b)', () => {
-    const agg = createWarnAggregator('demo-omitted', 'promptSafety: demo something');
+    const agg = createWarnAggregator(DEMO_FIXTURE_EVENT, 'promptSafety: demo something');
     for (let i = 0; i < 51; i++) agg.tick(() => ({}));
     agg.flush();
     expect(warnSpy).toHaveBeenCalledWith(
@@ -652,7 +660,7 @@ describe('createWarnAggregator factory unit (Issue #137 #4 残り)', () => {
   });
 
   it('tick() lazy builder is NOT called when threshold exceeded (PR #140 regression fix)', () => {
-    const agg = createWarnAggregator('test-event', 'promptSafety: test event');
+    const agg = createWarnAggregator(TEST_FIXTURE_EVENT, 'promptSafety: test event');
     let buildCalls = 0;
     const buildPayload = () => {
       buildCalls++;

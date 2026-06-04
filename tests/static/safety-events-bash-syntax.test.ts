@@ -20,14 +20,41 @@ describe('setup-safety-event-metrics.sh bash syntax (AC-4a)', () => {
         }).not.toThrow();
     });
 
-    it('exits 1 when --project is missing (AC-4d)', () => {
-        let exitCode = 0;
+    // review-pr silent-failure 指摘: status === null (signal kill) や ENOENT (bash 不在)
+    // で wrong-cause 報告にならないよう、status/signal/stderr/stdout を全て capture して
+    // assertion failure 時に diagnostics として surface する helper。
+    function runScriptExpectingExit(args: string[]): {
+        status: number | null;
+        signal: NodeJS.Signals | null;
+        stderr: string;
+        stdout: string;
+    } {
         try {
-            execFileSync('bash', [SH_PATH], { stdio: 'pipe' });
+            execFileSync('bash', [SH_PATH, ...args], { stdio: 'pipe' });
+            return { status: 0, signal: null, stderr: '', stdout: '' };
         } catch (e) {
-            exitCode = (e as { status?: number }).status ?? -1;
+            const err = e as {
+                status?: number | null;
+                signal?: NodeJS.Signals | null;
+                stdout?: Buffer;
+                stderr?: Buffer;
+            };
+            return {
+                status: err.status ?? null,
+                signal: err.signal ?? null,
+                stderr: err.stderr?.toString() ?? '',
+                stdout: err.stdout?.toString() ?? '',
+            };
         }
-        expect(exitCode).toBe(1);
+    }
+
+    it('exits 1 when --project is missing (AC-4d)', () => {
+        const result = runScriptExpectingExit([]);
+        expect(
+            result.status,
+            `status=${result.status} signal=${result.signal}\nstderr:\n${result.stderr}\nstdout:\n${result.stdout}`
+        ).toBe(1);
+        expect(result.stderr).toContain('--project <PROJECT_ID> required');
     });
 
     it('--dry-run --project xxx outputs metric scaffolds for all SAFETY_EVENTS (AC-4b)', () => {
@@ -43,25 +70,23 @@ describe('setup-safety-event-metrics.sh bash syntax (AC-4a)', () => {
         expect(matches?.length).toBe(ALL_SAFETY_EVENT_NAMES.length);
     });
 
-    it('exits 1 when --project value looks like a flag (M-1 defensive)', () => {
-        let exitCode = 0;
-        try {
-            execFileSync('bash', [SH_PATH, '--project', '--dry-run'], { stdio: 'pipe' });
-        } catch (e) {
-            exitCode = (e as { status?: number }).status ?? -1;
-        }
-        expect(exitCode).toBe(1);
+    it('exits 1 when --project value looks like a flag (defensive against flag-value collision)', () => {
+        const result = runScriptExpectingExit(['--project', '--dry-run']);
+        expect(
+            result.status,
+            `status=${result.status} signal=${result.signal}\nstderr:\n${result.stderr}\nstdout:\n${result.stdout}`
+        ).toBe(1);
+        expect(result.stderr).toContain('looks like a flag');
     });
 
-    it('exits 1 when --project value is malformed (M-1 GCP project ID format)', () => {
-        let exitCode = 0;
-        try {
-            // GCP project ID は小文字始まり、6-30 文字、hyphen 末尾不可。
-            // 'UpperCase' は invalid。
-            execFileSync('bash', [SH_PATH, '--project', 'UpperCase'], { stdio: 'pipe' });
-        } catch (e) {
-            exitCode = (e as { status?: number }).status ?? -1;
-        }
-        expect(exitCode).toBe(1);
+    it('exits 1 when --project value is malformed (GCP project ID format)', () => {
+        // GCP project ID は小文字始まり、6-30 文字、hyphen 末尾不可。
+        // 'UpperCase' は invalid。
+        const result = runScriptExpectingExit(['--project', 'UpperCase']);
+        expect(
+            result.status,
+            `status=${result.status} signal=${result.signal}\nstderr:\n${result.stderr}\nstdout:\n${result.stdout}`
+        ).toBe(1);
+        expect(result.stderr).toContain('invalid GCP project ID format');
     });
 });
