@@ -175,3 +175,44 @@ PR #148-#153 で確立した「silent fail 一対設計」5 段:
 3. **review-pr が PR ごとに新たな MEDIUM 残課題を発見** (Issue #147/#149/#152) → Net 負だが構造的 surface 可視化の価値
 4. **PR #150 sentinel 排除 + PR #151 flag literal pin + PR #153 lockstep 6→7 拡張** で「paired signal 規律を機械検知する test patternの体系」が確立
 5. **AC-5b 「循環参照は depth guard で先処理」設計制約を test comment で明示** することで、将来の MAX_RECURSION_DEPTH 変更時の test 意義保守が成立 (responsibility separation 文書化の好例)
+
+---
+
+## 2026-06-04 セッション再開 → 完走 (本ファイル末尾の追記、再開後 commit)
+
+中断時 (PR #154 マージ時点) は PR #153 OPEN + 4 並列 review-pr 指摘の fix が未適用だった。再開セッションで以下を完了:
+
+### 適用済 (本 PR 内 drift / 誤記修正、commit `72ae428`)
+
+- `scripts/setup-safety-event-metrics.sh:188` コメント「6 件」→「7 件」
+- `server/utils/promptSafety.test.ts`:
+  - L1505-1508 group comment の「循環参照」→「toJSON throw (循環参照は depth guard 上位)」
+  - L1534 AC-5b test 名に「(proxy for circular ref)」追記
+- `docs/spec/promptSafety/2026-06-04-bytes-estimation-paired-signal-design.md` 8 箇所:
+  - line 4: 壊れた URL (`/users/Yukina1116/` 重複) を正しい URL に
+  - line 7: 「Design (Phase 6, brainstorm Skill)」→「Implemented (PR #153)」
+  - line 14: 「Medium #5 として指摘された HIGH severity」→「#5 (HIGH severity)」圧縮
+  - lines 63 / 335 (NFR-1 / AC-10): 「636 + 新規 3 = 639」→「636 + 新規 4 = 640」
+  - lines 186 / 315 (FR-4 / AC-4): 行番号「:563」→ symbolic 参照 (stripPromptHeavyFields 内 array recurse ループ末尾)
+  - lines 319 / 351 (AC-5 / テスト構成表): AC-5b 「循環参照」→「toJSON throw (循環参照は depth guard 上位)」
+  - line 340 (AC-12): 「AC-9 manual failing path」自己参照誤り → lockstep test 3 件 (TS↔sh 件数 / 集合一致 / canonical entries) の正しい記述
+
+### 別 Issue 起票 (Medium follow-up)
+
+- [#155](https://github.com/Yukina1116/novel-writer/issues/155) — AC-3 backward compat test の検証経路 gap (estimateElementBytes 内部関数 export 経路欠落)
+- [#156](https://github.com/Yukina1116/novel-writer/issues/156) — estimateElementBytes callback register-or-forget リスク (lint rule / aggregator 必須化検討)
+
+### マージ完了
+
+- **PR #153 マージ**: squash merge → `cdbe187`、branch delete 済
+- **Issue #149 (umbrella) auto-close**: 残-A/B/C 全完了 (`Closes #149` 記載で auto-fire)
+
+### 検証
+
+- `npm run lint` PASS (tsc --noEmit エラーゼロ)
+- `npm run test` PASS (640/640)
+- CI Deploy to Cloud Run `cdbe187` ✅ SUCCESS (3m3s)
+
+### 中断 → 再開サイクルの学び
+
+中断時の handoff (PR #154) で残した「再開ポイント」が再開時に **そのまま executor 用 task graph** として機能した。`docs/handoff/` を単に「次セッションへのメモ」でなく「中断時の future-self 向け task spec」として書くと、context 72% 中断 → 別セッション再開でも drift ゼロで完走できる、というパターンが本セッションで実証された。
