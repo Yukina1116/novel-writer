@@ -1,67 +1,55 @@
-# Handoff: promptSafety 観測性整備 5 連続 PR (Issue #137 #7 + #149 全 3 件、PR #153 OPEN 中断)
+# Handoff: promptSafety 観測性整備 5 連続 PR 完走 (Issue #137 #7 + #149 全 3 件 完了)
 
-- Session Date: 2026-06-04 (本セッション通算)
+- Session Date: 2026-06-04 (本セッション = 2026-06-04 series 再開セッション)
 - Owner: yasushi-honda
-- Status: ⏸ **再開待ち** — PR #153 OPEN 中、review-pr 4 並列指摘の fix 途中で context 72% 到達で中断
+- Status: ✅ **完了** — PR #153 マージで Issue #149 umbrella close、paired signal pattern 6 段確立
 - Detail: [2026-06-04-prompt-safety-observability-series.md](./2026-06-04-prompt-safety-observability-series.md)
 - Previous: [2026-06-03f-collection-level-guard-impl.md](./2026-06-03f-collection-level-guard-impl.md) (PR #143/#144/#145)
 
-## 本セッション PR 進捗 (4 件マージ + 1 件 OPEN)
+## 本セッション PR 進捗 (再開セッション分、5 件マージ完了)
 
 | PR | 内容 | 状態 |
 |---|---|---|
 | #148 | feat: observability metric counter (Refs #137 #7) | ✅ `298af7d` |
 | #150 | fix: histogram-overflow firstOverflowPath (Refs #149 残-C) | ✅ `e22f835` |
 | #151 | fix: dry-run gcloud command paired signal (Refs #149 残-A) | ✅ `e177a09` |
-| **#153** | feat: bytes-estimation-failed paired signal (Closes #149) | **⏸ OPEN、`8456b87`** |
+| #154 | docs: 中断時 handoff (再開用) | ✅ `c8f9eb9` |
+| **#153** | feat: bytes-estimation-failed paired signal (Closes #149) | ✅ **`cdbe187`** |
 
-paired signal pattern 5 段確立 (SAFETY_EVENTS enum + lockstep test / firstOverflowPath / dry-run command echo / bytes-estimation-failed aggregator / 7 件目拡張実証)。テスト 619 → 640 (+21)。
+paired signal pattern 6 段確立 (SAFETY_EVENTS enum + lockstep test / firstOverflowPath / dry-run command echo / bytes-estimation-failed aggregator / 7 件目拡張実証 / review-pr drift 修正)。テスト 619 → 640 (+21)。
 
-## PR #153 再開ポイント (次セッション最初の作業)
+## Issue Net 変化 (本セッション最終、再開セッション分のみ)
 
-**確実な drift / 誤記修正** (本田様承認済、~30 行):
-- `scripts/setup-safety-event-metrics.sh:188` の「6 件」→「7 件」
-- `server/utils/promptSafety.test.ts:1505-1508` group comment + `:1534` AC-5b test 名
-- `docs/spec/promptSafety/2026-06-04-bytes-estimation-paired-signal-design.md` 8 箇所 (URL / 行番号 / 件数 / AC-5b / AC-12 / process tag)
+- **Close 数**: 1 件 (#149 umbrella、PR #153 マージで auto-close)
+- **起票数**: 2 件 (#155 AC-3 backward compat gap / #156 callback register-or-forget リスク)
+- **Net**: **-1 件**
 
-**別 Issue 起票** (Medium 2 件、本田様承認済):
-- AC-3 backward compat test の検証経路 gap
-- estimateElementBytes callback register-or-forget リスク
+(series 全体 = 中断前 + 再開後の通算は handoff series doc 末尾参照)
 
-**最終**: 本田様マージ認可 → squash merge → Issue #149 umbrella close。
-
-詳細手順は [2026-06-04-prompt-safety-observability-series.md](./2026-06-04-prompt-safety-observability-series.md) §「再開手順」参照。
-
-## Issue Net 変化 (本セッション)
-
-- **Close 数**: 0 件 (Issue #149 は PR #153 マージで auto-close 予定、本セッションでは未マージ)
-- **起票数**: 3 件 (#147 PII path leak / #149 promptSafety umbrella / #152 update path)
-- **Net**: **-3 件** (進捗負)
-
-**進捗負の理由**: PR #148 review-pr で silent-failure-hunter agent が 3 件の構造的 surface 発見、これらが #147/#149/#152 として可視化。次セッション PR #153 マージで Issue #149 close (Net 改善)。
-
-triage 評価: 3 件全て review agent 由来だが rating ≥ 7 + 構造的セキュリティ surface のため triage 基準満たす (機械的起票ではない)。
+**Net 負だが構造的価値あり**: 起票 2 件はいずれも PR #153 review-pr 4 並列の Medium 指摘 (本田様承認済 follow-up)。triage 基準満たす (rating ≥ 7 + 構造的 surface)。
 
 ## 残 Open Issue
 
 | Issue | 内容 | 緊急性 |
 |---|---|---|
-| #137 | promptSafety umbrella (サブ #7 完了、#6/#8 残) | LOW、別 milestone |
+| #137 | promptSafety umbrella (サブ #7 完了、残 #6 #8) | LOW、別 milestone (blast radius 大) |
 | #147 | PII path leak (codex review 由来) | LOW、規模拡大時 |
-| #149 | promptSafety umbrella | **PR #153 マージで close 予定** |
 | #152 | update path paired signal | LOW、SDK rename 時 |
+| #155 | AC-3 backward compat test gap | LOW、本田様判断待ち |
+| #156 | callback register-or-forget リスク (lint rule / aggregator 必須化検討) | LOW、本田様判断待ち |
 
 ## 本田様判断待ち (継続)
 
-- PR #153 マージ認可 (再開手順実施後)
-- `./scripts/setup-safety-event-metrics.sh --project novel-writer-dev` 実行で 7 metric 作成
-- Cloud Logging で 7 種 safetyEvent baseline 観察 → alert enable
-- Issue #137 #6 / #8、Issue #147 / #152 の優先順位
+- `./scripts/setup-safety-event-metrics.sh --project novel-writer-dev` 実行 → 7 metric 作成 + alert policy 初期 disabled で create
+- Cloud Logging で 7 種 safetyEvent 実発火 + baseline 観察 → alert enable 判断 (1〜4 週間後)
+- Issue #137 残サブ #6 (logger.warnSampled altitude) / #8 (truncateOversizedStrings path 追跡) の milestone 計画
+- Issue #147 / #152 / #155 / #156 の優先順位
 
-## 学び
+## 学び (本セッション総括 = 中断 + 再開)
 
-1. **5 連続 PR で paired signal pattern 体系確立**: SAFETY_EVENTS enum + lockstep test + firstOverflowPath + dry-run command echo + bytes-estimation aggregator
-2. **brainstorm → impl-plan → 実装 → 4 段 Quality Gate → review-pr** の流れが 4 連続実証、70-90 分/PR で安定
+1. **paired signal pattern 6 段完成**: SAFETY_EVENTS enum + lockstep test + firstOverflowPath + dry-run command echo + bytes-estimation aggregator + review-pr drift 修正
+2. **brainstorm Phase 9 → impl-plan → 4 段 Quality Gate → review-pr** の流れが 5 連続実証、70-90 分/PR で安定
 3. **review-pr が PR ごとに新 MEDIUM 残課題発見** → Net 負だが構造的 surface 可視化の価値
-4. **observability / 保守性整備の連続 PR** は本田様「多くのユーザー」想定方針と整合した投資判断
-5. **AC-5b 「循環参照は depth guard で先処理」を test comment で明示** することで責務分離の文書化が成立、将来の MAX_RECURSION_DEPTH 変更時の test 意義保守が成立
+4. **中断 handoff → 再開 → 完走** の 3 段サイクルが成立、context 72% 中断 → series doc + LATEST.md drift 修正で次セッション drift ゼロ復帰可能
+5. **observability / 保守性整備の連続 PR** は本田様「多くのユーザー」想定方針と整合した投資判断
+6. **review-pr 指摘の処理分類確立**: 本 PR 内 fix (drift / 誤記) ↔ 別 Issue 起票 (Medium follow-up) の二段振り分けが定着
