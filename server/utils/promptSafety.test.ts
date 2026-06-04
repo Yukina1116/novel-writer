@@ -1503,8 +1503,9 @@ describe('bytes-estimation-failed paired signal (Issue #149 残-B)', () => {
   });
 
   // estimateElementBytes は内部関数だが、stripPromptHeavyFields 内 array recurse
-  // 経路で `JSON.stringify` failure (BigInt / 循環参照) を発火させて aggregator が
-  // tick されることを behavior 経由で pin。
+  // 経路で `JSON.stringify` failure (BigInt / toJSON throw 等。循環参照は depth guard
+  // 上位で先処理されて到達しない) を発火させて aggregator が tick されることを
+  // behavior 経由で pin。
   // false positive ゼロ (T4) は normal JSON-safe data で aggregator emit ゼロを pin。
 
   function bytesEstimationCalls(): unknown[][] {
@@ -1531,7 +1532,7 @@ describe('bytes-estimation-failed paired signal (Issue #149 残-B)', () => {
     expect(payload.path).toMatch(/items\[\d+\]/);
   });
 
-  it('AC-5b: toJSON throwing element で aggregator.tick が emit', () => {
+  it('AC-5b: toJSON throwing element で aggregator.tick が emit (proxy for circular ref)', () => {
     // 循環参照は recurse 内 MAX_RECURSION_DEPTH (depth guard) で先に処理されて
     // RECURSION_DEPTH_EXCEEDED_MARKER に置換されるため、estimateElementBytes 段階
     // に到達しない (設計通り、depth guard が paired signal 上位)。代替として

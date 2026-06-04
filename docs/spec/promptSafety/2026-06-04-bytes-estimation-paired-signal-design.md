@@ -1,17 +1,17 @@
 # bytes-estimation-failed paired signal 設計 (Issue #149 残-B)
 
 - **作成日**: 2026-06-04
-- **関連 Issue**: [#149](https://github.com/Yukina1116/users/Yukina1116/novel-writer/issues/149) 残-B
+- **関連 Issue**: [#149](https://github.com/Yukina1116/novel-writer/issues/149) 残-B
 - **関連 PR (祖先)**: PR #148 (Issue #137 #7)、PR #150 (Issue #149 残-C)、PR #151 (Issue #149 残-A)
 - **対象モジュール**: `server/utils/promptSafety.ts` + `server/utils/promptSafetyEvents.ts` + 既存 lockstep / runbook / setup script (6 ファイル)
-- **ステータス**: Design (Phase 6, brainstorm Skill)
+- **ステータス**: Implemented (PR #153)
 - **緊急性**: LOW (collection-overflow / size guard で実害発生中ではない、規模拡大時の保守性整備)
 
 ---
 
 ## 1. 概要 / 動機
 
-PR #148 review-pr silent-failure-hunter agent Medium #5 として指摘された HIGH severity 残課題。
+PR #148 review-pr silent-failure-hunter agent #5 (HIGH severity) として指摘された残課題。
 
 `server/utils/promptSafety.ts:144-150` の `estimateElementBytes()`:
 
@@ -53,14 +53,14 @@ bare `catch {}` で JSON.stringify failure (BigInt / 循環参照 / Proxy throwi
 - **FR-1**: `SAFETY_EVENTS` に `BYTES_ESTIMATION_FAILED = 'bytes-estimation-failed'` を追加 (7 件目)
 - **FR-2**: `estimateElementBytes` signature を `(value: unknown, onStringifyFailure?: () => void) => number` に変更 (optional callback)、未指定時は既存挙動 (silent 4 bytes fallback) を維持 (backward compat)
 - **FR-3**: `stripPromptHeavyFields` 内に `bytesEstimationAggregator` を追加 (image / non-image / depth / collection と並列、5 件目の aggregator)
-- **FR-4**: callsite (`promptSafety.ts:563`) で `estimateElementBytes(replaced, () => bytesEstimationAggregator.tick(...))` の callback 経由 tick
+- **FR-4**: callsite (`stripPromptHeavyFields` 内 array recurse ループ末尾、cumulative byte 加算箇所) で `estimateElementBytes(replaced, () => bytesEstimationAggregator.tick(...))` の callback 経由 tick
 - **FR-5**: 関数末尾の flush 呼出に `bytesEstimationAggregator.flush()` を追加 (既存 4 aggregator 並列)
 - **FR-6**: warn payload に `path` (string、`itemPath`) + `fallbackBytes: 4` を含む
 - **FR-7**: 全 4 ファイル (lockstep test / setup script / runbook / promptSafetyEvents.test.ts) を新 safetyEvent 7 件目に同期更新
 
 ### 非機能要件
 
-- **NFR-1**: 既存 636 + 新規 3 = 639 tests PASS (regression なし)
+- **NFR-1**: 既存 636 + 新規 4 = 640 tests PASS (regression なし)
 - **NFR-2**: 既存 4 aggregator (image / non-image / depth / collection) の挙動を変更しない
 - **NFR-3**: `estimateElementBytes` の fallback 値 (4 bytes) を変更しない (silent → paired signal 化のみ)
 - **NFR-4**: `estimateElementBytes` の callback 未指定経路で既存呼出が全て backward compat (truncateOversizedStrings 等で間接的に使用される可能性、ただし現状は 1 callsite のみ)
@@ -312,11 +312,14 @@ AC-3: server/utils/promptSafety.ts の estimateElementBytes signature が
       callback 未指定でも既存挙動 (silent 4 bytes fallback) を維持
 
 AC-4: stripPromptHeavyFields 内に bytesEstimationAggregator が追加され、
-      callsite (line 563) で callback 経由 tick + 関数末尾で flush
+      callsite (array recurse ループ末尾、cumulative byte 加算箇所) で
+      callback 経由 tick + 関数末尾で flush
 
 AC-5: server/utils/promptSafety.test.ts に新規 paired signal 発火 test (3 件):
       - AC-5a: BigInt を含む array element で aggregator.tick が 1 回 emit
-      - AC-5b: 循環参照を含む array element で aggregator.tick が 1 回 emit
+      - AC-5b: toJSON throw element で aggregator.tick が 1 回 emit
+              (循環参照は depth guard 上位で先処理されるため、JSON.stringify throw の
+               代替経路として toJSON throw を使用)
       - AC-5c: 通常 JSON-safe data では aggregator.tick が 0 回 (false positive ゼロ)
 
 AC-6: tests/static/safety-events-lockstep.test.ts の expected set 6 → 7 件、
@@ -332,13 +335,14 @@ AC-9: docs/runbook/cloud-logging-safety-event-metrics.md §1 metric 表に 7 件
       §3 解説 §3.7 追加、§5 alert 閾値表に 7 件目 (disabled 初期)、
       §6 異常時トリアージ §6.6 追加
 
-AC-10: 既存 636 + 新規 3 = 639 tests PASS + tsc --noEmit エラーゼロ
+AC-10: 既存 636 + 新規 4 = 640 tests PASS + tsc --noEmit エラーゼロ
 
 AC-11: 既存 promptSafety.test.ts の全 regression PASS
        (collection-overflow / image-omitted 等の 4 aggregator 既存挙動不変)
 
-AC-12: AC-9 manual failing path 手動確認 (TS enum から BYTES_ESTIMATION_FAILED を
-       一時削除 → lockstep test fail → 復元で全 PASS)
+AC-12: lockstep manual failing path 手動確認 (TS enum から BYTES_ESTIMATION_FAILED を
+       一時削除 → safety-events-lockstep.test.ts の 3 件 (TS↔sh 件数 / 集合一致 /
+       canonical entries) が fail → 復元で全 PASS)
 ```
 
 ### テスト構成
@@ -348,7 +352,7 @@ AC-12: AC-9 manual failing path 手動確認 (TS enum から BYTES_ESTIMATION_FA
 | 既存 | `promptSafetyEvents.test.ts` | unit | enum literal pin 更新 (AC-2) |
 | 既存 | `promptSafety.test.ts` 全件 | regression | 既存 aggregator 挙動不変 (AC-11) |
 | 新 T2 | `promptSafety.test.ts` 新 describe | unit | BigInt array で aggregator.tick × 1 件 (AC-5a) |
-| 新 T3 | 同上 | unit | 循環参照 array で aggregator.tick × 1 件 (AC-5b) |
+| 新 T3 | 同上 | unit | toJSON throw array で aggregator.tick × 1 件 (AC-5b、循環参照は depth guard 上位) |
 | 新 T4 | 同上 | unit | 通常 array で aggregator.tick × 0 件 (AC-5c、false positive 検証) |
 | 既存 | `safety-events-lockstep.test.ts` | static | 集合 6 → 7 件 (AC-6) |
 | 既存 | `safety-events-bash-syntax.test.ts` | static | 動的追従 (AC-7、変更不要) |
