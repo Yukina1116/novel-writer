@@ -92,6 +92,7 @@ SAFETY_EVENTS=(
     "recursion-depth-exceeded"
     "collection-overflow"
     "histogram-overflow"
+    "bytes-estimation-failed"
 )
 
 # --- alert policy 初期 enabled / disabled の規約 ---
@@ -184,7 +185,7 @@ for event in "${SAFETY_EVENTS[@]}"; do
     fi
 done
 
-# --- 2. alert policy scaffold (6 件、histogram-overflow のみ enabled) ---
+# --- 2. alert policy scaffold (7 件、histogram-overflow のみ enabled) ---
 # 注: alert policy 作成は notification channel ID が環境依存のため、
 # 本 script では policy JSON を一時ファイルに書き出すまでで止め、実 create は
 # 本田様が runbook §5 の手順で channel ID を埋めて gcloud alpha monitoring policies

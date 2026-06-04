@@ -1495,3 +1495,79 @@ describe('stripPromptHeavyFields - collection-level guard (Issue #137 #2 残り)
     expect(overflowPayload.parentEvent).toBe('collection-overflow');
   });
 });
+
+describe('bytes-estimation-failed paired signal (Issue #149 残-B)', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+  });
+
+  // estimateElementBytes は内部関数だが、stripPromptHeavyFields 内 array recurse
+  // 経路で `JSON.stringify` failure (BigInt / toJSON throw 等。循環参照は depth guard
+  // 上位で先処理されて到達しない) を発火させて aggregator が tick されることを
+  // behavior 経由で pin。
+  // false positive ゼロ (T4) は normal JSON-safe data で aggregator emit ゼロを pin。
+
+  function bytesEstimationCalls(): unknown[][] {
+    return warnSpy.mock.calls.filter(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'bytes-estimation-failed'
+    );
+  }
+  function bytesEstimationBatchCalls(): unknown[][] {
+    return warnSpy.mock.calls.filter(
+      (c) => (c[0] as { safetyEvent?: string }).safetyEvent === 'bytes-estimation-failed-batch'
+    );
+  }
+
+  it('AC-5a: BigInt を含む array element で aggregator.tick が 1 回 emit', () => {
+    // JSON.stringify(BigInt) は TypeError throw
+    const input = { items: [{ id: BigInt(1) }, { id: BigInt(2) }] };
+    stripPromptHeavyFields(input);
+    const calls = bytesEstimationCalls();
+    // 2 element 分の tick (2 件 emit、batch 未発火 = 50 件未満)
+    expect(calls.length).toBe(2);
+    const payload = calls[0]![0] as { path: string; fallbackBytes: number; safetyEvent: string };
+    expect(payload.safetyEvent).toBe('bytes-estimation-failed');
+    expect(payload.fallbackBytes).toBe(4);
+    expect(payload.path).toMatch(/items\[\d+\]/);
+  });
+
+  it('AC-5b: toJSON throwing element で aggregator.tick が emit (proxy for circular ref)', () => {
+    // 循環参照は recurse 内 MAX_RECURSION_DEPTH (depth guard) で先に処理されて
+    // RECURSION_DEPTH_EXCEEDED_MARKER に置換されるため、estimateElementBytes 段階
+    // に到達しない (設計通り、depth guard が paired signal 上位)。代替として
+    // toJSON throw を使う (JSON.stringify が throw する確実な経路、BigInt とは
+    // 別 failure mode をカバー)。
+    const throwingItem = { toJSON: () => { throw new Error('toJSON throws'); } };
+    const input = { items: [throwingItem] };
+    stripPromptHeavyFields(input);
+    const calls = bytesEstimationCalls();
+    expect(calls.length).toBe(1);
+    const payload = calls[0]![0] as { path: string; fallbackBytes: number; safetyEvent: string };
+    expect(payload.safetyEvent).toBe('bytes-estimation-failed');
+    expect(payload.fallbackBytes).toBe(4);
+  });
+
+  it('AC-5c: 通常 JSON-safe data では aggregator.tick が 0 回 (false positive ゼロ)', () => {
+    const input = {
+      items: [
+        { id: 1, name: 'alice', tags: ['a', 'b'] },
+        { id: 2, name: 'bob', meta: { age: 30 } },
+        { id: 3, name: 'carol', score: 99.5 },
+      ],
+    };
+    stripPromptHeavyFields(input);
+    expect(bytesEstimationCalls().length).toBe(0);
+    expect(bytesEstimationBatchCalls().length).toBe(0);
+  });
+
+  it('AC-3 backward compat: estimateElementBytes callback 未指定経路で silent fallback', () => {
+    // 通常 JSON-safe data なら callback 未指定経路 (truncateOversizedStrings 等の
+    // 仮想的な間接利用想定) でも warn が emit されない (現状 callsite は 1 つだが
+    // backward compat 経路を pin)。stripPromptHeavyFields 経由で normal data の
+    // false positive を verify することで間接的に pin。
+    const input = { items: Array.from({ length: 10 }, (_, i) => ({ id: i })) };
+    stripPromptHeavyFields(input);
+    expect(bytesEstimationCalls().length).toBe(0);
+  });
+});

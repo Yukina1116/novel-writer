@@ -141,10 +141,14 @@ export const COLLECTION_OVERFLOW_MARKER =
  * `processed element` = recurse 通過後の値 (image / non-image marker 化後の短文を含む) を想定。
  * 「leaf-level marker 化済の element は cumulative 圧迫しない」を保証する。
  */
-function estimateElementBytes(value: unknown): number {
+function estimateElementBytes(value: unknown, onStringifyFailure?: () => void): number {
   try {
     return Buffer.byteLength(JSON.stringify(value) ?? 'null', 'utf8');
   } catch {
+    // Issue #149 残-B: silent fail を許容する設計に対し、検知シグナルを callback DI で
+    // 注入する paired signal 規律 (feedback_silent_fail_paired_signal.md)。callback
+    // 未指定経路は backward compat で silent 維持 (callsite 側の責務とする)。
+    onStringifyFailure?.();
     return 4; // 'null' 相当
   }
 }
@@ -495,6 +499,14 @@ export function stripPromptHeavyFields(data: unknown): unknown {
     SAFETY_EVENTS.COLLECTION_OVERFLOW,
     'promptSafety: collection-level cumulative byte threshold exceeded'
   );
+  // Issue #149 残-B: estimateElementBytes の JSON.stringify failure (BigInt /
+  // 循環参照 / Proxy throw / toJSON throw) を paired signal 化。callback DI で
+  // collection / image 等と並列 scope。fallback 値 4 bytes 自体は維持 (検知でき
+  // れば fallback 量自体は重要でない)。
+  const bytesEstimationAggregator = createWarnAggregator(
+    SAFETY_EVENTS.BYTES_ESTIMATION_FAILED,
+    'promptSafety: byte estimation failed (JSON.stringify threw)'
+  );
 
   function recurse(value: unknown, path: string, depth: number): unknown {
     if (depth > MAX_RECURSION_DEPTH) {
@@ -560,7 +572,11 @@ export function stripPromptHeavyFields(data: unknown): unknown {
         next.push(replaced);
         if (replaced !== value[idx]) changed = true;
         // processed element の byte を加算 (marker 化された短文も計上、二重防御の補完)。
-        cumulativeBytes += estimateElementBytes(replaced);
+        // Issue #149 残-B: callback で paired signal 集約。fallback (4 bytes) 自体は
+        // 既存挙動を維持しつつ、JSON.stringify failure を Cloud Logging で観測可能化。
+        cumulativeBytes += estimateElementBytes(replaced, () =>
+          bytesEstimationAggregator.tick(() => ({ path: itemPath, fallbackBytes: 4 }), itemPath)
+        );
         keptCount++;
       }
       return changed ? next : value;
@@ -587,6 +603,7 @@ export function stripPromptHeavyFields(data: unknown): unknown {
   nonImageAggregator.flush();
   depthAggregator.flush();
   collectionAggregator.flush();
+  bytesEstimationAggregator.flush();
   return result;
 }
 
