@@ -414,12 +414,18 @@ export function createWarnAggregator(individualEvent: SafetyEventName, individua
       pathHistogram.set(bucket, (pathHistogram.get(bucket) ?? 0) + 1);
       if (bucket === OVERFLOW_BUCKET && !overflowEmitted) {
         // paired early-detection signal (silent_fail_paired_signal): 飽和を 1 度だけ通知。
+        // firstOverflowPath は飽和を引き起こした最初の path を含む (Issue #149 残-C)。
+        // 257 個目以降 (MAX_HISTOGRAM_BUCKETS=256 超過分) は (overflow) bucket に集約
+        // されるため、attack payload がどの path family を狙ったかを forensic に追跡
+        // 可能にする。完全な path family 特定には *-batch の pathPrefixes (top-5) +
+        // truncatedBucketCount との combination が必要。
         overflowEmitted = true;
         logger.warn({
           message: 'promptSafety: path histogram saturation — new buckets aggregated into (overflow)',
           safetyEvent: SAFETY_EVENTS.HISTOGRAM_OVERFLOW,
           parentEvent: individualEvent,
           maxBuckets: MAX_HISTOGRAM_BUCKETS,
+          firstOverflowPath: desired,
         });
       }
       if (loggedCount < MAX_WARN_PER_CALL) {
