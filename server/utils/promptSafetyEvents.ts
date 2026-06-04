@@ -20,6 +20,7 @@ export const SAFETY_EVENTS = {
     RECURSION_DEPTH_EXCEEDED: 'recursion-depth-exceeded',
     COLLECTION_OVERFLOW: 'collection-overflow',
     HISTOGRAM_OVERFLOW: 'histogram-overflow',
+    BYTES_ESTIMATION_FAILED: 'bytes-estimation-failed',
 } as const;
 
 export type SafetyEventName = typeof SAFETY_EVENTS[keyof typeof SAFETY_EVENTS];

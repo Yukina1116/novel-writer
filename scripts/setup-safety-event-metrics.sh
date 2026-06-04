@@ -92,6 +92,7 @@ SAFETY_EVENTS=(
     "recursion-depth-exceeded"
     "collection-overflow"
     "histogram-overflow"
+    "bytes-estimation-failed"
 )
 
 # --- alert policy 初期 enabled / disabled の規約 ---

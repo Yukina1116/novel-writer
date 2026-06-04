@@ -5,13 +5,13 @@
 - **関連 script**: [`scripts/setup-safety-event-metrics.sh`](../../scripts/setup-safety-event-metrics.sh)
 - **関連 enum**: [`server/utils/promptSafetyEvents.ts`](../../server/utils/promptSafetyEvents.ts)
 
-`server/utils/promptSafety.ts` が emit する 6 種類の `safetyEvent` を Cloud Logging log-based metric と Cloud Monitoring alert policy で観測可能化する手順書。
+`server/utils/promptSafety.ts` が emit する 7 種類の `safetyEvent` を Cloud Logging log-based metric と Cloud Monitoring alert policy で観測可能化する手順書。
 
 ---
 
 ## 1. 概要 + 前提条件
 
-### 観測対象 6 metric
+### 観測対象 7 metric
 
 | safetyEvent | metric 名 | 意味 |
 |---|---|---|
@@ -21,6 +21,7 @@
 | `recursion-depth-exceeded` | `prompt_safety_recursion_depth_exceeded_count` | 再帰深度 (1000) を超過した件数 |
 | `collection-overflow` | `prompt_safety_collection_overflow_count` | array 累積 byte (200KB) を超過した件数 |
 | `histogram-overflow` | `prompt_safety_histogram_overflow_count` | path histogram の cardinality (256 bucket) を超過した件数 (paired signal) |
+| `bytes-estimation-failed` | `prompt_safety_bytes_estimation_failed_count` | JSON.stringify failure (BigInt / 循環参照 / Proxy throw) で 4 bytes fallback した件数 (paired signal) |
 
 各 metric は **個別 warn** (`safetyEvent: 'image-omitted'`) と **batch warn** (`safetyEvent: 'image-omitted-batch'`) を **1 metric に合算**する。filter regex: `jsonPayload.safetyEvent=~"^<event>(-batch)?$"`
 
@@ -70,7 +71,7 @@ jsonPayload.totalCount>1000
 # 1. dry-run で適用予定を確認 (副作用ゼロ)
 ./scripts/setup-safety-event-metrics.sh --project novel-writer-dev --dry-run
 
-# 2. 出力で 6 metric scaffold + 6 alert scaffold を確認
+# 2. 出力で 7 metric scaffold + 7 alert scaffold を確認
 
 # 3. 本適用
 ./scripts/setup-safety-event-metrics.sh --project novel-writer-dev
@@ -91,11 +92,11 @@ jsonPayload.totalCount>1000
 
 ### 2.3 confirm: 作成した metric を Console で確認
 
-[https://console.cloud.google.com/logs/metrics](https://console.cloud.google.com/logs/metrics) → project 切替 → 6 件の `prompt_safety_*_count` を確認。
+[https://console.cloud.google.com/logs/metrics](https://console.cloud.google.com/logs/metrics) → project 切替 → 7 件の `prompt_safety_*_count` を確認。
 
 ---
 
-## 3. 6 metric の意味 (個別解説)
+## 3. 7 metric の意味 (個別解説)
 
 各 metric の「正常時に出る/出ない」「異常境界」を一覧化。
 
@@ -135,6 +136,12 @@ jsonPayload.totalCount>1000
 - **正常時**: 0 件のはず (`MAX_HISTOGRAM_BUCKETS=256` は通常運用では到達しない)
 - **異常境界**: **発火即異常**。aggregator OOM 防御の早期検知シグナル
 
+### 3.7 `prompt_safety_bytes_estimation_failed_count` (paired signal)
+
+- **何を捕まえる**: `estimateElementBytes` 内 `JSON.stringify` failure (BigInt / 循環参照 / Proxy throwing `get` / throwing `toJSON`) で 4 bytes fallback した件数
+- **正常時**: 0 件のはず (通常データは JSON-safe)
+- **異常境界**: 1 分間に 1 件超 → 攻撃的 payload (token-bomb 試行) or データ破損 (循環参照) or 外部 API 経由 BigInt 流入の疑い
+
 ---
 
 ## 4. 通常運用での Cloud Logging grep query 集
@@ -145,7 +152,7 @@ Cloud Logging Console ([https://console.cloud.google.com/logs](https://console.c
 
 ```
 resource.type="cloud_run_revision"
-jsonPayload.safetyEvent=~"^(image-omitted|non-image-data-uri-omitted|oversized-truncated|recursion-depth-exceeded|collection-overflow|histogram-overflow)(-batch)?$"
+jsonPayload.safetyEvent=~"^(image-omitted|non-image-data-uri-omitted|oversized-truncated|recursion-depth-exceeded|collection-overflow|histogram-overflow|bytes-estimation-failed)(-batch)?$"
 ```
 
 ### 4.2 特定 event だけを見る (例: histogram-overflow)
@@ -184,7 +191,7 @@ jsonPayload.path=~"^appearance\."
 
 ### ⚠ script の振る舞い (重要)
 
-`setup-safety-event-metrics.sh` は **log-based metric (6 件) を実際に gcloud で create/update する**が、**alert policy は scaffold (stdout 出力のみ) であり、実際に作成しない**。これは notification channel ID が環境依存 (本田様 email / Slack 等) で script に hardcoded できないため。
+`setup-safety-event-metrics.sh` は **log-based metric (7 件) を実際に gcloud で create/update する**が、**alert policy は scaffold (stdout 出力のみ) であり、実際に作成しない**。これは notification channel ID が環境依存 (本田様 email / Slack 等) で script に hardcoded できないため。
 
 したがって、`./scripts/setup-safety-event-metrics.sh --project xxx` 実行後の Cloud Monitoring policy 一覧 ([https://console.cloud.google.com/monitoring/alerting/policies](https://console.cloud.google.com/monitoring/alerting/policies)) には **何も増えていない**ことに注意。alert policy 作成は §5.2 以降の手順で Console から手動で実施する (channel 作成 §5.3 → 各 policy 作成時に attach する流れ)。
 
@@ -211,6 +218,7 @@ jsonPayload.path=~"^appearance\."
 | `recursion-depth-exceeded` | 例: > 1 / 1 min |
 | `collection-overflow` | 例: > 5 / 1 min |
 | `histogram-overflow` | **>= 1** (初期 enabled) |
+| `bytes-estimation-failed` | 例: > 1 / 1 min (disabled 初期、baseline 観察後 enable 推奨) |
 
 ⚠ **metric の上限値に注意**: §1 ⚠ で説明した「per-call 51 件上限」のため、上記閾値は metric count = matching log entry 数。「1 call で 1000 件」のような大規模 surge は §1 「実 event 数を知る方法」の batch totalCount 経路で観察する。
 
@@ -294,6 +302,15 @@ jsonPayload.firstOverflowPath:*
 | **確認手順** | §4.5 で path 絞り込み + `bytes` field 分布確認 |
 | **対処** | 正当用途なら閾値 (`MAX_COLLECTION_BYTES` / `MAX_FIELD_BYTES`) 見直し、攻撃なら quota |
 
+### 6.6 bytes-estimation-failed 発火 (paired signal)
+
+| 確認項目 | 内容 |
+|---|---|
+| **症状** | `JSON.stringify` failure (BigInt / 循環参照 / Proxy throw / toJSON throw) で 4 bytes fallback |
+| **原因候補** | (a) 攻撃的 payload (token-bomb 試行で `collection-overflow` guard を bypass) / (b) データ破損 (循環参照を含む user data) / (c) 外部 API 経由で BigInt 流入 |
+| **確認手順** | §4.5 query で `path` field 確認 → batch log の `pathPrefixes` で path family 特定 → user / 入力経路特定 |
+| **対処** | 攻撃なら quota / WAF 強化、データ破損なら upstream 修正、BigInt 流入なら API client 側で sanitize 追加 |
+
 ---
 
 ## 7. enum / script 同期規律
@@ -312,7 +329,7 @@ jsonPayload.firstOverflowPath:*
 
 - `tests/static/safety-events-lockstep.test.ts` (T3): TS enum と sh script の SAFETY_EVENTS 集合が一致しないと CI 失敗
 - `tests/static/safety-events-bash-syntax.test.ts` (T4): sh script の bash 構文エラー / dry-run 出力件数 / --project 必須を CI 失敗で検知
-- `server/utils/promptSafetyEvents.test.ts` (T1): enum literal 6 値の byte-for-byte pin
+- `server/utils/promptSafetyEvents.test.ts` (T1): enum literal の byte-for-byte pin (count は ALL_SAFETY_EVENT_NAMES.length 動的)
 
 ### 7.3 新規 safetyEvent 追加手順
 
@@ -322,7 +339,7 @@ jsonPayload.firstOverflowPath:*
 2. `scripts/setup-safety-event-metrics.sh` の `SAFETY_EVENTS=( ... )` array に 1 行追加 (順序を合わせる)
 3. 本 runbook §1 metric 表 / §3 解説 / §6 トリアージに対応する row 追加
 4. design-doc (`docs/spec/promptSafety/2026-06-04-observability-metric-counter-design.md`) を更新 (or 後継 spec を新規作成)
-5. `server/utils/promptSafetyEvents.test.ts` の期待 6 値を 7 値に更新
+5. `server/utils/promptSafetyEvents.test.ts` の期待 set に新 event 値を追加 (例: 6→7→8 と更新)
 6. `tests/static/safety-events-lockstep.test.ts` の `expected` set を更新
 7. `./scripts/setup-safety-event-metrics.sh --project novel-writer-dev --dry-run` で出力確認 → 本適用
 

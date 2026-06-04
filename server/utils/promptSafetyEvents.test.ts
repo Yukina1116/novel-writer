@@ -11,8 +11,8 @@ import {
 // 既存 Cloud Logging クエリ / runbook / docs/spec の値表と byte-for-byte 一致を強制する。
 // drift は Cloud Logging metric filter regex を壊すため、ここで pin する。
 describe('promptSafetyEvents — enum literal pin (AC-1, AC-2)', () => {
-    it('SAFETY_EVENTS exports exactly 6 entries', () => {
-        expect(Object.keys(SAFETY_EVENTS)).toHaveLength(6);
+    it('SAFETY_EVENTS exports exactly 7 entries', () => {
+        expect(Object.keys(SAFETY_EVENTS)).toHaveLength(7);
     });
 
     it('SAFETY_EVENTS values are byte-for-byte expected literals', () => {
@@ -25,6 +25,7 @@ describe('promptSafetyEvents — enum literal pin (AC-1, AC-2)', () => {
                 'recursion-depth-exceeded',
                 'collection-overflow',
                 'histogram-overflow',
+                'bytes-estimation-failed',
             ])
         );
     });
@@ -39,9 +40,9 @@ describe('promptSafetyEvents — enum literal pin (AC-1, AC-2)', () => {
         expect(SAFETY_EVENT_BATCH_SUFFIX).toBe('-batch');
     });
 
-    it('ALL_SAFETY_EVENT_NAMES contains exactly 6 unique values', () => {
-        expect(ALL_SAFETY_EVENT_NAMES).toHaveLength(6);
-        expect(new Set(ALL_SAFETY_EVENT_NAMES).size).toBe(6);
+    it('ALL_SAFETY_EVENT_NAMES contains exactly 7 unique values', () => {
+        expect(ALL_SAFETY_EVENT_NAMES).toHaveLength(7);
+        expect(new Set(ALL_SAFETY_EVENT_NAMES).size).toBe(7);
     });
 
     it('ALL_SAFETY_EVENT_NAMES values are subset of SAFETY_EVENTS values', () => {

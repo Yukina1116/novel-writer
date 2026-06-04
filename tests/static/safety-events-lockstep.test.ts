@@ -66,7 +66,7 @@ describe('safety-events lockstep — TS enum ↔ bash script SAFETY_EVENTS (AC-4
     });
 
     it('values match the design-doc canonical entries', () => {
-        // 設計文書 AC-2 の 6 entries (current). enum 拡張時はここを更新する規律
+        // 設計文書 AC-2 の canonical entries. enum 拡張時はここを更新する規律
         // (runbook §7.3 のチェックリスト項目)。
         const expected = new Set([
             'image-omitted',
@@ -75,6 +75,7 @@ describe('safety-events lockstep — TS enum ↔ bash script SAFETY_EVENTS (AC-4
             'recursion-depth-exceeded',
             'collection-overflow',
             'histogram-overflow',
+            'bytes-estimation-failed',
         ]);
         expect(tsEventValues()).toEqual(expected);
         expect(extractShEventValues()).toEqual(expected);
