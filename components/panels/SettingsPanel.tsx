@@ -1,9 +1,8 @@
 
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo } from 'react';
 import * as Icons from '../../icons';
 import { useStore } from '../../store/index';
 import { Tooltip } from '../Tooltip';
-import { readFileAsText } from '../../utils/readFileAsText';
 
 interface SettingsPanelProps {
     onExportProject: () => void;
@@ -14,28 +13,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onExportProject, o
     const openModal = useStore(state => state.openModal);
     const userMode = useStore(state => state.userMode);
     const isExporting = useStore(state => state.isExporting);
-    const prepareImport = useStore(state => state.prepareImport);
-    const showToast = useStore(state => state.showToast);
-    const importInputRef = useRef<HTMLInputElement>(null);
-
-    // Issue #104 evaluator MEDIUM: SettingsPanel から「バックアップから復元」が
-    // 消えた regression を解消する。主導線は ProjectSelectionScreen の「データ管理」
-    // に移ったが、編集中にも復元できる安全弁を残す。
-    const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        e.target.value = '';
-        if (!file) return;
-        try {
-            const raw = await readFileAsText(file);
-            const result = await prepareImport(raw);
-            if (result.kind === 'plaintext') {
-                openModal('importConflict');
-            }
-        } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : 'インポートの準備に失敗しました';
-            showToast(msg, 'error');
-        }
-    };
 
 
     const tools = useMemo(() => [
@@ -66,7 +43,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onExportProject, o
                     </button>
                 </Tooltip>
             </div>
-            
+
             {visibleTools.length > 0 && (
                 <div>
                     <h3 className="text-sm font-semibold text-gray-400 mb-2">ツール</h3>
@@ -95,8 +72,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onExportProject, o
                 </div>
             </div>
 
-            {/* 全データバックアップ section: 主導線は ProjectSelectionScreen「データ管理」へ
-                移設 (issue #104)。ここではプロジェクト編集中の動線として最小ボタンを残す。 */}
+            {/* バックアップ作成のみ。復元動線は ProjectSelectionScreen「データ管理」に集約。 */}
             <div>
                 <h3 className="text-sm font-semibold text-gray-400 mb-2">バックアップ</h3>
                 <p className="text-xs text-gray-400 mb-2">
@@ -112,21 +88,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onExportProject, o
                         <Icons.DownloadIcon className="h-4 w-4 mr-1 flex-shrink-0" />
                         <span>{isExporting ? 'エクスポート中…' : 'バックアップを作成'}</span>
                     </button>
-                    <button
-                        type="button"
-                        onClick={() => importInputRef.current?.click()}
-                        className="w-full text-sm px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-md transition flex items-center gap-2 btn-pressable text-gray-300"
-                    >
-                        <Icons.UploadIcon className="h-4 w-4 mr-1 flex-shrink-0" />
-                        <span>バックアップから復元</span>
-                    </button>
-                    <input
-                        type="file"
-                        ref={importInputRef}
-                        onChange={handleImportFile}
-                        accept=".json,application/json"
-                        className="hidden"
-                    />
                 </div>
             </div>
         </div>
