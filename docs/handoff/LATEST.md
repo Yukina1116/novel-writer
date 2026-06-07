@@ -1,20 +1,31 @@
-# Handoff: AI支援メニューアイコン明瞭化 v2 (PR #160 filled style 完走)
+# Handoff: SettingsPanel 復元ボタン削除 + 相関図/タイムラインヘルプ追加 + prod 移行方針合意
 
-- Session Date: 2026-06-07 (後半セッション)
+- Session Date: 2026-06-08
 - Owner: yasushi-honda
-- Status: ✅ **完了** — PR #160 マージ + Cloud Run デプロイ + 本番 Playwright MCP E2E 3 アイコン視認確認まで全工程完走
-- Detail: [2026-06-07b-ai-menu-icons-filled.md](./2026-06-07b-ai-menu-icons-filled.md)
-- Previous: [2026-06-07-ai-menu-icons.md](./2026-06-07-ai-menu-icons.md) (PR #158、Lucide stroke style)
+- Status: ✅ **完了** — PR #162 / #163 ともにマージ + デプロイ + 本番 Playwright MCP 実機確認まで完走。prod 移行方針も合意済み
+- Detail: [2026-06-08-pr162-163-and-prod-roadmap.md](./2026-06-08-pr162-163-and-prod-roadmap.md)
+- Previous: [2026-06-07b-ai-menu-icons-filled.md](./2026-06-07b-ai-menu-icons-filled.md)
 
 ## 本セッション PR
 
 | PR | 内容 | 状態 |
-|---|---|---|
-| **#160** | feat(ui): AI支援メニューのアイコンを filled style に変更 (2 files, +4/-3) | ✅ `513d54c` |
+|----|------|------|
+| **#162** | feat(ui): SettingsPanel から「バックアップから復元」ボタンを削除 (1 file, +3/-42) | ✅ `fcd696b` |
+| **#163** | feat(help): キャラクター相関図とタイムラインのヘルプコンテンツを追加 (1 file, +22/-0) | ✅ `d1308af` |
 
-PR #158 で導入した Lucide stroke style の `PencilIcon` / `FlameIcon` が 20px で判別しにくい指摘を受け、Material Design **filled style** に再設計。同時に「表現を豊かに」の `SparklesIcon` を新規 `BookOpenIcon` (filled 開いた本) に差し替え。
+両 PR とも本番 Cloud Run デプロイ完走 + Playwright MCP 実機確認まで実施済み (`https://novel-writer-ramnh3ulya-an.a.run.app`)。
 
-本番 Playwright MCP で SW + caches クリア後の 3 アイコン視認確認: 鉛筆 / 炎 / 開いた本すべて 20px で明瞭判別可能 (`https://novel-writer-ramnh3ulya-an.a.run.app`)。
+## prod 移行方針の合意（本セッション後半）
+
+`novel-writer-prod` プロジェクトの実態確認:
+- プロジェクトは ACTIVE だが **Cloud Run Admin API 未有効化 / サービス未作成**（空の状態）
+- `.github/workflows/deploy.yml` は `novel-writer-dev` 固定、prod への workflow 分岐は未整備
+- 本田様確認: **現状は外部サービス公開していない**（エンドユーザーゼロ）
+
+合意:
+1. bugfix を一通り `novel-writer-dev` で完了させてから prod 構築に着手
+2. 公開はそのまま prod URL から開始（dev → prod URL 切替によるユーザー混乱を回避）
+3. ユーザー影響配慮（再ログイン・利用規約再同意）は対象ユーザー不在のため不要
 
 ## Issue Net 変化 (本セッション)
 
@@ -22,38 +33,30 @@ PR #158 で導入した Lucide stroke style の `PencilIcon` / `FlameIcon` が 2
 - **起票数**: 0 件
 - **Net**: **0 件**
 
-UI cosmetic change で構造的問題なし、triage 基準該当事象なし。
-
 ## 残 Open Issue (前 handoff から不変、本田様判断待ち)
 
 | Issue | 内容 | 緊急性 |
-|---|---|---|
-| #137 | promptSafety umbrella (サブ #7 完了、残 #6 #8) | LOW |
+|------|------|--------|
+| #137 | promptSafety umbrella (サブ #7 完了、残 #6 / #8) | LOW |
 | #147 | PII path leak (codex review 由来) | LOW |
 | #152 | update path paired signal | LOW |
 | #155 | AC-3 backward compat test gap | LOW |
 | #156 | callback register-or-forget リスク | LOW |
 
-## 本田様判断待ち (前 handoff から不変)
-
-- `./scripts/setup-safety-event-metrics.sh --project novel-writer-dev` 実行
-- Cloud Logging baseline 観察 → alert enable 判断 (1〜4 週間後)
-- Issue #137 残サブ #6 / #8 の milestone 計画
-- Issue #147 / #152 / #155 / #156 の優先順位
-
 ## 次のアクション (3 分割構造)
 
 ### 即着手タスク
-即着手タスクなし
+なし
 
 ### 条件待ち
-4 件 (全て decision-maker からの明示指示が trigger) — 詳細は [2026-06-07b-ai-menu-icons-filled.md](./2026-06-07b-ai-menu-icons-filled.md) §「次のアクション」参照
+5 件（うち 1 件は本セッションで新規合意した「prod 移行」）— 詳細は [2026-06-08-pr162-163-and-prod-roadmap.md](./2026-06-08-pr162-163-and-prod-roadmap.md) §「次のアクション」参照
 
 ### 却下候補
-- handoff 整理 (housekeeping、明示指示なし)
+- handoff 整理 / memory 整理 (housekeeping、明示指示なし)
 - 残 Issue への AI 起点実装提案 (4 原則 §1 越権防止)
-- 他箇所のアイコン明瞭化提案 (起点 unclear)
-- テストカバレッジ向上・追加リファクタ等 (起点 unclear)
+- 他箇所のヘルプ追加・UI 改善提案 (起点 unclear)
+- テストカバレッジ向上・追加リファクタ (起点 unclear)
+- prod 移行の前倒し着手 (trigger 未充足)
 
 ## 再開可能性判定
 
@@ -62,11 +65,15 @@ UI cosmetic change で構造的問題なし、triage 基準該当事象なし。
 | Git Status | ✅ clean |
 | Open PR | ✅ ゼロ |
 | Active Issue | 5 件 (全て LOW + 本田様判断待ち) |
-| CI | ✅ Deploy to Cloud Run #27088828812 success |
+| CI | ✅ Deploy to Cloud Run #27094777773 success |
 | 残留プロセス | ✅ なし |
 | 即着手タスク | 0 件 |
-| 条件待ち | 4 件 (全て decision-maker trigger) |
+| 条件待ち | 5 件 (全て decision-maker trigger) |
 
 ## 最終結論
 
 🛑 **executor 領分の作業ゼロ、即時セッション終了推奨**
+
+- Open PR ゼロ / Git clean / CI success
+- Active Issue 5 件は全て LOW + 本田様判断待ち
+- 本セッション合意の「prod 移行」は trigger（bugfix 一通り完了）未充足
