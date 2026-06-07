@@ -36,7 +36,7 @@ const menuData = [
         color: 'text-emerald-400',
         items: [
             { label: '誤字脱字チェック', description: '文章のミスを見つけて修正案を出します。', icon: Icons.CheckCircleIcon, prompt: 'これまでの文章に誤字脱字や不自然な日本語がないかチェックして、修正案を提示してください。' },
-            { label: '表現を豊かに', description: '語彙を増やし、より魅力的な文章にします。', icon: Icons.SparklesIcon, prompt: '文章の語彙を豊かにし、より魅力的な表現にブラッシュアップしてください。' },
+            { label: '表現を豊かに', description: '語彙を増やし、より魅力的な文章にします。', icon: Icons.BookOpenIcon, prompt: '文章の語彙を豊かにし、より魅力的な表現にブラッシュアップしてください。' },
             { label: '語尾の重複を修正', description: '「〜た。」などが続く単調さを解消。', icon: Icons.ListOrderedIcon, prompt: '同じ語尾（「〜た」「〜だ」など）が連続して単調になっている箇所を特定し、リズム良く書き換えてください。' },
             { label: 'もっと簡潔な表現に', description: '無駄を削ぎ落として読みやすくします。', icon: Icons.FileTextIcon, prompt: 'この文章を、意味を変えずに、よりシンプルで読みやすい簡潔な表現に直してください。' },
         ]
