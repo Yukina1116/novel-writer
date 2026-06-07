@@ -23,10 +23,10 @@ const menuData = [
         icon: Icons.PenSquareIcon,
         color: 'text-blue-400',
         items: [
-            { label: '続きを書いて', description: '現在の文脈から自然な続きを生成します。', icon: Icons.SparklesIcon, prompt: '続きを書いてください。' },
+            { label: '続きを書いて', description: '現在の文脈から自然な続きを生成します。', icon: Icons.PencilIcon, prompt: '続きを書いてください。' },
             { label: '情景描写を追加', description: '今のシーンに鮮やかな情景描写を加えます。', icon: Icons.ImageIcon, prompt: '今のシーンに、より詳細な情景描写を追加してください。' },
             { label: '心理描写を深掘り', description: 'キャラクターの心情をより深く描きます。', icon: Icons.UserIcon, prompt: 'キャラクターの心の動きをもっと詳しく描写してください。' },
-            { label: 'アクション描写の強化', description: '動きのあるシーンをダイナミックに。', icon: Icons.MagicWandIcon, prompt: 'このシーンのアクション描写をもっと躍動感のある、迫力重視の文章に書き換えてください。' },
+            { label: 'アクション描写の強化', description: '動きのあるシーンをダイナミックに。', icon: Icons.FlameIcon, prompt: 'このシーンのアクション描写をもっと躍動感のある、迫力重視の文章に書き換えてください。' },
             { label: '会話シーンを生成', description: 'キャラ同士の掛け合いを作ります。', icon: Icons.BotIcon, prompt: 'この状況でキャラクターたちが交わす、テンポの良い会話シーンを生成してください。' },
         ]
     },
