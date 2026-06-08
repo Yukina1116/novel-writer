@@ -433,8 +433,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({ userInputRef, isMobile =
                     </div>
                 </> )}
             </div>
-            {userMode === 'pro' && (
-                <SuggestionHistoryModal 
+            {userMode !== 'simple' && (
+                <SuggestionHistoryModal
                     isOpen={isHistoryOpen}
                     onClose={() => setIsHistoryOpen(false)}
                     knowledgeSuggestions={archivedKnowledgeSuggestions}
