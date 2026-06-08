@@ -264,10 +264,10 @@ describe('resolveImportProjects (AC-3)', () => {
 
 // --- M6 PR-B: parseAnyBackup + isEncryptedBackup + parseEncryptedEnvelope (AC-8) ---
 
-import { encryptBackup, IV_BYTES, PBKDF2_ITERATIONS, randomBytes, SALT_BYTES, toBase64 } from './backupCrypto';
+import { decryptBackup, encryptBackup, IV_BYTES, PBKDF2_ITERATIONS, randomBytes, SALT_BYTES, toBase64 } from './backupCrypto';
 import { isEncryptedBackup, parseAnyBackup, parseEncryptedEnvelope } from './backupSchema';
 import { buildSampleBackup } from '../tests/fixtures/backup';
-import type { BackupV1 } from '../types';
+import type { BackupV1, EncryptedBackupV1 } from '../types';
 
 const VALID_PASSPHRASE = 'test-passphrase-12-chars-ok';
 
@@ -412,5 +412,72 @@ describe('parseEncryptedEnvelope parse-time guards (AC-4)', () => {
         const env = baseEnv();
         (env.kdfParams as { iterations: number }).iterations = 10_000_000;
         expect(() => parseEncryptedEnvelope(env)).not.toThrow();
+    });
+});
+
+describe('chapterId roundtrip (PR-2 AC-10)', () => {
+    // chapterId 付きの novelContent が plaintext / encrypted / legacy bare の 3 経路で
+    // export → parse → import の往復で保存・推論されることを pin する (review M4 指摘対応)。
+    // 注: parseBackup は内部で validateAndSanitizeProjectData を呼ぶため、3 経路すべてで
+    // chapterId の正規化が走る (legacy bare の chapterId 推論もここで完了)。
+
+    const projectWithChapters = (): Project => ({
+        ...makeProject({ id: 'chap-p', name: '章付き物語' }),
+        novelContent: [
+            { id: 'A', text: '本文1', chapterId: null },
+            { id: 'B', text: '# 第1章', chapterId: 'B' },
+            { id: 'C', text: '第1章本文', chapterId: 'B' },
+            { id: 'D', text: '# 第2章', chapterId: 'D' },
+            { id: 'E', text: '第2章本文', chapterId: 'D' },
+        ],
+    });
+
+    it('plaintext BackupV1 → parseBackup で chapterId が完全に保持される', () => {
+        const backup = buildBackupV1({
+            projects: [projectWithChapters()],
+            tutorialState: {},
+            analysisHistory: [],
+            appVersion: '1.0.0',
+        });
+        const raw = serializeBackup(backup);
+        const parsed = parseBackup(raw, { rawSize: raw.length });
+        expect(parsed.projects[0].novelContent.map(c => ({ id: c.id, chapterId: c.chapterId }))).toEqual([
+            { id: 'A', chapterId: null },
+            { id: 'B', chapterId: 'B' },
+            { id: 'C', chapterId: 'B' },
+            { id: 'D', chapterId: 'D' },
+            { id: 'E', chapterId: 'D' },
+        ]);
+    });
+
+    it('encrypted BackupV1 → decrypt → parseBackup で chapterId が保持される (passphrase 経路)', async () => {
+        const backup = buildBackupV1({
+            projects: [projectWithChapters()],
+            tutorialState: {},
+            analysisHistory: [],
+            appVersion: '1.0.0',
+        });
+        const env = await encryptBackup(backup, VALID_PASSPHRASE, '1.0.0');
+        const raw = JSON.stringify(env);
+        const top = parseAnyBackup(raw);
+        expect((top as { encrypted?: boolean }).encrypted).toBe(true);
+        const decrypted = await decryptBackup(top as EncryptedBackupV1, VALID_PASSPHRASE);
+        const innerRaw = JSON.stringify(decrypted);
+        const inner = parseBackup(innerRaw, { rawSize: innerRaw.length });
+        expect(inner.projects[0].novelContent.map(c => c.chapterId)).toEqual([null, 'B', 'B', 'D', 'D']);
+    });
+
+    it('legacy bare-project JSON (chapterId 不在) は parseBackup 内の validateAndSanitizeProjectData で推論される', () => {
+        const legacy = JSON.stringify({
+            ...makeProject({ id: 'legacy-chap-p' }),
+            novelContent: [
+                { id: 'A', text: '本文1' },
+                { id: 'B', text: '# 第1章' },
+                { id: 'C', text: '第1章本文' },
+            ],
+        });
+        const parsed = parseBackup(legacy, { rawSize: legacy.length });
+        // parseBackup → wrapLegacyProject → validateAndSanitizeProjectData → normalizeChapterIds
+        expect(parsed.projects[0].novelContent.map(c => c.chapterId)).toEqual([null, 'B', 'B']);
     });
 });

@@ -2,7 +2,11 @@
 import React, { useMemo, useState } from 'react';
 import * as Icons from '../../icons';
 import { useStore } from '../../store/index';
-import { NovelChunk } from '../../types';
+import {
+    UNCATEGORIZED_CHAPTER_ID,
+    extractChapterTitle,
+    getChapterGroups,
+} from '../../utils';
 
 const EMPTY_ARRAY: any[] = [];
 
@@ -19,29 +23,27 @@ export const OutlinePanel = ({ isFloating = false, isMobile = false }) => {
     const setIsLeftSidebarOpen = useStore(state => state.setIsLeftSidebarOpen);
 
     const [deletingChapterId, setDeletingChapterId] = useState<string | null>(null);
-    
+
+    // 章一覧は chapterId 基準で集約。drag/drop の id も groupId (= UNCATEGORIZED_CHAPTER_ID か
+    // title chunk id) を使い、chunk id とは区別する。
     const chapters = useMemo(() => {
         if (!novelContent) return [];
-        
-        return novelContent
-            .filter((chunk, index) => {
-                const isTitle = chunk.text.startsWith('# ');
-                const isFirstChunkAndNotTitle = index === 0 && !isTitle;
-                return isTitle || isFirstChunkAndNotTitle;
-            })
-            .map(chunk => {
-                const isUncategorized = !chunk.text.startsWith('# ');
-                const title = isUncategorized 
-                    ? '章に属さない文章' 
-                    : chunk.text.split('\n')[0].substring(2).trim() || '無題の章';
-                
+        return getChapterGroups(novelContent).map(group => {
+            if (group.kind === 'uncategorized') {
                 return {
-                    id: chunk.id,
-                    title: title,
-                    memo: isUncategorized ? undefined : chunk.memo,
-                    isUncategorized: isUncategorized
+                    id: UNCATEGORIZED_CHAPTER_ID,
+                    title: '章に属さない文章',
+                    memo: undefined as string | undefined,
+                    isUncategorized: true,
                 };
-            });
+            }
+            return {
+                id: group.groupId,
+                title: extractChapterTitle(group.titleChunk) || '無題の章',
+                memo: group.titleChunk.memo,
+                isUncategorized: false,
+            };
+        });
     }, [novelContent]);
 
     const handleChapterJump = (chapterId: string) => {
@@ -52,7 +54,7 @@ export const OutlinePanel = ({ isFloating = false, isMobile = false }) => {
     const handleOpenChapterSettings = (chapter: { id: string; title: string; memo?: string; isUncategorized: boolean }) => {
         openModal('chapterSettings', { id: chapter.id, title: chapter.title, memo: chapter.memo || '', isUncategorized: chapter.isUncategorized });
     };
-    
+
     const handleChapterDragStart = (e: React.DragEvent<HTMLDivElement>, chapterId: string) => {
         if (isMobile) return; // Mobile drag is not supported via HTML5 API
         useStore.setState({ draggedChapterId: chapterId });
@@ -64,21 +66,21 @@ export const OutlinePanel = ({ isFloating = false, isMobile = false }) => {
     };
 
     const handleChapterDragOver = (e: React.DragEvent<HTMLDivElement>) => e.preventDefault();
-    const handleChapterDragEnter = (e: React.DragEvent<HTMLDivElement>, chapterId: string) => { 
+    const handleChapterDragEnter = (e: React.DragEvent<HTMLDivElement>, chapterId: string) => {
         if (isMobile) return;
         if (draggedChapterId && draggedChapterId !== chapterId) {
             useStore.setState({ dropTargetId: chapterId });
         }
     };
-    
-    const onChapterDrop = (e: React.DragEvent<HTMLDivElement>, dropOnChapterId: string) => { 
-        e.preventDefault(); 
+
+    const onChapterDrop = (e: React.DragEvent<HTMLDivElement>, dropOnChapterId: string) => {
+        e.preventDefault();
         if (isMobile) return;
-        if (!draggedChapterId || draggedChapterId === dropOnChapterId) { 
-            useStore.setState({ dropTargetId: null }); 
-            return; 
-        } 
-        handleChapterDrop(dropOnChapterId); 
+        if (!draggedChapterId || draggedChapterId === dropOnChapterId) {
+            useStore.setState({ dropTargetId: null });
+            return;
+        }
+        handleChapterDrop(dropOnChapterId);
     };
     
     const handleChapterDragEnd = () => { 

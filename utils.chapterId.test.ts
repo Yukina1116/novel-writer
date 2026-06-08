@@ -7,11 +7,26 @@ import {
     getChapterGroups,
     getChapterChunksByGroupId,
     getChapterIdForNewChunk,
-    getChapterChunks,
     validateAndSanitizeProjectData,
     __resetChapterIdWarnState,
 } from './utils';
 import { NovelChunk } from './types';
+
+// PR-2 で utils.getChapterChunks (位置依存ルールの旧 API) を削除済み。
+// migration 等価性テスト (C-1) は新 API が旧挙動と一致することを保証する regression guard として、
+// 旧 API のロジックを test-local にインライン保持する。
+const legacyGetChapterChunks = (novelContent: NovelChunk[], chapterId: string): NovelChunk[] => {
+    const isUncategorizedChapter = novelContent.find(c => c.id === chapterId && !c.text.startsWith('# '));
+    if (isUncategorizedChapter) {
+        const firstTitleIndex = novelContent.findIndex(c => c.text.startsWith('# '));
+        return firstTitleIndex === -1 ? [...novelContent] : novelContent.slice(0, firstTitleIndex);
+    }
+    const chapterStartIndex = novelContent.findIndex(c => c.id === chapterId);
+    if (chapterStartIndex === -1) return [];
+    let chapterEndIndex = novelContent.findIndex((c, i) => i > chapterStartIndex && c.text.startsWith('# '));
+    if (chapterEndIndex === -1) chapterEndIndex = novelContent.length;
+    return novelContent.slice(chapterStartIndex, chapterEndIndex);
+};
 
 // dev-only warn は module-level Set で 1 度だけ発火するため、warn 検証テストの前に clear する。
 beforeEach(() => {
@@ -372,7 +387,7 @@ describe('legacy getChapterChunks ↔ getChapterChunksByGroupId migration equiva
             const newApiResult = getChapterChunksByGroupId(normalized, grp.groupId).map(c => c.id);
             const legacyKey = grp.kind === 'uncategorized' ? uncatLegacyId : grp.groupId;
             if (legacyKey == null) continue; // uncategorized が空 group のケース
-            const legacyResult = getChapterChunks(content, legacyKey).map(c => c.id);
+            const legacyResult = legacyGetChapterChunks(content, legacyKey).map(c => c.id);
             expect(newApiResult).toEqual(legacyResult);
         }
     });
@@ -380,7 +395,7 @@ describe('legacy getChapterChunks ↔ getChapterChunksByGroupId migration equiva
     it('returns empty array on unknown groupId / chunkId in both APIs', () => {
         const normalized = normalizeChapterIds([chunk('A', '# 第1章'), chunk('B', '本文')]);
         expect(getChapterChunksByGroupId(normalized, 'GHOST')).toEqual([]);
-        expect(getChapterChunks([chunk('A', '# 第1章')], 'GHOST')).toEqual([]);
+        expect(legacyGetChapterChunks([chunk('A', '# 第1章')], 'GHOST')).toEqual([]);
     });
 });
 

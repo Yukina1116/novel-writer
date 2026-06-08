@@ -424,34 +424,6 @@ export const getChapterIdForNewChunk = (chunks: NovelChunk[]): string | null => 
     return last.chapterId ?? null;
 };
 
-/**
- * @deprecated 位置依存ルール (`# ` 始まり chunk の物理順序) で章を決める旧 API。
- * 新規呼び出しは `getChapterChunksByGroupId(chunks, groupId)` を使うこと。
- * 残存呼び出し元 (現在は `store/dataSlice.ts` の `handleChapterDrop` のみ) を移行し終えたら削除する。
- */
-export const getChapterChunks = (novelContent: NovelChunk[], chapterId: string): NovelChunk[] => {
-    const isUncategorizedChapter = novelContent.find(c => c.id === chapterId && !c.text.startsWith('# '));
-
-    if (isUncategorizedChapter) {
-        const firstTitleIndex = novelContent.findIndex(c => c.text.startsWith('# '));
-        if (firstTitleIndex === -1) {
-            return [...novelContent];
-        }
-        return novelContent.slice(0, firstTitleIndex);
-    }
-
-    const chapterStartIndex = novelContent.findIndex(c => c.id === chapterId);
-    if (chapterStartIndex === -1) return [];
-
-    let chapterEndIndex = novelContent.findIndex((c, i) => i > chapterStartIndex && c.text.startsWith('# '));
-    if (chapterEndIndex === -1) {
-        chapterEndIndex = novelContent.length;
-    }
-
-    return novelContent.slice(chapterStartIndex, chapterEndIndex);
-};
-
-
 // --- Project Data Validation ---
 const isObject = (value: any): value is Record<string, any> => value !== null && typeof value === 'object' && !Array.isArray(value);
 const isString = (value: any): value is string => typeof value === 'string';
