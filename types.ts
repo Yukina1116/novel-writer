@@ -31,6 +31,12 @@ export interface NovelChunk {
     text: string;
     memo?: string;
     isPinned?: boolean;
+    /**
+     * 章への所属。`undefined` は migration 未適用、`null` は意図的な「章に属さない文章」、
+     * 文字列は所属する章タイトル chunk の id。タイトル chunk 自身は `chapterId === self.id`。
+     * `normalizeChapterIds` で必ず `null` か文字列に正規化される。
+     */
+    chapterId?: string | null;
 }
 
 export interface ChatMessage {

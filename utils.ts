@@ -236,6 +236,126 @@ export const parseMarkdown = (
 };
 
 
+/**
+ * UI / group lookup 用の仮想 id。`chapterId === null` の chunks (= 章に属さない文章) を
+ * 1 つのグループとして扱う際の groupId として使用する。chunk id と衝突しないよう接頭辞付き。
+ */
+export const UNCATEGORIZED_CHAPTER_ID = '__uncategorized__';
+
+export const isChapterTitleChunk = (chunk: NovelChunk): boolean =>
+    chunk.text.startsWith('# ');
+
+/**
+ * 章タイトル chunk の text の先頭行から `# ` を除いたタイトル文字列を返す。
+ * `# ` で始まらない chunk を渡した場合は空文字。
+ */
+export const extractChapterTitle = (chunk: NovelChunk): string => {
+    if (!isChapterTitleChunk(chunk)) return '';
+    return chunk.text.split('\n')[0].substring(2).trim();
+};
+
+/**
+ * `novelContent` の chunks に対し chapterId を推論・修復した新しい配列を返す (入力は変更しない)。
+ *
+ * 規則:
+ *   - title chunk (text が `# ` で始まる) → `chapterId === self.id`
+ *   - body chunk で `chapterId === null` → そのまま (意図的な「章に属さない文章」)
+ *   - body chunk で `chapterId` が文字列で、それ以前に出現した title chunk の id を指す → そのまま
+ *   - 上記以外 (undefined / 非 string / 存在しない or 前方参照 id) → 直前の chunk の正規化済 chapterId を継承
+ *     (最初の chunk なら null)
+ *
+ * 旧データ (chapterId なし) には現行の `# ` 位置依存ルールと等価な結果を返す。冪等。
+ */
+export const normalizeChapterIds = (chunks: NovelChunk[]): NovelChunk[] => {
+    const knownTitleIds = new Set<string>();
+    const result: NovelChunk[] = [];
+    let lastChapterId: string | null = null;
+
+    for (const chunk of chunks) {
+        if (isChapterTitleChunk(chunk)) {
+            knownTitleIds.add(chunk.id);
+            result.push({ ...chunk, chapterId: chunk.id });
+            lastChapterId = chunk.id;
+            continue;
+        }
+        const raw = chunk.chapterId;
+        let resolved: string | null;
+        if (raw === null) {
+            resolved = null;
+        } else if (typeof raw === 'string' && knownTitleIds.has(raw)) {
+            resolved = raw;
+        } else {
+            resolved = lastChapterId;
+        }
+        result.push({ ...chunk, chapterId: resolved });
+        lastChapterId = resolved;
+    }
+    return result;
+};
+
+export interface ChapterGroup {
+    /** UNCATEGORIZED_CHAPTER_ID か、または title chunk の id */
+    groupId: string;
+    /** uncategorized group の場合は null */
+    titleChunk: NovelChunk | null;
+    /** group に属する chunks (配列上の出現順、title chunk があれば最初に出現した位置で保持) */
+    chunks: NovelChunk[];
+}
+
+/**
+ * 正規化済みの chunks から章グループ配列を生成する。
+ * グループの順序は novelContent 配列上で各 groupId が**最初に出現した順**。
+ * group 連続性 invariant (同一 chapterId は連続) が崩れていても groupId で集約はするが、
+ * その場合は出力 group 内の chunks 順序は元配列順を保持する (描画側でも順序が壊れて見える)。
+ */
+export const getChapterGroups = (chunks: NovelChunk[]): ChapterGroup[] => {
+    const groups: ChapterGroup[] = [];
+    const indexByGroupId = new Map<string, number>();
+
+    for (const chunk of chunks) {
+        const groupId = chunk.chapterId == null ? UNCATEGORIZED_CHAPTER_ID : chunk.chapterId;
+        const existingIdx = indexByGroupId.get(groupId);
+        if (existingIdx === undefined) {
+            indexByGroupId.set(groupId, groups.length);
+            groups.push({
+                groupId,
+                titleChunk: isChapterTitleChunk(chunk) ? chunk : null,
+                chunks: [chunk],
+            });
+        } else {
+            const grp = groups[existingIdx];
+            grp.chunks.push(chunk);
+            if (isChapterTitleChunk(chunk) && !grp.titleChunk) {
+                grp.titleChunk = chunk;
+            }
+        }
+    }
+    return groups;
+};
+
+/** 指定 groupId に属する chunks のみを配列順で返す。 */
+export const getChapterChunksByGroupId = (chunks: NovelChunk[], groupId: string): NovelChunk[] => {
+    return chunks.filter(c => {
+        const id = c.chapterId == null ? UNCATEGORIZED_CHAPTER_ID : c.chapterId;
+        return id === groupId;
+    });
+};
+
+/**
+ * 新規に末尾追加される chunk が継承すべき chapterId を返す (R2: 最終章配下に append)。
+ * - chunks が空 → null (uncategorized)
+ * - 末尾 chunk の chapterId をそのまま継承 (string = 最終章配下、null = uncategorized)
+ */
+export const getChapterIdForNewChunk = (chunks: NovelChunk[]): string | null => {
+    if (chunks.length === 0) return null;
+    const last = chunks[chunks.length - 1];
+    return last.chapterId ?? null;
+};
+
+/**
+ * 旧 API。PR-1 段階では既存呼び出し元の挙動を変えないため**現行の位置依存ルール**のまま残置。
+ * PR-2 で `handleChapterDrop` 等の呼び出し元を `getChapterChunksByGroupId` に移行したのち削除予定。
+ */
 export const getChapterChunks = (novelContent: NovelChunk[], chapterId: string): NovelChunk[] => {
     const isUncategorizedChapter = novelContent.find(c => c.id === chapterId && !c.text.startsWith('# '));
 
@@ -246,7 +366,7 @@ export const getChapterChunks = (novelContent: NovelChunk[], chapterId: string):
         }
         return novelContent.slice(0, firstTitleIndex);
     }
-    
+
     const chapterStartIndex = novelContent.findIndex(c => c.id === chapterId);
     if (chapterStartIndex === -1) return [];
 
@@ -269,7 +389,15 @@ const validateArrayItems = <T>(arr: any, validator: (item: any) => item is T): T
     return arr.filter(validator);
 };
 
-const isValidNovelChunk = (item: any): item is NovelChunk => isObject(item) && isString(item.id) && isString(item.text);
+const isValidNovelChunk = (item: any): item is NovelChunk => {
+    if (!isObject(item) || !isString(item.id) || !isString(item.text)) return false;
+    // chapterId は string | null | undefined のみ許容。それ以外は field を削除して
+    // 後続の normalizeChapterIds で再推論させる。
+    if ('chapterId' in item && item.chapterId !== null && !isString(item.chapterId)) {
+        delete item.chapterId;
+    }
+    return true;
+};
 const isValidSettingItem = (item: any): item is SettingItem => isObject(item) && isString(item.id) && isString(item.name) && isString(item.type);
 const isValidKnowledgeItem = (item: any): item is KnowledgeItem => {
     if (!isObject(item) || !isString(item.id) || !isString(item.name)) return false;
@@ -336,6 +464,8 @@ export const validateAndSanitizeProjectData = (data: any): Project => {
     } else {
         sanitized.novelContent = validateArrayItems(sanitized.novelContent, isValidNovelChunk);
     }
+    // chapterId の推論・修復 migration (旧データは undefined、不正参照は前 chunk から継承)
+    sanitized.novelContent = normalizeChapterIds(sanitized.novelContent);
     
     // For other arrays, ensure they are arrays and default to empty if not
     const arrayKeys: (keyof Project)[] = [
