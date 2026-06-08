@@ -485,6 +485,12 @@ AIに一度に書いてもらう長さです。
 
 
 export const HelpModal = ({ isOpen, onClose, topic }) => {
+    const [openIndices, setOpenIndices] = useState<number[]>([]);
+
+    useEffect(() => {
+        setOpenIndices([]);
+    }, [topic]);
+
     if (!isOpen || !topic) return null;
 
     const content = helpContent[topic];
@@ -503,6 +509,12 @@ export const HelpModal = ({ isOpen, onClose, topic }) => {
         );
     }
 
+    const toggleSection = (index: number) => {
+        setOpenIndices(prev =>
+            prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
+        );
+    };
+
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[90]">
             <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl p-6 border border-gray-700 max-h-[90vh] flex flex-col">
@@ -512,24 +524,41 @@ export const HelpModal = ({ isOpen, onClose, topic }) => {
                 </div>
                 <div className="flex-grow overflow-y-auto pr-2 space-y-6">
                     <p className="text-gray-300">{content.description}</p>
-                    {content.sections.map((section, index) => (
-                        <div key={index} className="border-t border-gray-700 pt-4">
-                            <h3 className="font-semibold text-lg text-lime-400">{section.heading}</h3>
-                            <p className="mt-1 text-sm whitespace-pre-wrap">{section.body}</p>
-                            {section.example && (
-                                <div className="mt-3 p-3 bg-gray-900/50 rounded-md">
-                                    <p className="text-xs text-gray-400 mb-1">文章例：</p>
-                                    <p className="text-sm font-mono italic" dangerouslySetInnerHTML={{ __html: `&quot;${renderMarkdown(section.example)}&quot;` }}></p>
-                                </div>
-                            )}
-                            {section.useCase && (
-                                <div className="mt-3 p-3 bg-gray-900/50 rounded-md">
-                                    <p className="text-xs text-gray-400 mb-1">おすすめの利用シーン：</p>
-                                    <p className="text-sm">{section.useCase}</p>
-                                </div>
-                            )}
-                        </div>
-                    ))}
+                    {content.sections.map((section, index) => {
+                        const isSectionOpen = openIndices.includes(index);
+                        const bodyId = `help-section-body-${index}`;
+                        return (
+                            <div key={index} className="border-t border-gray-700 pt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => toggleSection(index)}
+                                    aria-expanded={isSectionOpen}
+                                    aria-controls={bodyId}
+                                    className="w-full flex justify-between items-center text-left rounded-md py-1 hover:bg-gray-700/30 transition"
+                                >
+                                    <h3 className="font-semibold text-lg text-lime-400">{section.heading}</h3>
+                                    <span aria-hidden="true" className="text-gray-400 text-xl select-none ml-2">{isSectionOpen ? '∧' : '∨'}</span>
+                                </button>
+                                {isSectionOpen && (
+                                    <div id={bodyId} className="mt-2">
+                                        <p className="text-sm whitespace-pre-wrap">{section.body}</p>
+                                        {section.example && (
+                                            <div className="mt-3 p-3 bg-gray-900/50 rounded-md">
+                                                <p className="text-xs text-gray-400 mb-1">文章例：</p>
+                                                <p className="text-sm font-mono italic" dangerouslySetInnerHTML={{ __html: `&quot;${renderMarkdown(section.example)}&quot;` }}></p>
+                                            </div>
+                                        )}
+                                        {section.useCase && (
+                                            <div className="mt-3 p-3 bg-gray-900/50 rounded-md">
+                                                <p className="text-xs text-gray-400 mb-1">おすすめの利用シーン：</p>
+                                                <p className="text-sm">{section.useCase}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
         </div>
