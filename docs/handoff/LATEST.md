@@ -1,29 +1,24 @@
-# Handoff: UX 改善 4 件 (履歴ボタンバグ / DblClick 編集 / 左カラムフッター / タイムライン⇔プロット同期)
+# Handoff: ヘルプモーダルの sections アコーディオン化 (#171)
 
-- Session Date: 2026-06-08 (afternoon)
+- Session Date: 2026-06-08 (evening)
 - Owner: yasushi-honda
-- Status: ✅ **PR #165–#168 4 件すべてマージ + Cloud Run デプロイ完走 + PR-A/B/C/D1 全て本番 Playwright MCP 実機確認まで完走**
-- Detail: [2026-06-08b-pr165-168-ux-improvements.md](./2026-06-08b-pr165-168-ux-improvements.md)
-- Previous: [2026-06-08-pr162-163-and-prod-roadmap.md](./2026-06-08-pr162-163-and-prod-roadmap.md)
+- Status: ✅ **PR #171 マージ + Cloud Run デプロイ + 本番 Playwright MCP E2E 完走**
+- Detail: [2026-06-08c-pr171-help-modal-accordion.md](./2026-06-08c-pr171-help-modal-accordion.md)
+- Previous: [2026-06-08b-pr165-168-ux-improvements.md](./2026-06-08b-pr165-168-ux-improvements.md)
 
 ## 本セッション PR
 
 | PR | 内容 | 状態 |
 |----|------|------|
-| **#165** | fix(ui): 履歴ボタンを standard モードでも開けるよう SuggestionHistoryModal の mount 条件を修正 | ✅ `4d6a58d` + 本番実機確認 |
-| **#166** | feat(ui): キャラクター / 世界観のアイテムをダブルクリックで編集モーダルを開けるようにする | ✅ `10ddde8` + 本番実機確認 |
-| **#167** | feat(ui): 左カラムにデスクトップ用フッターを新設し、自動保存表示の移行と総文字数表示を追加 | ✅ `405e8d2` + 本番実機確認 |
-| **#168** | feat(sync): タイムライン⇔プロットボードのタイトル差異を保存時に自動同期 + トースト通知 | ✅ `bc5da5a` + 本番実機確認 (`createPlotFromEvent` 経路で同期確認) |
+| **#171** | feat(ui): ヘルプモーダルの sections をアコーディオン化 (概要を先に読ませる UX 改善) | ✅ `6f440fe` + 本番実機確認 |
 
-すべて本番 Cloud Run (`https://novel-writer-ramnh3ulya-an.a.run.app`) にデプロイ完了。
+`components/HelpModals.tsx` 共通コンポーネントのみ変更 (+47/-18 行) で **20 種すべてのヘルプモーダル** に一括適用。`description` 常時表示 + sections をアコーディオン化 (初期全閉じ / 複数同時開閉 / Space・Enter 対応 / topic 切替時リセット)。Codex セカンドオピニオン取り込み済み。
 
 ## Issue Net 変化 (本セッション)
 
 - **Close 数**: 0 件
 - **起票数**: 0 件
 - **Net**: **0 件**
-
-備考: PR-D1 実機確認時に観察した「タイムラインへ送る後のタイムライン未反映」は本田様判断により未起票（triage 基準未充足）。
 
 ## 残 Open Issue (前 handoff から不変)
 
@@ -41,38 +36,39 @@
 なし
 
 ### 条件待ち
-5 件 — 詳細は [2026-06-08b-pr165-168-ux-improvements.md](./2026-06-08b-pr165-168-ux-improvements.md) §「次のアクション」参照。
-1. 「タイムラインへ送る」後のタイムライン未反映の挙動切り分け
-2. `novel-writer-prod` への構築着手 (bugfix 完了 trigger)
-3. setup-safety-event-metrics 実行 (本田様指示)
-4. Cloud Logging baseline 観察 → alert enable 判断 (1〜4 週間後)
-5. 残 Open Issue (#137 残サブ / #147 / #152 / #155 / #156) の優先順位決定
+7 件 — 詳細は [2026-06-08c-pr171-help-modal-accordion.md](./2026-06-08c-pr171-help-modal-accordion.md) §「次のアクション」参照。
+1. description セクションの視覚強調 (本田様判断 trigger)
+2. 「タイムラインへ送る」後のタイムライン未反映の挙動切り分け
+3. `novel-writer-prod` への構築着手 (bugfix 完了 trigger)
+4. setup-safety-event-metrics 実行 (本田様指示)
+5. Cloud Logging baseline 観察 → alert enable 判断 (1〜4 週間後)
+6. 残 Open Issue (#137 残サブ / #147 / #152 / #155 / #156) の優先順位決定
+7. ローカル動作確認用 PNG 6 枚の取り扱い (削除 or .gitignore)
 
 ### 却下候補
 - handoff 整理 / memory 整理 (housekeeping、明示指示なし)
 - 残 Issue への AI 起点実装提案 (4 原則 §1 越権防止)
 - 他箇所のヘルプ追加・UI 改善提案 (起点 unclear)
-- テストカバレッジ向上・追加リファクタ (起点 unclear)
+- HelpModal vitest unit test 追加 (起点 unclear、既存規約と非整合)
 - prod 移行の前倒し着手 (trigger 未充足)
-- SyncDialog 完全削除 / summary 自動同期化 (PR-D1 後続、起点 unclear)
-- 「タイムラインへ送る」未反映の自主修正 (切り分け前の修正は越権)
+- `WorldHelpModal.tsx` / `CharacterHelpModal.tsx` (Tab 型) のアコーディオン化 (構造別物、要望なし)
 
 ## 再開可能性判定
 
 | 項目 | 状態 |
 |------|------|
-| Git Status | ✅ clean |
-| Open PR | ✅ ゼロ |
+| Git Status | ✅ clean (untracked PNG 6 枚は確認用、コミット対象外) |
+| Open PR | ✅ ゼロ (本 handoff PR を除く) |
 | Active Issue | 5 件 (全て LOW + 本田様判断待ち) |
-| CI | ✅ Deploy to Cloud Run #27109783026 (PR-D1) success (3m20s) |
+| CI | ✅ Deploy to Cloud Run #27121392720 (PR #171) success (4m11s) |
 | 残留プロセス | ✅ なし |
 | 即着手タスク | 0 件 |
-| 条件待ち | 5 件 (全て decision-maker trigger) |
+| 条件待ち | 7 件 (全て decision-maker trigger / 指示待ち) |
 
 ## 最終結論
 
 🛑 **executor 領分の作業ゼロ、即時セッション終了推奨**
 
 - Open PR ゼロ / Git clean / CI success
-- PR #165–#168 4 件すべて完走 (マージ + デプロイ + 本番 Playwright MCP 実機確認)
-- 条件待ち 5 件すべて decision-maker からの trigger 待ち
+- PR #171 完走 (マージ + デプロイ + 本番 Playwright MCP 実機確認)
+- 条件待ち 7 件すべて decision-maker からの trigger / 指示待ち
