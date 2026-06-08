@@ -69,7 +69,12 @@ export const CharacterListPanel = ({ isFloating = false, isMobile = false }) => 
             )}
             <div className="flex-grow overflow-y-auto p-2 space-y-2">
                 {characters.map(char => (
-                    <div key={char.id} className={`p-2 rounded-lg flex gap-2 ${deletingId === char.id ? 'bg-red-900/20 border border-red-500' : 'bg-gray-800/50'}`}>
+                    <div
+                        key={char.id}
+                        className={`p-2 rounded-lg flex gap-2 ${deletingId === char.id ? 'bg-red-900/20 border border-red-500' : 'bg-gray-800/50'}`}
+                        onDoubleClick={() => openModal('character', char)}
+                        title="ダブルクリックで編集"
+                    >
                         <div className="w-12 h-12 flex-shrink-0 rounded-md bg-gray-700 flex items-center justify-center">
                             {char.appearance?.imageUrl ? (
                                 <img src={char.appearance.imageUrl} alt={char.name} className="w-full h-full object-cover object-top rounded-md" />
@@ -82,15 +87,15 @@ export const CharacterListPanel = ({ isFloating = false, isMobile = false }) => 
                                 <p className="font-bold text-sm truncate" style={{ color: char.themeColor || '#60a5fa' }}>{char.name}</p>
                                 <div className="flex gap-1 flex-shrink-0">
                                     {deletingId === char.id ? (
-                                        <div className="flex items-center gap-1 animate-fade-in">
+                                        <div className="flex items-center gap-1 animate-fade-in" onDoubleClick={(e) => e.stopPropagation()}>
                                             <span className="text-xs text-red-300 font-bold mr-1">削除?</span>
                                             <button onClick={(e) => confirmDelete(e, char.id)} className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-500 shadow-md">はい</button>
                                             <button onClick={cancelDelete} className="px-2 py-1 text-xs bg-gray-600 text-white rounded hover:bg-gray-500 shadow-md">いいえ</button>
                                         </div>
                                     ) : (
                                         <>
-                                            <button onClick={() => openModal('character', char)} className="p-1 text-gray-400 hover:text-yellow-400 btn-pressable" title="編集"><Icons.EditIcon /></button>
-                                            <button onClick={(e) => initiateDelete(e, char.id)} className="p-1 text-gray-400 hover:text-red-400 btn-pressable" title="削除"><Icons.TrashIcon /></button>
+                                            <button onClick={() => openModal('character', char)} onDoubleClick={(e) => e.stopPropagation()} className="p-1 text-gray-400 hover:text-yellow-400 btn-pressable" title="編集"><Icons.EditIcon /></button>
+                                            <button onClick={(e) => initiateDelete(e, char.id)} onDoubleClick={(e) => e.stopPropagation()} className="p-1 text-gray-400 hover:text-red-400 btn-pressable" title="削除"><Icons.TrashIcon /></button>
                                         </>
                                     )}
                                 </div>

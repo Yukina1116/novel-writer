@@ -66,21 +66,26 @@ export const WorldListPanel = ({ isFloating = false, isMobile = false }) => {
             )}
             <div className="flex-grow overflow-y-auto p-2 space-y-2">
                 {worlds.map(world => (
-                    <div key={world.id} className={`p-2 rounded-lg flex items-center gap-2 ${deletingId === world.id ? 'bg-red-900/20 border border-red-500' : 'bg-gray-800/50'}`}>
+                    <div
+                        key={world.id}
+                        className={`p-2 rounded-lg flex items-center gap-2 ${deletingId === world.id ? 'bg-red-900/20 border border-red-500' : 'bg-gray-800/50'}`}
+                        onDoubleClick={() => openModal('world', world)}
+                        title="ダブルクリックで編集"
+                    >
                         <div className="flex-grow overflow-hidden">
                             <div className="flex justify-between items-start">
                                 <p className="font-bold text-sm text-green-400 truncate">{world.name}</p>
                                 <div className="flex gap-1 flex-shrink-0">
                                     {deletingId === world.id ? (
-                                        <div className="flex items-center gap-1 animate-fade-in">
+                                        <div className="flex items-center gap-1 animate-fade-in" onDoubleClick={(e) => e.stopPropagation()}>
                                             <span className="text-xs text-red-300 font-bold mr-1">削除?</span>
                                             <button onClick={(e) => confirmDelete(e, world.id)} className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-500 shadow-md">はい</button>
                                             <button onClick={cancelDelete} className="px-2 py-1 text-xs bg-gray-600 text-white rounded hover:bg-gray-500 shadow-md">いいえ</button>
                                         </div>
                                     ) : (
                                         <>
-                                            <button onClick={() => openModal('world', world)} className="p-1 text-gray-400 hover:text-yellow-400 btn-pressable" title="編集"><Icons.EditIcon /></button>
-                                            <button onClick={(e) => initiateDelete(e, world.id)} className="p-1 text-gray-400 hover:text-red-400 btn-pressable" title="削除"><Icons.TrashIcon /></button>
+                                            <button onClick={() => openModal('world', world)} onDoubleClick={(e) => e.stopPropagation()} className="p-1 text-gray-400 hover:text-yellow-400 btn-pressable" title="編集"><Icons.EditIcon /></button>
+                                            <button onClick={(e) => initiateDelete(e, world.id)} onDoubleClick={(e) => e.stopPropagation()} className="p-1 text-gray-400 hover:text-red-400 btn-pressable" title="削除"><Icons.TrashIcon /></button>
                                         </>
                                     )}
                                 </div>
