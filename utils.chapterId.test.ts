@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
     UNCATEGORIZED_CHAPTER_ID,
     isChapterTitleChunk,
@@ -7,9 +7,16 @@ import {
     getChapterGroups,
     getChapterChunksByGroupId,
     getChapterIdForNewChunk,
+    getChapterChunks,
     validateAndSanitizeProjectData,
+    __resetChapterIdWarnState,
 } from './utils';
 import { NovelChunk } from './types';
+
+// dev-only warn は module-level Set で 1 度だけ発火するため、warn 検証テストの前に clear する。
+beforeEach(() => {
+    __resetChapterIdWarnState();
+});
 
 // PR-1 (chapterId 導入): AC-3 (migration 推論) / AC-4 (冪等性) / AC-5 (sanitizer) /
 // AC-8 (末尾 append → 最終章) / AC-12 (group 連続性 invariant) を pin する。
@@ -154,8 +161,8 @@ describe('normalizeChapterIds — sanitizer (AC-5)', () => {
     });
 });
 
-describe('getChapterGroups (AC-12: continuity-friendly grouping)', () => {
-    it('groups chunks by chapterId in first-appearance order', () => {
+describe('getChapterGroups (AC-12: continuity-friendly grouping, discriminated union)', () => {
+    it('emits discriminated union: uncategorized group has kind=uncategorized + titleChunk=null', () => {
         const normalized = normalizeChapterIds([
             chunk('A', '本文1'),
             chunk('B', '# 第1章'),
@@ -163,12 +170,20 @@ describe('getChapterGroups (AC-12: continuity-friendly grouping)', () => {
         ]);
         const groups = getChapterGroups(normalized);
         expect(groups).toHaveLength(2);
-        expect(groups[0].groupId).toBe(UNCATEGORIZED_CHAPTER_ID);
-        expect(groups[0].titleChunk).toBeNull();
-        expect(groups[0].chunks.map(c => c.id)).toEqual(['A']);
-        expect(groups[1].groupId).toBe('B');
-        expect(groups[1].titleChunk?.id).toBe('B');
-        expect(groups[1].chunks.map(c => c.id)).toEqual(['B', 'C']);
+
+        const uncat = groups[0];
+        expect(uncat.kind).toBe('uncategorized');
+        expect(uncat.groupId).toBe(UNCATEGORIZED_CHAPTER_ID);
+        expect(uncat.titleChunk).toBeNull();
+        expect(uncat.chunks.map(c => c.id)).toEqual(['A']);
+
+        const ch1 = groups[1];
+        expect(ch1.kind).toBe('titled');
+        expect(ch1.groupId).toBe('B');
+        if (ch1.kind === 'titled') {
+            expect(ch1.titleChunk.id).toBe('B');
+        }
+        expect(ch1.chunks.map(c => c.id)).toEqual(['B', 'C']);
     });
 
     it('emits no groups for an empty novelContent', () => {
@@ -176,16 +191,44 @@ describe('getChapterGroups (AC-12: continuity-friendly grouping)', () => {
     });
 
     it('merges non-contiguous chunks of the same chapterId (invariant violation tolerance)', () => {
-        // 本来は invariant 違反だが、merge 自体は機能する (UI 側は順序が壊れて見える)
         const input: NovelChunk[] = [
             { id: 'A', text: '# 第1章', chapterId: 'A' },
-            { id: 'B', text: '本文1', chapterId: null }, // uncategorized between
+            { id: 'B', text: '本文1', chapterId: null },
             { id: 'C', text: '本文2', chapterId: 'A' },
         ];
         const groups = getChapterGroups(input);
         expect(groups).toHaveLength(2);
         const ch1 = groups.find(g => g.groupId === 'A')!;
         expect(ch1.chunks.map(c => c.id)).toEqual(['A', 'C']);
+    });
+
+    it('demotes orphan body chunks (chapterId points to title not yet seen) to uncategorized (I-3 補強)', () => {
+        // 連続性違反: title 出現前の body chunk → 警告 + uncategorized 扱い
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const input: NovelChunk[] = [
+            { id: 'orphan', text: '本文', chapterId: 'LATER' },
+            { id: 'LATER', text: '# 第1章', chapterId: 'LATER' },
+        ];
+        const groups = getChapterGroups(input);
+        expect(groups[0].kind).toBe('uncategorized');
+        expect(groups[0].chunks.map(c => c.id)).toEqual(['orphan']);
+        expect(groups[1].kind).toBe('titled');
+        expect(groups[1].chunks.map(c => c.id)).toEqual(['LATER']);
+        warn.mockRestore();
+    });
+
+    it('keeps the first title chunk as canonical when multiple titles share the same chapterId (I-3 前勝ち)', () => {
+        const input: NovelChunk[] = [
+            { id: 'T1', text: '# Title-1', chapterId: 'T1' },
+            { id: 'T2', text: '# Title-2', chapterId: 'T1' }, // 後から来た title を同 group に混入させた異常データ
+            { id: 'B', text: '本文', chapterId: 'T1' },
+        ];
+        const groups = getChapterGroups(input);
+        expect(groups).toHaveLength(1);
+        expect(groups[0].kind).toBe('titled');
+        if (groups[0].kind === 'titled') {
+            expect(groups[0].titleChunk.id).toBe('T1'); // 前勝ち
+        }
     });
 });
 
@@ -226,14 +269,23 @@ describe('getChapterIdForNewChunk (AC-8: R2 last-chapter inheritance)', () => {
     });
 
     it('treats undefined as null defensively', () => {
-        // 通常 normalize 後は undefined はないが、未正規化データへの防御
         const input: NovelChunk[] = [{ id: 'A', text: '本文' }];
         expect(getChapterIdForNewChunk(input)).toBeNull();
+    });
+
+    it('returns the title chunk id when novelContent ends with a title chunk (I-6: 新規 chunk は新章配下)', () => {
+        const normalized = normalizeChapterIds([
+            chunk('A', '本文1'),
+            chunk('B', '# 第1章'),
+            chunk('C', '本文2'),
+            chunk('D', '# 第2章'), // title chunk が末尾
+        ]);
+        expect(getChapterIdForNewChunk(normalized)).toBe('D');
     });
 });
 
 describe('validateAndSanitizeProjectData — migration entry point', () => {
-    const makeProject = (novelContent: any) => ({
+    const makeProject = (novelContent: unknown) => ({
         id: 'p1',
         name: 'test',
         lastModified: '2026-01-01T00:00:00Z',
@@ -250,10 +302,10 @@ describe('validateAndSanitizeProjectData — migration entry point', () => {
         expect(out.novelContent.map(c => c.chapterId)).toEqual([null, 'B', 'B']);
     });
 
-    it('strips non-string non-null chapterId values before normalization', () => {
+    it('absorbs non-string non-null chapterId via normalizeChapterIds (no field deletion)', () => {
         const project = makeProject([
-            { id: 'A', text: '本文1', chapterId: 12345 }, // invalid type
-            { id: 'B', text: '# 第1章', chapterId: { weird: true } }, // invalid type
+            { id: 'A', text: '本文1', chapterId: 12345 },
+            { id: 'B', text: '# 第1章', chapterId: { weird: true } },
         ]);
         const out = validateAndSanitizeProjectData(project);
         expect(out.novelContent[0].chapterId).toBe(null);
@@ -265,5 +317,138 @@ describe('validateAndSanitizeProjectData — migration entry point', () => {
         const out = validateAndSanitizeProjectData(project);
         expect(out.novelContent).toHaveLength(1);
         expect(out.novelContent[0].chapterId).toBe(null);
+    });
+
+    it('does not mutate the input chunk objects (C-2: pure validator)', () => {
+        const inputChunk: NovelChunk & { chapterId: unknown } = {
+            id: 'A',
+            text: '本文',
+            chapterId: 12345 as unknown as string,
+        };
+        const project = makeProject([inputChunk]);
+        validateAndSanitizeProjectData(project);
+        // 入力 chunk の chapterId は元のまま (delete されない)
+        expect(inputChunk.chapterId).toBe(12345);
+        expect('chapterId' in inputChunk).toBe(true);
+    });
+});
+
+describe('legacy getChapterChunks ↔ getChapterChunksByGroupId migration equivalence (C-1)', () => {
+    // PR-2 で `handleChapterDrop` の呼び出しを旧 API → 新 API に切替える際の regression を防ぐ
+    // 正規化後のデータでは「旧 API の chunkId 渡し」と「新 API の groupId 渡し」が同じ chunks 配列を返すこと。
+    it.each([
+        {
+            label: 'all uncategorized',
+            content: [chunk('A', '本文1'), chunk('B', '本文2')],
+            uncatLegacyId: 'A',
+        },
+        {
+            label: 'starts with title',
+            content: [chunk('A', '# 第1章'), chunk('B', '本文1')],
+            uncatLegacyId: null,
+        },
+        {
+            label: 'uncategorized then two chapters',
+            content: [
+                chunk('U1', '本文先頭1'),
+                chunk('U2', '本文先頭2'),
+                chunk('C1', '# 第1章'),
+                chunk('C1B', '第1章本文'),
+                chunk('C2', '# 第2章'),
+                chunk('C2B', '第2章本文'),
+            ],
+            uncatLegacyId: 'U1',
+        },
+        {
+            label: 'titles only (no body)',
+            content: [chunk('C1', '# 第1章'), chunk('C2', '# 第2章')],
+            uncatLegacyId: null,
+        },
+    ])('case: $label', ({ content, uncatLegacyId }) => {
+        const normalized = normalizeChapterIds(content);
+        const groups = getChapterGroups(normalized);
+
+        for (const grp of groups) {
+            const newApiResult = getChapterChunksByGroupId(normalized, grp.groupId).map(c => c.id);
+            const legacyKey = grp.kind === 'uncategorized' ? uncatLegacyId : grp.groupId;
+            if (legacyKey == null) continue; // uncategorized が空 group のケース
+            const legacyResult = getChapterChunks(content, legacyKey).map(c => c.id);
+            expect(newApiResult).toEqual(legacyResult);
+        }
+    });
+
+    it('returns empty array on unknown groupId / chunkId in both APIs', () => {
+        const normalized = normalizeChapterIds([chunk('A', '# 第1章'), chunk('B', '本文')]);
+        expect(getChapterChunksByGroupId(normalized, 'GHOST')).toEqual([]);
+        expect(getChapterChunks([chunk('A', '# 第1章')], 'GHOST')).toEqual([]);
+    });
+});
+
+describe('normalizeChapterIds — duplicate title id handling (C-3)', () => {
+    let warn: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        warn.mockRestore();
+    });
+
+    it('keeps both title chunks self-referenced when duplicate ids exist (defensive)', () => {
+        // データ破損想定: 同 id の title chunk が 2 つ存在する。Set.add は冪等なので
+        // 2 つめの title も chapterId === self.id に矯正される。後続 body chunk は
+        // 直近 title の id (= 同じ文字列) を継承する。
+        const input: NovelChunk[] = [
+            { id: 'X', text: '# Title-A' },
+            { id: 'Y', text: '本文1' },
+            { id: 'X', text: '# Title-B (dup)' },
+            { id: 'Z', text: '本文2' },
+        ];
+        const out = normalizeChapterIds(input);
+        expect(out.map(c => c.chapterId)).toEqual(['X', 'X', 'X', 'X']);
+    });
+});
+
+describe('normalizeChapterIds — dev warn for invariant violations (F4 paired signal)', () => {
+    let warn: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        warn.mockRestore();
+    });
+
+    it('warns when a non-string chapterId is found on a body chunk', () => {
+        normalizeChapterIds([{ id: 'A', text: '本文', chapterId: 42 as unknown as string }]);
+        expect(warn).toHaveBeenCalledWith(
+            expect.stringContaining('string でも null でもない'),
+            expect.objectContaining({ rawType: 'number' }),
+        );
+    });
+
+    it('warns when chapterId references a non-existent title chunk', () => {
+        normalizeChapterIds([
+            { id: 'A', text: '# Real' },
+            { id: 'B', text: '本文', chapterId: 'GHOST' },
+        ]);
+        const messages = warn.mock.calls.map(c => c[0] as string);
+        expect(messages.some(m => m.includes('存在しない title chunk'))).toBe(true);
+    });
+
+    it('does NOT warn for migration of undefined (旧データ正常系)', () => {
+        normalizeChapterIds([
+            { id: 'A', text: '本文1' },
+            { id: 'B', text: '# 第1章' },
+            { id: 'C', text: '本文2' },
+        ]);
+        expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('does NOT warn for explicit null chapterId on body chunks', () => {
+        normalizeChapterIds([{ id: 'A', text: '本文', chapterId: null }]);
+        expect(warn).not.toHaveBeenCalled();
     });
 });
