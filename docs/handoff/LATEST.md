@@ -2,7 +2,7 @@
 
 - Session Date: 2026-06-08 (afternoon)
 - Owner: yasushi-honda
-- Status: ✅ **PR #165–#168 4 件すべてマージ + Cloud Run デプロイ完走**。PR-A/B/C は本番 Playwright MCP 実機確認まで完走。PR-D1 (タイトル自動同期) のみ実機リンク済みデータでの最終確認を本田様にお預け
+- Status: ✅ **PR #165–#168 4 件すべてマージ + Cloud Run デプロイ完走 + PR-A/B/C/D1 全て本番 Playwright MCP 実機確認まで完走**
 - Detail: [2026-06-08b-pr165-168-ux-improvements.md](./2026-06-08b-pr165-168-ux-improvements.md)
 - Previous: [2026-06-08-pr162-163-and-prod-roadmap.md](./2026-06-08-pr162-163-and-prod-roadmap.md)
 
@@ -13,7 +13,7 @@
 | **#165** | fix(ui): 履歴ボタンを standard モードでも開けるよう SuggestionHistoryModal の mount 条件を修正 | ✅ `4d6a58d` + 本番実機確認 |
 | **#166** | feat(ui): キャラクター / 世界観のアイテムをダブルクリックで編集モーダルを開けるようにする | ✅ `10ddde8` + 本番実機確認 |
 | **#167** | feat(ui): 左カラムにデスクトップ用フッターを新設し、自動保存表示の移行と総文字数表示を追加 | ✅ `405e8d2` + 本番実機確認 |
-| **#168** | feat(sync): タイムライン⇔プロットボードのタイトル差異を保存時に自動同期 + トースト通知 | ✅ `bc5da5a` + 本田様実機確認待ち |
+| **#168** | feat(sync): タイムライン⇔プロットボードのタイトル差異を保存時に自動同期 + トースト通知 | ✅ `bc5da5a` + 本番実機確認 (`createPlotFromEvent` 経路で同期確認) |
 
 すべて本番 Cloud Run (`https://novel-writer-ramnh3ulya-an.a.run.app`) にデプロイ完了。
 
@@ -41,13 +41,12 @@
 なし
 
 ### 条件待ち
-6 件 — 詳細は [2026-06-08b-pr165-168-ux-improvements.md](./2026-06-08b-pr165-168-ux-improvements.md) §「次のアクション」参照。
-1. PR-D1 (#168) のリンク済みデータ実機確認 (本田様)
-2. 「タイムラインへ送る」後のタイムライン未反映の挙動切り分け
-3. `novel-writer-prod` への構築着手 (bugfix 完了 trigger)
-4. setup-safety-event-metrics 実行 (本田様指示)
-5. Cloud Logging baseline 観察 → alert enable 判断 (1〜4 週間後)
-6. 残 Open Issue (#137 残サブ / #147 / #152 / #155 / #156) の優先順位決定
+5 件 — 詳細は [2026-06-08b-pr165-168-ux-improvements.md](./2026-06-08b-pr165-168-ux-improvements.md) §「次のアクション」参照。
+1. 「タイムラインへ送る」後のタイムライン未反映の挙動切り分け
+2. `novel-writer-prod` への構築着手 (bugfix 完了 trigger)
+3. setup-safety-event-metrics 実行 (本田様指示)
+4. Cloud Logging baseline 観察 → alert enable 判断 (1〜4 週間後)
+5. 残 Open Issue (#137 残サブ / #147 / #152 / #155 / #156) の優先順位決定
 
 ### 却下候補
 - handoff 整理 / memory 整理 (housekeeping、明示指示なし)
@@ -68,14 +67,12 @@
 | CI | ✅ Deploy to Cloud Run #27109783026 (PR-D1) success (3m20s) |
 | 残留プロセス | ✅ なし |
 | 即着手タスク | 0 件 |
-| 条件待ち | 6 件 (全て decision-maker trigger) |
+| 条件待ち | 5 件 (全て decision-maker trigger) |
 
 ## 最終結論
 
 🛑 **executor 領分の作業ゼロ、即時セッション終了推奨**
 
 - Open PR ゼロ / Git clean / CI success
-- PR #165–#168 4 件すべて完走 (マージ + デプロイ)
-- PR-A/B/C は本番 Playwright MCP 実機確認まで完走
-- PR-D1 はコードロジック品質保証完了、実機リンク済みデータの確認のみ本田様にお預け
-- 条件待ち 6 件すべて decision-maker からの trigger 待ち
+- PR #165–#168 4 件すべて完走 (マージ + デプロイ + 本番 Playwright MCP 実機確認)
+- 条件待ち 5 件すべて decision-maker からの trigger 待ち
