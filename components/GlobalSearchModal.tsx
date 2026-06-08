@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import * as Icons from '../icons';
 import { SettingItem, KnowledgeItem, PlotItem, NovelChunk } from '../types';
+import { extractChapterTitle, isChapterTitleChunk } from '../utils';
 
 interface SearchResultItemProps {
     onClick: () => void;
@@ -194,7 +195,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
                                 key={item.id}
                                 onClick={() => onNavigateToChunk(item.id)}
                                 icon={<Icons.FileTextIcon className="h-5 w-5" />}
-                                title={item.text.startsWith('# ') ? item.text.split('\n')[0].substring(2) : `本文スニペット`}
+                                title={isChapterTitleChunk(item) ? extractChapterTitle(item) : `本文スニペット`}
                                 context={item.text}
                                 searchTerm={searchTerm}
                             />

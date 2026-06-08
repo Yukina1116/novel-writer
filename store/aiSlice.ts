@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { AppState, ChatMessage, NovelChunk, PlotItem, SettingItem } from '../types';
 import * as novelApi from '../novelApi';
 import * as utilityApi from '../utilityApi';
+import { assignChapterIdForAppend } from '../utils';
 
 const initialState = {
     userInput: '',
@@ -141,8 +142,12 @@ export const createAiSlice = (set, get): AiSlice => ({
         setActiveProjectData(d => {
             let finalNovelContent = d.novelContent;
             if (newChunk) {
-                finalNovelContent = [...d.novelContent, newChunk];
-                set({ highlightedChunkId: newChunk.id });
+                // R2: 末尾追加は最終章配下に継承。AI が `# 章名` で始まる本文を返した場合は
+                // assignChapterIdForAppend が self.id を割り当てて title invariant を維持する。
+                const chapterId = assignChapterIdForAppend(d.novelContent, newChunk);
+                const taggedChunk: NovelChunk = { ...newChunk, chapterId };
+                finalNovelContent = [...d.novelContent, taggedChunk];
+                set({ highlightedChunkId: taggedChunk.id });
             }
             return { ...d, chatHistory: [...d.chatHistory, assistantMessage], novelContent: finalNovelContent, lastModified: new Date().toISOString() };
         }, { type: 'ai', label: 'AIからの返答' });
@@ -154,9 +159,15 @@ export const createAiSlice = (set, get): AiSlice => ({
         set({ aiSuggestions: filteredSuggestions });
     },
     handleAdoptContinuation: (text) => {
-        const newChunk: NovelChunk = { id: uuidv4(), text };
-        get().setActiveProjectData(d => ({ ...d, novelContent: [...d.novelContent, newChunk], lastModified: new Date().toISOString() }), { type: 'editor', label: 'AIの提案を採用' });
-        set({ continuationChoices: null, highlightedChunkId: newChunk.id });
+        const newChunkId = uuidv4();
+        get().setActiveProjectData(d => {
+            // R2 + title invariant: assignChapterIdForAppend が `# ` 始まりなら self.id を返す
+            const draft: NovelChunk = { id: newChunkId, text };
+            const chapterId = assignChapterIdForAppend(d.novelContent, draft);
+            const newChunk: NovelChunk = { ...draft, chapterId };
+            return { ...d, novelContent: [...d.novelContent, newChunk], lastModified: new Date().toISOString() };
+        }, { type: 'editor', label: 'AIの提案を採用' });
+        set({ continuationChoices: null, highlightedChunkId: newChunkId });
     },
     handleRejectContinuation: (id) => {
         set(state => ({

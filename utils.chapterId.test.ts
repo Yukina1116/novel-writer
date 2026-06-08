@@ -1,17 +1,35 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
     UNCATEGORIZED_CHAPTER_ID,
+    assignChapterIdForAppend,
+    buildExportChapterEntries,
+    exportChapterAnchorId,
     isChapterTitleChunk,
     extractChapterTitle,
     normalizeChapterIds,
     getChapterGroups,
     getChapterChunksByGroupId,
     getChapterIdForNewChunk,
-    getChapterChunks,
     validateAndSanitizeProjectData,
     __resetChapterIdWarnState,
 } from './utils';
 import { NovelChunk } from './types';
+
+// PR-2 で utils.getChapterChunks (位置依存ルールの旧 API) を削除済み。
+// migration 等価性テスト (C-1) は新 API が旧挙動と一致することを保証する regression guard として、
+// 旧 API のロジックを test-local にインライン保持する。
+const legacyGetChapterChunks = (novelContent: NovelChunk[], chapterId: string): NovelChunk[] => {
+    const isUncategorizedChapter = novelContent.find(c => c.id === chapterId && !c.text.startsWith('# '));
+    if (isUncategorizedChapter) {
+        const firstTitleIndex = novelContent.findIndex(c => c.text.startsWith('# '));
+        return firstTitleIndex === -1 ? [...novelContent] : novelContent.slice(0, firstTitleIndex);
+    }
+    const chapterStartIndex = novelContent.findIndex(c => c.id === chapterId);
+    if (chapterStartIndex === -1) return [];
+    let chapterEndIndex = novelContent.findIndex((c, i) => i > chapterStartIndex && c.text.startsWith('# '));
+    if (chapterEndIndex === -1) chapterEndIndex = novelContent.length;
+    return novelContent.slice(chapterStartIndex, chapterEndIndex);
+};
 
 // dev-only warn は module-level Set で 1 度だけ発火するため、warn 検証テストの前に clear する。
 beforeEach(() => {
@@ -372,7 +390,7 @@ describe('legacy getChapterChunks ↔ getChapterChunksByGroupId migration equiva
             const newApiResult = getChapterChunksByGroupId(normalized, grp.groupId).map(c => c.id);
             const legacyKey = grp.kind === 'uncategorized' ? uncatLegacyId : grp.groupId;
             if (legacyKey == null) continue; // uncategorized が空 group のケース
-            const legacyResult = getChapterChunks(content, legacyKey).map(c => c.id);
+            const legacyResult = legacyGetChapterChunks(content, legacyKey).map(c => c.id);
             expect(newApiResult).toEqual(legacyResult);
         }
     });
@@ -380,7 +398,7 @@ describe('legacy getChapterChunks ↔ getChapterChunksByGroupId migration equiva
     it('returns empty array on unknown groupId / chunkId in both APIs', () => {
         const normalized = normalizeChapterIds([chunk('A', '# 第1章'), chunk('B', '本文')]);
         expect(getChapterChunksByGroupId(normalized, 'GHOST')).toEqual([]);
-        expect(getChapterChunks([chunk('A', '# 第1章')], 'GHOST')).toEqual([]);
+        expect(legacyGetChapterChunks([chunk('A', '# 第1章')], 'GHOST')).toEqual([]);
     });
 });
 
@@ -407,6 +425,78 @@ describe('normalizeChapterIds — duplicate title id handling (C-3)', () => {
         ];
         const out = normalizeChapterIds(input);
         expect(out.map(c => c.chapterId)).toEqual(['X', 'X', 'X', 'X']);
+    });
+});
+
+describe('assignChapterIdForAppend (F-A: title invariant 維持)', () => {
+    it('title chunk (`# ` 始まり) なら self.id を返す (継承無視)', () => {
+        const existing = normalizeChapterIds([chunk('A', '# 第1章'), chunk('B', '本文')]);
+        const newTitle = chunk('NEW', '# 第2章');
+        expect(assignChapterIdForAppend(existing, newTitle)).toBe('NEW');
+    });
+
+    it('body chunk なら末尾 chunk の chapterId を継承する (R2)', () => {
+        const existing = normalizeChapterIds([chunk('A', '# 第1章'), chunk('B', '本文')]);
+        const newBody = chunk('NEW', '追記本文');
+        expect(assignChapterIdForAppend(existing, newBody)).toBe('A');
+    });
+
+    it('chunks が空のとき body chunk は null を返す', () => {
+        expect(assignChapterIdForAppend([], chunk('NEW', '本文'))).toBeNull();
+    });
+
+    it('chunks が空のとき title chunk でも self.id を返す (uncategorized append にしない)', () => {
+        expect(assignChapterIdForAppend([], chunk('NEW', '# 第1章'))).toBe('NEW');
+    });
+});
+
+describe('exportChapterAnchorId / buildExportChapterEntries (AC-11: TOC ↔ body anchor 同一 source)', () => {
+    it('exportChapterAnchorId は `ch-${chunk.id}` を返す', () => {
+        expect(exportChapterAnchorId(chunk('B', '# 第1章'))).toBe('ch-B');
+        expect(exportChapterAnchorId(chunk('XYZ', '本文'))).toBe('ch-XYZ'); // body でも formula は同じ
+    });
+
+    it('buildExportChapterEntries は title chunks のみを配列順で抽出する', () => {
+        const content = [
+            chunk('A', '本文1'),
+            chunk('B', '# 第1章'),
+            chunk('C', '第1章本文'),
+            chunk('D', '# 第2章'),
+        ];
+        expect(buildExportChapterEntries(content)).toEqual([
+            { id: 'ch-B', title: '第1章' },
+            { id: 'ch-D', title: '第2章' },
+        ]);
+    });
+
+    it('TOC entry の id と本文 anchor の id が完全一致する (リンク切れ防止)', () => {
+        const content = [
+            chunk('A', '本文1'),
+            chunk('B', '# 第1章'),
+            chunk('C', '# 第2章'),
+            chunk('D', '# 第3章'),
+        ];
+        const tocEntries = buildExportChapterEntries(content);
+        const titleChunks = content.filter(isChapterTitleChunk);
+        // すべての TOC entry に対応する本文 anchor id が存在する
+        for (const titleChunk of titleChunks) {
+            const bodyAnchor = exportChapterAnchorId(titleChunk);
+            expect(tocEntries.find(e => e.id === bodyAnchor)).toBeDefined();
+        }
+        // 逆方向: すべての TOC entry id が title chunk から生成された anchor と一致
+        for (const entry of tocEntries) {
+            const correspondingChunk = titleChunks.find(c => exportChapterAnchorId(c) === entry.id);
+            expect(correspondingChunk).toBeDefined();
+        }
+    });
+
+    it('空のタイトル (`# ` のみ) は `無題の章` fallback で表示する', () => {
+        const entries = buildExportChapterEntries([chunk('A', '# ')]);
+        expect(entries[0].title).toBe('無題の章');
+    });
+
+    it('title chunk が存在しない場合は空配列を返す', () => {
+        expect(buildExportChapterEntries([chunk('A', '本文1'), chunk('B', '本文2')])).toEqual([]);
     });
 });
 

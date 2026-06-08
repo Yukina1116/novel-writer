@@ -6,6 +6,11 @@ import { EditableParagraph } from './EditableParagraph';
 import { NovelChunk } from '../types';
 import { FONT_MAP, defaultDisplaySettings, EMPTY_ARRAY } from '../constants';
 import { Tooltip } from './Tooltip';
+import {
+    UNCATEGORIZED_CHAPTER_ID,
+    extractChapterTitle,
+    getChapterGroups,
+} from '../utils';
 
 export const NovelEditor: React.FC = () => {
     const activeProjectId = useStore(state => state.activeProjectId);
@@ -82,43 +87,26 @@ export const NovelEditor: React.FC = () => {
         }
     }, [editingChunkId]);
     
+    // chapterId 基準でグループ化 (PR-2 で位置依存ルールから移行)。`chapter-scroll-${groupId}` の anchor は
+     // OutlinePanel の handleChapterJump の対象、id は groupId (= UNCATEGORIZED_CHAPTER_ID か title chunk id)。
     const chapters = useMemo(() => {
         if (!novelContent) return [];
-        const result: { id: string; title: string; memo?: string; chunks: NovelChunk[] }[] = [];
-        let currentChapterChunks: NovelChunk[] = [];
-    
-        const extractTitleFromChunkText = (chunkText: string) => {
-            if (!chunkText.startsWith('# ')) return '';
-            const firstLine = chunkText.split('\n')[0];
-            return firstLine.substring(2).trim();
-        };
-    
-        novelContent.forEach((chunk, index) => {
-            const isTitle = chunk.text.startsWith('# ');
-            if (isTitle) {
-                if (currentChapterChunks.length > 0) {
-                    const firstChunkOfPreviousBlock = currentChapterChunks[0];
-                    const isPreviousBlockTitled = firstChunkOfPreviousBlock.text.startsWith('# ');
-    
-                    if (isPreviousBlockTitled) {
-                        result.push({ id: `chapter-${firstChunkOfPreviousBlock.id}-${index}`, title: extractTitleFromChunkText(firstChunkOfPreviousBlock.text) || '無題の章', memo: firstChunkOfPreviousBlock.memo, chunks: currentChapterChunks });
-                    } else {
-                        result.push({ id: `chapter-${firstChunkOfPreviousBlock.id}-${index}`, title: '章に属さない文章', chunks: currentChapterChunks });
-                    }
-                }
-                currentChapterChunks = [chunk];
-            } else {
-                currentChapterChunks.push(chunk);
+        return getChapterGroups(novelContent).map(group => {
+            if (group.kind === 'uncategorized') {
+                return {
+                    id: UNCATEGORIZED_CHAPTER_ID,
+                    title: '章に属さない文章',
+                    memo: undefined as string | undefined,
+                    chunks: group.chunks,
+                };
             }
+            return {
+                id: group.groupId,
+                title: extractChapterTitle(group.titleChunk) || '無題の章',
+                memo: group.titleChunk.memo,
+                chunks: group.chunks,
+            };
         });
-    
-        if (currentChapterChunks.length > 0) {
-            const firstChunk = currentChapterChunks[0];
-            const isTitled = firstChunk.text.startsWith('# ');
-            result.push({ id: `chapter-${firstChunk.id}-${novelContent.length}`, title: isTitled ? (extractTitleFromChunkText(firstChunk.text) || '無題の章') : '章に属さない文章', memo: isTitled ? firstChunk.memo : undefined, chunks: currentChapterChunks });
-        }
-    
-        return result;
     }, [novelContent]);
 
     const handleNewChunkKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

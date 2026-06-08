@@ -261,12 +261,22 @@ export const extractChapterTitle = (chunk: NovelChunk): string => {
  */
 const warnedKeys = new Set<string>();
 
-const warnOnceInDev = (key: string, message: string, detail: Record<string, unknown>): void => {
+/**
+ * dev 環境で paired signal を 1 度だけ出力する。grow-MEMORY `feedback_silent_fail_paired_signal.md`
+ * の規律に従い、normalize / store write path の silent fail を可視化する。production では noop。
+ * 呼び出し側で異なる category (`key`) を渡すこと。`__resetChapterIdWarnState` で test 時にリセット可能。
+ */
+export const warnOnceInDev = (
+    key: string,
+    message: string,
+    detail: Record<string, unknown>,
+    scope = 'normalizeChapterIds',
+): void => {
     if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') return;
     if (warnedKeys.has(key)) return;
     warnedKeys.add(key);
     // eslint-disable-next-line no-console
-    console.warn(`[normalizeChapterIds] ${message}`, detail);
+    console.warn(`[${scope}] ${message}`, detail);
 };
 
 /** test-only: warnOnceInDev の dedup state をクリアする (vitest beforeEach 用)。 */
@@ -425,32 +435,39 @@ export const getChapterIdForNewChunk = (chunks: NovelChunk[]): string | null => 
 };
 
 /**
- * @deprecated 位置依存ルール (`# ` 始まり chunk の物理順序) で章を決める旧 API。
- * 新規呼び出しは `getChapterChunksByGroupId(chunks, groupId)` を使うこと。
- * 残存呼び出し元 (現在は `store/dataSlice.ts` の `handleChapterDrop` のみ) を移行し終えたら削除する。
+ * 末尾追加する chunk の chapterId を決定する。title chunk (`# ` 始まり) なら self.id、
+ * それ以外は `getChapterIdForNewChunk` の末尾継承 (R2)。
+ *
+ * `handleAddNewChunk` (直接入力) / aiSlice continuation 等の末尾 append 経路で利用し、
+ * title chunk invariant (`chapterId === self.id`) を必ず満たすようにする。
  */
-export const getChapterChunks = (novelContent: NovelChunk[], chapterId: string): NovelChunk[] => {
-    const isUncategorizedChapter = novelContent.find(c => c.id === chapterId && !c.text.startsWith('# '));
-
-    if (isUncategorizedChapter) {
-        const firstTitleIndex = novelContent.findIndex(c => c.text.startsWith('# '));
-        if (firstTitleIndex === -1) {
-            return [...novelContent];
-        }
-        return novelContent.slice(0, firstTitleIndex);
-    }
-
-    const chapterStartIndex = novelContent.findIndex(c => c.id === chapterId);
-    if (chapterStartIndex === -1) return [];
-
-    let chapterEndIndex = novelContent.findIndex((c, i) => i > chapterStartIndex && c.text.startsWith('# '));
-    if (chapterEndIndex === -1) {
-        chapterEndIndex = novelContent.length;
-    }
-
-    return novelContent.slice(chapterStartIndex, chapterEndIndex);
+export const assignChapterIdForAppend = (
+    existingChunks: NovelChunk[],
+    newChunk: NovelChunk,
+): string | null => {
+    if (isChapterTitleChunk(newChunk)) return newChunk.id;
+    return getChapterIdForNewChunk(existingChunks);
 };
 
+/**
+ * export HTML 出力で title chunk の anchor id を生成する単一の formula。
+ * TOC リンクと本文 div の id を必ず一致させるため、必ずこの関数経由で id を生成する。
+ */
+export const exportChapterAnchorId = (chunk: NovelChunk): string => `ch-${chunk.id}`;
+
+/**
+ * export HTML の TOC に出力する章エントリを生成する (title chunks のみ、配列順)。
+ * 各 entry の `id` は `exportChapterAnchorId` 経由で生成され、本文 anchor と同形式。
+ */
+export const buildExportChapterEntries = (
+    novelContent: NovelChunk[],
+): { id: string; title: string }[] =>
+    novelContent
+        .filter(isChapterTitleChunk)
+        .map(chunk => ({
+            id: exportChapterAnchorId(chunk),
+            title: extractChapterTitle(chunk) || '無題の章',
+        }));
 
 // --- Project Data Validation ---
 const isObject = (value: any): value is Record<string, any> => value !== null && typeof value === 'object' && !Array.isArray(value);
