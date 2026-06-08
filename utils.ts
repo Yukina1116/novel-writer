@@ -236,6 +236,199 @@ export const parseMarkdown = (
 };
 
 
+/**
+ * UI / group lookup 用の仮想 id。`chapterId === null` の chunks (= 章に属さない文章) を
+ * 1 つのグループとして扱う際の groupId として使用する。chunk id と衝突しないよう接頭辞付き。
+ */
+export const UNCATEGORIZED_CHAPTER_ID = '__uncategorized__';
+
+export const isChapterTitleChunk = (chunk: NovelChunk): boolean =>
+    chunk.text.startsWith('# ');
+
+/**
+ * 章タイトル chunk の text の先頭行から `# ` を除いたタイトル文字列を返す。
+ * `# ` で始まらない chunk を渡した場合は空文字。
+ */
+export const extractChapterTitle = (chunk: NovelChunk): string => {
+    if (!isChapterTitleChunk(chunk)) return '';
+    return chunk.text.split('\n')[0].substring(2).trim();
+};
+
+/**
+ * `normalizeChapterIds` が異常入力を黙って修復しないように、dev 環境では原因別に 1 度だけ warn を出す。
+ * グローバル MEMORY `feedback_silent_fail_paired_signal.md` の paired signal 規律に従う。
+ * production では noop (側面コスト 0)。
+ */
+const warnedKeys = new Set<string>();
+
+const warnOnceInDev = (key: string, message: string, detail: Record<string, unknown>): void => {
+    if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') return;
+    if (warnedKeys.has(key)) return;
+    warnedKeys.add(key);
+    // eslint-disable-next-line no-console
+    console.warn(`[normalizeChapterIds] ${message}`, detail);
+};
+
+/** test-only: warnOnceInDev の dedup state をクリアする (vitest beforeEach 用)。 */
+export const __resetChapterIdWarnState = (): void => {
+    warnedKeys.clear();
+};
+
+/**
+ * `novelContent` の chunks に対し chapterId を推論・修復した新しい配列を返す (入力は変更しない)。
+ *
+ * 規則:
+ *   - title chunk (text が `# ` で始まる) → `chapterId === self.id`
+ *   - body chunk で `chapterId === null` → そのまま (意図的な「章に属さない文章」)
+ *   - body chunk で `chapterId` が文字列で、それ以前に出現した title chunk の id を指す → そのまま
+ *   - 上記以外 (undefined / 非 string / 存在しない or 前方参照 id / 非 title への参照) →
+ *     直前の chunk の正規化済 chapterId を継承 (最初の chunk なら null)
+ *
+ * 旧データ (`chapterId === undefined`) の推論は migration 想定のため warn しない。
+ * dangling / 非 string / 非 title 参照 / title 自己参照 mismatch は dev 環境で console.warn を 1 度だけ出す。
+ *
+ * 冪等。`validateAndSanitizeProjectData` から load 時 1 回適用される。
+ */
+export const normalizeChapterIds = (chunks: NovelChunk[]): NovelChunk[] => {
+    const knownTitleIds = new Set<string>();
+    const result: NovelChunk[] = [];
+    let lastChapterId: string | null = null;
+
+    for (const chunk of chunks) {
+        if (isChapterTitleChunk(chunk)) {
+            knownTitleIds.add(chunk.id);
+            if (chunk.chapterId !== undefined && chunk.chapterId !== chunk.id) {
+                warnOnceInDev('title-self-mismatch',
+                    'title chunk が self.id を指していなかったため矯正しました',
+                    { chunkId: chunk.id, hadChapterId: chunk.chapterId });
+            }
+            result.push({ ...chunk, chapterId: chunk.id });
+            lastChapterId = chunk.id;
+            continue;
+        }
+        const raw = chunk.chapterId;
+        let resolved: string | null;
+        if (raw === null || raw === undefined) {
+            // null = 意図的 uncategorized / undefined = migration 未適用、いずれも警告対象外
+            resolved = raw === null ? null : lastChapterId;
+        } else if (typeof raw !== 'string') {
+            warnOnceInDev('non-string-chapter-id',
+                'chapterId が string でも null でもないため直前 chunk から継承しました',
+                { chunkId: chunk.id, rawType: typeof raw });
+            resolved = lastChapterId;
+        } else if (knownTitleIds.has(raw)) {
+            resolved = raw;
+        } else {
+            // string だが既知 title id ではない → dangling / forward / 非 title への参照
+            warnOnceInDev('invalid-chapter-id-reference',
+                'chapterId が存在しない title chunk を参照しているため直前 chunk から継承しました',
+                { chunkId: chunk.id, hadChapterId: raw });
+            resolved = lastChapterId;
+        }
+        result.push({ ...chunk, chapterId: resolved });
+        lastChapterId = resolved;
+    }
+    return result;
+};
+
+/**
+ * 章グループ。`kind === 'uncategorized'` のとき必ず `titleChunk === null` かつ
+ * `groupId === UNCATEGORIZED_CHAPTER_ID`。`kind === 'titled'` のとき必ず `titleChunk !== null`。
+ * 不可能な組合せ (例: 'titled' + titleChunk=null) は型レベルで構築不能。
+ */
+export type ChapterGroup =
+    | {
+        kind: 'titled';
+        /** title chunk の id (= title chunk の chapterId) */
+        groupId: string;
+        titleChunk: NovelChunk;
+        /** group に属する chunks (配列上の出現順) */
+        chunks: NovelChunk[];
+    }
+    | {
+        kind: 'uncategorized';
+        groupId: typeof UNCATEGORIZED_CHAPTER_ID;
+        titleChunk: null;
+        chunks: NovelChunk[];
+    };
+
+/**
+ * 正規化済み chunks から章グループ配列を生成する。
+ *
+ * 前提条件: 入力は `normalizeChapterIds` 経由で正規化されていること。
+ * 出力グループの順序は各 groupId が配列上で**最初に出現した順**。
+ *
+ * group 連続性 invariant (同一 chapterId は連続、初出は title chunk) が崩れている場合:
+ * - body chunk が title 未出現の chapterId を参照していた → dev 環境で warn し uncategorized に demote
+ * - 同一 group 内に複数 title chunk が混在 → 最初に出現した title chunk を採用 (前勝ち)
+ */
+export const getChapterGroups = (chunks: NovelChunk[]): ChapterGroup[] => {
+    const groups: ChapterGroup[] = [];
+    const indexByGroupId = new Map<string, number>();
+
+    for (const chunk of chunks) {
+        const isTitle = isChapterTitleChunk(chunk);
+        const declaredGroupId = chunk.chapterId == null ? UNCATEGORIZED_CHAPTER_ID : chunk.chapterId;
+
+        // 初出が body chunk のまま title 未到来 = invariant 違反。uncategorized に demote。
+        let effectiveGroupId = declaredGroupId;
+        if (declaredGroupId !== UNCATEGORIZED_CHAPTER_ID && !isTitle && !indexByGroupId.has(declaredGroupId)) {
+            warnOnceInDev('group-continuity-violation',
+                'title 出現前の body chunk を検出、uncategorized 扱いします (group 連続性 invariant 違反)',
+                { chunkId: chunk.id, declaredGroupId });
+            effectiveGroupId = UNCATEGORIZED_CHAPTER_ID;
+        }
+
+        const existingIdx = indexByGroupId.get(effectiveGroupId);
+        if (existingIdx === undefined) {
+            indexByGroupId.set(effectiveGroupId, groups.length);
+            if (effectiveGroupId === UNCATEGORIZED_CHAPTER_ID) {
+                groups.push({
+                    kind: 'uncategorized',
+                    groupId: UNCATEGORIZED_CHAPTER_ID,
+                    titleChunk: null,
+                    chunks: [chunk],
+                });
+            } else {
+                // 正規化済みで demote されなかった ⇒ 初出は title chunk であることが保証される。
+                groups.push({
+                    kind: 'titled',
+                    groupId: effectiveGroupId,
+                    titleChunk: chunk,
+                    chunks: [chunk],
+                });
+            }
+        } else {
+            groups[existingIdx].chunks.push(chunk);
+        }
+    }
+    return groups;
+};
+
+/** 指定 groupId に属する chunks のみを配列順で返す。 */
+export const getChapterChunksByGroupId = (chunks: NovelChunk[], groupId: string): NovelChunk[] => {
+    return chunks.filter(c => {
+        const id = c.chapterId == null ? UNCATEGORIZED_CHAPTER_ID : c.chapterId;
+        return id === groupId;
+    });
+};
+
+/**
+ * 新規に末尾追加される chunk が継承すべき chapterId を返す (R2: 最終章配下に append)。
+ * - chunks が空 → null (uncategorized)
+ * - 末尾 chunk の chapterId をそのまま継承 (string = 最終章配下、null = uncategorized)
+ */
+export const getChapterIdForNewChunk = (chunks: NovelChunk[]): string | null => {
+    if (chunks.length === 0) return null;
+    const last = chunks[chunks.length - 1];
+    return last.chapterId ?? null;
+};
+
+/**
+ * @deprecated 位置依存ルール (`# ` 始まり chunk の物理順序) で章を決める旧 API。
+ * 新規呼び出しは `getChapterChunksByGroupId(chunks, groupId)` を使うこと。
+ * 残存呼び出し元 (現在は `store/dataSlice.ts` の `handleChapterDrop` のみ) を移行し終えたら削除する。
+ */
 export const getChapterChunks = (novelContent: NovelChunk[], chapterId: string): NovelChunk[] => {
     const isUncategorizedChapter = novelContent.find(c => c.id === chapterId && !c.text.startsWith('# '));
 
@@ -246,7 +439,7 @@ export const getChapterChunks = (novelContent: NovelChunk[], chapterId: string):
         }
         return novelContent.slice(0, firstTitleIndex);
     }
-    
+
     const chapterStartIndex = novelContent.findIndex(c => c.id === chapterId);
     if (chapterStartIndex === -1) return [];
 
@@ -269,7 +462,10 @@ const validateArrayItems = <T>(arr: any, validator: (item: any) => item is T): T
     return arr.filter(validator);
 };
 
-const isValidNovelChunk = (item: any): item is NovelChunk => isObject(item) && isString(item.id) && isString(item.text);
+// 型述語は副作用なし。非 string / 非 null の chapterId は normalizeChapterIds 側で吸収する
+// (else 節が「直前 chunk から継承 / 先頭なら null」で全異常値を統一処理)。
+const isValidNovelChunk = (item: any): item is NovelChunk =>
+    isObject(item) && isString(item.id) && isString(item.text);
 const isValidSettingItem = (item: any): item is SettingItem => isObject(item) && isString(item.id) && isString(item.name) && isString(item.type);
 const isValidKnowledgeItem = (item: any): item is KnowledgeItem => {
     if (!isObject(item) || !isString(item.id) || !isString(item.name)) return false;
@@ -336,6 +532,8 @@ export const validateAndSanitizeProjectData = (data: any): Project => {
     } else {
         sanitized.novelContent = validateArrayItems(sanitized.novelContent, isValidNovelChunk);
     }
+    // chapterId の推論・修復 migration (旧データは undefined、不正参照は前 chunk から継承)
+    sanitized.novelContent = normalizeChapterIds(sanitized.novelContent);
     
     // For other arrays, ensure they are arrays and default to empty if not
     const arrayKeys: (keyof Project)[] = [
