@@ -29,6 +29,11 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({ onExportProject, onExportT
     const isSimpleMode = useStore(state => activeProjectId ? state.allProjectsData[activeProjectId]?.isSimpleMode : undefined);
     const userMode = useStore(state => state.userMode);
     const setIsLeftSidebarOpen = useStore(state => state.setIsLeftSidebarOpen);
+    const totalCharCount = useStore(state => {
+        if (!activeProjectId) return 0;
+        const novelContent = state.allProjectsData[activeProjectId]?.novelContent;
+        return novelContent?.reduce((acc, chunk) => acc + (chunk.text?.length || 0), 0) ?? 0;
+    });
 
     const resizeTransitionClass = isMobile ? '' : 'transition-[width] duration-300 ease-in-out';
     const widthStyle = isMobile ? { width: '100%', height: '100%' } : { width: `${leftSidebarWidth}px` };
@@ -104,21 +109,20 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({ onExportProject, onExportT
             <div className="flex-grow flex flex-col overflow-hidden">
                 {!isMobile && (
                     <div className="p-4 border-b border-border flex flex-col gap-4">
-                        <div className="flex justify-between items-center">
+                        <div className="flex items-center">
                             <Tooltip helpId="settings">
                                 <button onClick={() => setActiveProjectId(null)} className="flex items-center text-sm text-text-main hover:text-text-main transition btn-pressable">
                                     <Icons.ArrowLeftIcon />
                                     プロジェクト一覧へ
                                 </button>
                             </Tooltip>
-                            <SaveStatusIndicator status={saveStatus} />
                         </div>
                     </div>
                 )}
                 <div className="flex-grow overflow-y-auto pb-20 sm:pb-0">
                     {renderContent()}
                     {isMobile && (
-                         <div 
+                         <div
                             className="p-4 mt-4 border-t border-border"
                             style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
                          >
@@ -129,6 +133,14 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({ onExportProject, onExportT
                         </div>
                     )}
                 </div>
+                {!isMobile && (
+                    <div className="px-4 py-2 border-t border-border flex items-center justify-between flex-shrink-0 bg-panel-bg">
+                        <span className="text-xs text-text-muted" title="本文の総文字数">
+                            {totalCharCount.toLocaleString()} 文字
+                        </span>
+                        <SaveStatusIndicator status={saveStatus} />
+                    </div>
+                )}
             </div>
         </div>
     );
