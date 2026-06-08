@@ -288,11 +288,13 @@ describe('addChapter / handleAddNewChunk (AC-8: chapterId assignment on new chun
 });
 
 describe('handleNovelTextChange (AC-9: R1 sync — # add/remove updates chapterId)', () => {
-    it('adding "# " to a body chunk promotes it to a title chunk (chapterId = self.id)', () => {
+    it('adding "# " to a body chunk promotes it AND re-tags following same-chapter chunks (F-B)', () => {
+        // F-B: body→title 昇格時、編集 chunk 以降、次の title 直前までの同 chapterId chunks を
+        // 新 title 配下に取り込む (group 連続性 invariant 維持)
         const content = normalizeChapterIds([
-            mkChunk('A', '本文1'),
-            mkChunk('B', '本文2'), // about to become title
-            mkChunk('C', '本文3'),
+            mkChunk('A', '本文1'),         // chapterId=null
+            mkChunk('B', '本文2'),         // chapterId=null、これを title 化
+            mkChunk('C', '本文3'),         // chapterId=null (B と同じ章だったので B に取り込まれる)
         ]);
         const project = baseProject(content);
         const { slice, getUpdated } = mountSlice(project);
@@ -303,16 +305,35 @@ describe('handleNovelTextChange (AC-9: R1 sync — # add/remove updates chapterI
         const b = updated.novelContent.find(c => c.id === 'B')!;
         expect(b.text).toBe('# 第1章');
         expect(b.chapterId).toBe('B');
-        // A は元の chapterId を保持 (uncategorized)
-        expect(updated.novelContent.find(c => c.id === 'A')?.chapterId).toBe(null);
-        // C は uncategorized のまま (R1 sync は当該 chunk のみ昇格、後続を再 tag しない)
-        expect(updated.novelContent.find(c => c.id === 'C')?.chapterId).toBe(null);
+        expect(updated.novelContent.find(c => c.id === 'A')?.chapterId).toBe(null); // 前は touch しない
+        expect(updated.novelContent.find(c => c.id === 'C')?.chapterId).toBe('B'); // F-B: 後続が新章に取り込まれる
+    });
+
+    it('body→title 昇格は次の title chunk 直前で停止し、それ以降の章は触らない (F-B 境界)', () => {
+        const content = normalizeChapterIds([
+            mkChunk('A', '本文1'),         // null、編集対象に取り込まれる
+            mkChunk('B', '本文2'),         // null、これを title 化
+            mkChunk('C', '本文3'),         // null → B 配下
+            mkChunk('D', '# 既存章'),       // 境界、ここで stop
+            mkChunk('E', '既存章本文'),   // 元から D 配下、触らない
+        ]);
+        const project = baseProject(content);
+        const { slice, getUpdated } = mountSlice(project);
+
+        slice.handleNovelTextChange('B', '# 新章');
+
+        const updated = getUpdated();
+        expect(updated.novelContent.find(c => c.id === 'A')?.chapterId).toBe(null); // 前 chunk
+        expect(updated.novelContent.find(c => c.id === 'B')?.chapterId).toBe('B'); // self
+        expect(updated.novelContent.find(c => c.id === 'C')?.chapterId).toBe('B'); // F-B: 取り込み
+        expect(updated.novelContent.find(c => c.id === 'D')?.chapterId).toBe('D'); // 境界、不変
+        expect(updated.novelContent.find(c => c.id === 'E')?.chapterId).toBe('D'); // 触らない
     });
 
     it('removing "# " from a title chunk demotes it (chapterId inherited from previous chunk)', () => {
         const content = normalizeChapterIds([
             mkChunk('A', '本文'),
-            mkChunk('B', '# 第1章'), // about to lose title status
+            mkChunk('B', '# 第1章'),
             mkChunk('C', '第1章本文'),
         ]);
         const project = baseProject(content);
@@ -323,14 +344,11 @@ describe('handleNovelTextChange (AC-9: R1 sync — # add/remove updates chapterI
         const updated = getUpdated();
         const b = updated.novelContent.find(c => c.id === 'B')!;
         expect(b.text).toBe('もう章じゃない');
-        // B は A の chapterId (null) を継承
         expect(b.chapterId).toBe(null);
-        // C も B (= null) を継承して uncategorized になる
         expect(updated.novelContent.find(c => c.id === 'C')?.chapterId).toBe(null);
     });
 
     it('body→body edits do NOT trigger normalize (perf optimization)', () => {
-        // normalize が走ると warnedKeys が消費される (テスト用の副次効果)。代わりに chapterId 不変を確認。
         const content = normalizeChapterIds([
             mkChunk('A', '本文1'),
             mkChunk('B', '本文2'),
@@ -342,8 +360,58 @@ describe('handleNovelTextChange (AC-9: R1 sync — # add/remove updates chapterI
 
         const updated = getUpdated();
         expect(updated.novelContent.find(c => c.id === 'A')?.text).toBe('本文1 編集後');
-        // chapterId 不変 (normalize skip 経路)
         expect(updated.novelContent.find(c => c.id === 'A')?.chapterId).toBe(null);
         expect(updated.novelContent.find(c => c.id === 'B')?.chapterId).toBe(null);
+    });
+
+    it('!oldChunk 経路: 存在しない chunkId への onChange は state を変えず dev warn を出す (F-C: data loss 防止)', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const content = normalizeChapterIds([mkChunk('A', '本文')]);
+        const project = baseProject(content);
+        const { slice, getUpdated } = mountSlice(project);
+
+        slice.handleNovelTextChange('GHOST', 'lost text');
+        const updated = getUpdated(); // updater を起動して warn 経路を実行 + 戻り値を確認
+
+        // updater は d をそのまま返す = state 不変
+        expect(updated.novelContent).toHaveLength(1);
+        expect(updated.novelContent[0].text).toBe('本文');
+        // paired signal: dev warn が text 喪失を可視化
+        expect(warn).toHaveBeenCalledWith(
+            expect.stringContaining('text 喪失リスク'),
+            expect.objectContaining({ chunkId: 'GHOST' }),
+        );
+        warn.mockRestore();
+    });
+});
+
+describe('handleAddNewChunk title invariant (F-A: # 始まりは self.id)', () => {
+    it('直接入力で `# 第2章\\n\\n本文` を一度に追加すると title chunk は self.id、後続 body は新章配下に入る', () => {
+        const content = normalizeChapterIds([mkChunk('A', '# 第1章'), mkChunk('B', '本文')]);
+        const project = baseProject(content);
+        const { slice, getUpdated } = mountSlice(project, { newChunkText: '# 第2章\n\n第2章の本文' });
+
+        slice.handleAddNewChunk();
+
+        const updated = getUpdated();
+        expect(updated.novelContent).toHaveLength(4);
+        const newTitle = updated.novelContent[2];
+        const newBody = updated.novelContent[3];
+        expect(newTitle.text).toBe('# 第2章');
+        expect(newTitle.chapterId).toBe(newTitle.id); // F-A: title chunk は self.id
+        expect(newBody.text).toBe('第2章の本文');
+        expect(newBody.chapterId).toBe(newTitle.id); // 直前 chunk (= 新 title) を継承
+    });
+
+    it('直接入力が title 単独 (`# 第2章` のみ) でも self.id', () => {
+        const content = normalizeChapterIds([mkChunk('A', '# 第1章'), mkChunk('B', '本文')]);
+        const project = baseProject(content);
+        const { slice, getUpdated } = mountSlice(project, { newChunkText: '# 第2章' });
+
+        slice.handleAddNewChunk();
+
+        const updated = getUpdated();
+        const last = updated.novelContent[updated.novelContent.length - 1];
+        expect(last.chapterId).toBe(last.id);
     });
 });

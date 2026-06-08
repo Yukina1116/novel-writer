@@ -3,12 +3,16 @@ import { v4 as uuidv4 } from 'uuid';
 import { Project, SettingItem, KnowledgeItem, PlotItem, Relation, NodePosition, TimelineEvent, PlotRelation, PlotNodePosition, TimelineLane, DisplaySettings, NovelChunk, HistoryType, AnalysisResult } from '../types';
 import {
     UNCATEGORIZED_CHAPTER_ID,
+    assignChapterIdForAppend,
+    buildExportChapterEntries,
+    exportChapterAnchorId,
     isChapterTitleChunk,
     extractChapterTitle,
     getChapterChunksByGroupId,
     getChapterGroups,
     getChapterIdForNewChunk,
     normalizeChapterIds,
+    warnOnceInDev,
 } from '../utils';
 import { renderMarkdown } from '../utils/sanitizeHtml';
 import { FONT_MAP } from '../constants';
@@ -310,7 +314,17 @@ export const createDataSlice = (set, get): DataSlice => ({
                 // uncategorized → 名前付き章への昇格: 新 title chunk を生成し、
                 // それまで chapterId === null だった全 chunks に新 title chunk の id を付与する。
                 const firstUncatIndex = d.novelContent.findIndex(c => c.chapterId == null);
-                if (firstUncatIndex === -1) return d;
+                if (firstUncatIndex === -1) {
+                    // uncategorized chunks が 1 件もない状態で昇格依頼 = UI と store の不整合。
+                    // 入力された title/memo が黙って消えるため paired signal を出す。
+                    warnOnceInDev(
+                        'save-chapter-no-uncategorized',
+                        'handleSaveChapterSettings: 昇格対象の uncategorized chunks が見つからない',
+                        { newTitle },
+                        'dataSlice',
+                    );
+                    return d;
+                }
                 const newTitleChunkId = uuidv4();
                 const newTitleChunk: NovelChunk = {
                     id: newTitleChunkId,
@@ -321,14 +335,14 @@ export const createDataSlice = (set, get): DataSlice => ({
                 const reassigned = d.novelContent.map(c =>
                     c.chapterId == null ? { ...c, chapterId: newTitleChunkId } : c
                 );
-                return {
-                    ...d,
-                    novelContent: [
-                        ...reassigned.slice(0, firstUncatIndex),
-                        newTitleChunk,
-                        ...reassigned.slice(firstUncatIndex),
-                    ],
-                };
+                const inserted = [
+                    ...reassigned.slice(0, firstUncatIndex),
+                    newTitleChunk,
+                    ...reassigned.slice(firstUncatIndex),
+                ];
+                // 非連続 uncategorized 入力 (drag 後の散在等) でも group 連続性 invariant を
+                // 回復するため最後に normalize を通す。冪等のため副作用なし。
+                return { ...d, novelContent: normalizeChapterIds(inserted) };
             }
             // 既存名前付き章のリネーム: title chunk の text と memo のみ更新、chapterId は不変
             return {
@@ -347,7 +361,15 @@ export const createDataSlice = (set, get): DataSlice => ({
         const activeProject = allProjectsData[activeProjectId];
         if (!activeProject) return;
         const targetChunks = getChapterChunksByGroupId(activeProject.novelContent, groupId);
-        if (targetChunks.length === 0) return;
+        if (targetChunks.length === 0) {
+            warnOnceInDev(
+                'delete-chapter-empty-target',
+                'handleDeleteChapter: 削除対象 group が見つからない (UI と store の不整合の可能性)',
+                { groupId },
+                'dataSlice',
+            );
+            return;
+        }
         const targetIds = new Set(targetChunks.map(c => c.id));
 
         const titleChunk = targetChunks.find(isChapterTitleChunk);
@@ -360,17 +382,50 @@ export const createDataSlice = (set, get): DataSlice => ({
         }), { type: 'outline', label: `章「${chapterTitle}」を削除` });
     },
     handleNovelTextChange: (chunkId, newText) => {
-        // R1 (sync): chunk text の `# ` 有無が変わったら chapterId を再正規化する。
-        //   - body → title (`# ` 追加): その chunk の chapterId が self.id に矯正される
-        //   - title → body (`# ` 削除): その chunk を参照していた body chunks は直前 chunk から継承し直す
+        // R1 (sync): chunk text の `# ` 有無が変わったら chapterId を再構築する。
+        //   - body → title (`# ` 追加): その chunk の chapterId を self.id に矯正。
+        //     さらに編集 chunk 以降、次の title chunk 直前までの body chunks を新章配下に再 tag。
+        //     (normalize 単独だと旧 chapterId 参照が valid なので新章に取り込まれず group 連続性が崩れる)
+        //   - title → body (`# ` 削除): normalize の dangling 修復で前 chunk から継承し直される
         // 変化なし (body → body / title → title) のときは normalize を skip し perf を確保する。
         get().setActiveProjectData(d => {
-            const oldChunk = d.novelContent.find(c => c.id === chunkId);
-            if (!oldChunk) return d;
-            const titleStatusChanged = isChapterTitleChunk(oldChunk) !== newText.startsWith('# ');
-            const updated = d.novelContent.map(chunk =>
+            const editedIndex = d.novelContent.findIndex(c => c.id === chunkId);
+            if (editedIndex === -1) {
+                warnOnceInDev(
+                    'text-change-missing-chunk',
+                    '編集対象 chunk が novelContent に存在しません (text 喪失リスク)',
+                    { chunkId, newTextLen: newText.length },
+                    'dataSlice',
+                );
+                return d;
+            }
+            const oldChunk = d.novelContent[editedIndex];
+            const wasTitle = isChapterTitleChunk(oldChunk);
+            const willBeTitle = newText.startsWith('# ');
+            const titleStatusChanged = wasTitle !== willBeTitle;
+
+            let updated: NovelChunk[] = d.novelContent.map(chunk =>
                 chunk.id === chunkId ? { ...chunk, text: newText } : chunk
             );
+
+            if (titleStatusChanged && willBeTitle) {
+                // body → title 昇格: 編集 chunk 以降、次の title chunk 直前までの body chunks のうち、
+                // 旧 chapterId と一致するものを新章 (chunkId) 配下に再 tag。
+                // 次の title chunk 以降は触らない (章境界が確立しているため)。
+                const oldChapterId = oldChunk.chapterId ?? null;
+                let crossedNextTitle = false;
+                updated = updated.map((chunk, idx) => {
+                    if (idx <= editedIndex) return chunk;
+                    if (crossedNextTitle) return chunk;
+                    if (isChapterTitleChunk(chunk)) {
+                        crossedNextTitle = true;
+                        return chunk;
+                    }
+                    if ((chunk.chapterId ?? null) !== oldChapterId) return chunk;
+                    return { ...chunk, chapterId: chunkId };
+                });
+            }
+
             return {
                 ...d,
                 novelContent: titleStatusChanged ? normalizeChapterIds(updated) : updated,
@@ -387,13 +442,22 @@ export const createDataSlice = (set, get): DataSlice => ({
     handleAddNewChunk: () => {
         const { newChunkText } = get();
         if (!newChunkText.trim()) return;
-        const rawNewChunks = newChunkText.split(/\n\s*\n/).map(text => ({ id: uuidv4(), text: text.trim() })).filter(chunk => chunk.text);
+        const rawNewChunks: NovelChunk[] = newChunkText
+            .split(/\n\s*\n/)
+            .map(text => ({ id: uuidv4(), text: text.trim() }))
+            .filter(chunk => chunk.text);
         if (rawNewChunks.length > 0) {
             get().setActiveProjectData(d => {
-                // R2: 末尾 chunk の chapterId を継承 (最終章配下に append)
-                const inheritId = getChapterIdForNewChunk(d.novelContent);
-                const newChunks: NovelChunk[] = rawNewChunks.map(c => ({ ...c, chapterId: inheritId }));
-                return { ...d, novelContent: [...d.novelContent, ...newChunks] };
+                // 順次 append: 各 chunk について title か body かを判定し chapterId を決定する。
+                // title chunk なら self.id、body なら直前 chunk (累積後) の chapterId を継承。
+                // 直接入力で `# 第2章\n\n本文` のように title + body を一度に追加するケースで
+                // title chunk の self.id invariant と後続 body の新章配下追加を両立する。
+                const accumulated: NovelChunk[] = [...d.novelContent];
+                for (const raw of rawNewChunks) {
+                    const chapterId = assignChapterIdForAppend(accumulated, raw);
+                    accumulated.push({ ...raw, chapterId });
+                }
+                return { ...d, novelContent: accumulated };
             }, { type: 'editor', label: '新しい段落を追加' });
         }
         set({ newChunkText: '' });
@@ -415,17 +479,34 @@ export const createDataSlice = (set, get): DataSlice => ({
         // chunks の chapterId は維持されるため、uncategorized chunks が名前付き章配下に絡め取られる
         // 旧バグ (位置依存ルール起因) は構造的に起こらない。
         const { draggedChapterId } = get();
-        if (!draggedChapterId || draggedChapterId === dropOnGroupId) return;
+        if (!draggedChapterId || draggedChapterId === dropOnGroupId) return; // 正常系: self drop / cancel
 
         get().setActiveProjectData(d => {
             const novelContent = [...d.novelContent];
             const draggedChunks = getChapterChunksByGroupId(novelContent, draggedChapterId);
             const dropOnChunks = getChapterChunksByGroupId(novelContent, dropOnGroupId);
-            if (draggedChunks.length === 0 || dropOnChunks.length === 0) return d;
+            if (draggedChunks.length === 0 || dropOnChunks.length === 0) {
+                // UI 上にある章が store 側で 0 件解決される = invariant 違反 (paired signal)
+                warnOnceInDev(
+                    'drop-empty-group',
+                    'handleChapterDrop: dragged/drop group が 0 件 (UI と store の不整合)',
+                    { draggedChapterId, dropOnGroupId, draggedLen: draggedChunks.length, dropLen: dropOnChunks.length },
+                    'dataSlice',
+                );
+                return d;
+            }
             const draggedChunkIds = new Set(draggedChunks.map(c => c.id));
             const contentWithoutDragged = novelContent.filter(c => !draggedChunkIds.has(c.id));
             const dropIndex = contentWithoutDragged.findIndex(c => c.id === dropOnChunks[0].id);
-            if (dropIndex === -1) return d;
+            if (dropIndex === -1) {
+                warnOnceInDev(
+                    'drop-index-missing',
+                    'handleChapterDrop: dropOnChunks の先頭 chunk が contentWithoutDragged に見つからない',
+                    { draggedChapterId, dropOnGroupId },
+                    'dataSlice',
+                );
+                return d;
+            }
             const newNovelContent = [
                 ...contentWithoutDragged.slice(0, dropIndex),
                 ...draggedChunks,
@@ -589,14 +670,10 @@ export const createDataSlice = (set, get): DataSlice => ({
         const escapeHtml = (unsafe) => unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
         const charactersToExport = settings.filter(s => s.type === 'character' && options.selectedCharacterIds.includes(s.id));
         const worldSettingsToExport = settings.filter(s => s.type === 'world' && options.selectedWorldIds.includes(s.id));
-        // 章一覧は title chunk から 1 度だけ生成し、TOC リンクと本文 anchor の id を共有する
-        // (片方だけ chapterId 化するとリンク切れになるため AC-11 で pin)。
-        const titleChunks = novelContent.filter(isChapterTitleChunk);
-        const chapterAnchorId = (chunk: NovelChunk) => `ch-${chunk.id}`;
-        const chapters = titleChunks.map(chunk => ({
-            id: chapterAnchorId(chunk),
-            title: extractChapterTitle(chunk) || '無題の章',
-        }));
+        // 章一覧は utils.buildExportChapterEntries で生成し、本文 anchor は同じ
+        // utils.exportChapterAnchorId で生成する。TOC と本文 anchor の id 形式不一致を
+        // 構造的に防ぐため必ず両者を utils 経由にする (AC-11)。
+        const chapters = buildExportChapterEntries(novelContent);
         const body = `
             <div class="container">
                 ${options.coverType !== 'none' ? `
@@ -618,7 +695,7 @@ export const createDataSlice = (set, get): DataSlice => ({
                 ` : ''}
                 <div class="content">
                     ${novelContent.map(chunk => {
-                        const anchorId = isChapterTitleChunk(chunk) ? chapterAnchorId(chunk) : '';
+                        const anchorId = isChapterTitleChunk(chunk) ? exportChapterAnchorId(chunk) : '';
                         return `<div id="${anchorId}">${renderMarkdown(chunk.text, settings.filter(s => s.type === 'character'), knowledgeBase, aiSettings)}</div>`;
                     }).join('')}
                 </div>
