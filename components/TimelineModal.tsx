@@ -37,6 +37,9 @@ export const TimelineModal: React.FC<{
     const highlightedEventId = useStore(state => state.highlightedEventId);
     const setHighlightedEventId = useStore(state => state.setHighlightedEventId);
     const navigateToPlot = useStore(state => state.navigateToPlot);
+    // PR-A2: イベント単体保存を即時 Redux 反映 (local state 維持 + 二重書き)
+    // タイトル同期 (computeEventTitleSync) と debounce 自動保存をフッター保存待ちなく発火させるため。
+    const upsertTimelineEvent = useStore(state => state.upsertTimelineEvent);
     const eventsContainerRef = useRef<HTMLDivElement>(null);
 
 
@@ -137,6 +140,8 @@ export const TimelineModal: React.FC<{
         } else {
             setLocalTimeline([...localTimeline, eventToSave]);
         }
+        // PR-A2: 即時 Redux 反映 (タイトル同期 + 自動保存 trigger)。フッター保存を待たない。
+        upsertTimelineEvent(eventToSave);
         setEditingEvent(null);
     };
 

@@ -325,6 +325,9 @@ export const PlotBoardModal = ({ isOpen, onClose, onSave, plotItems, relations, 
     const createEventFromPlot = useStore(state => state.createEventFromPlot);
     const navigateToEvent = useStore(state => state.navigateToEvent);
     const userMode = useStore(state => state.userMode);
+    // PR-A2: カード単体保存を即時 Redux 反映 (local state 維持 + 二重書き)
+    // タイトル同期 (computePlotTitleSync) と debounce 自動保存をフッター保存待ちなく発火させるため。
+    const upsertPlotItem = useStore(state => state.upsertPlotItem);
 
     const hasCompletedGlobalPlotBoardTutorial = useStore(state => state.hasCompletedGlobalPlotBoardTutorial);
     const startPlotBoardTutorial = useStore(state => state.startPlotBoardTutorial);
@@ -418,6 +421,8 @@ export const PlotBoardModal = ({ isOpen, onClose, onSave, plotItems, relations, 
             setItems([...items, card]);
             setPositions(prev => ({...prev, [card.id]: {x: 120, y: 120}}));
         }
+        // PR-A2: 即時 Redux 反映 (タイトル同期 + 自動保存 trigger)。フッター保存を待たない。
+        upsertPlotItem(card);
         setEditingCard(null);
     };
     
