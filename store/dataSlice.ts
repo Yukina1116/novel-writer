@@ -28,6 +28,11 @@ export interface DataSlice {
     handleSaveSetting: (newItem: Partial<SettingItem | KnowledgeItem>, type?: 'character' | 'world' | 'knowledge') => void;
     handleDeleteSetting: (id: string, type: 'character' | 'world' | 'knowledge' | 'plot', skipConfirm?: boolean) => void;
     handleSavePlotBoard: (data: { items: PlotItem[], relations: PlotRelation[], positions: PlotNodePosition[], colors: { [key: string]: string } }) => void;
+    // PR-A1: カード/イベント単体の自動保存 action。history ノードは積まない (markDirty のみ)。
+    upsertPlotItem: (item: PlotItem) => void;
+    deletePlotItem: (id: string) => void;
+    upsertTimelineEvent: (event: TimelineEvent) => void;
+    deleteTimelineEvent: (id: string) => void;
     handleDisplaySettingChange: (key: keyof DisplaySettings, value: any) => void;
     handleSaveChart: (relations: Relation[], positions: NodePosition[]) => void;
     handleSaveTimeline: (timeline: TimelineEvent[], lanes: TimelineLane[]) => void;
@@ -61,6 +66,64 @@ export interface DataSlice {
         worldTerms: { name: string; action: 'world' | 'knowledge' | 'ignore' }[];
     }) => void;
 }
+
+// PR-A1: タイトル同期判定を純粋関数化。副作用 (setActiveProjectData / showToast / openModal) は呼び出し側で実行する。
+//   - 戻り値の counterpartPatch があれば対向側 entity の title を patch する
+//   - syncDialog があれば SyncDialog (summary/description 同期確認) を開く
+//   - 両者は排他 (title 一致時に summary 差分があれば dialog、title 差分があれば title patch を優先)
+//   - title 差分がなく summary も同じなら null/null を返す (誤発火しない)
+export interface TitleSyncResult<TPatchId extends 'eventId' | 'plotId'> {
+    counterpartPatch: ({ [K in TPatchId]: string } & { newTitle: string; newLastModified: number }) | null;
+    syncDialog: { plotId: string; eventId: string } | null;
+}
+
+export const computePlotTitleSync = (
+    oldPlot: PlotItem | undefined,
+    newPlot: PlotItem,
+    timelineById: Map<string, TimelineEvent>,
+): TitleSyncResult<'eventId'> => {
+    if (!oldPlot || !newPlot.linkedEventId) return { counterpartPatch: null, syncDialog: null };
+    const newPlotLastModified = newPlot.lastModified || 0;
+    if (newPlotLastModified <= (oldPlot.lastModified || 0)) return { counterpartPatch: null, syncDialog: null };
+    const linkedEvent = timelineById.get(newPlot.linkedEventId);
+    if (!linkedEvent) return { counterpartPatch: null, syncDialog: null };
+    if ((linkedEvent.lastModified || 0) >= newPlotLastModified) return { counterpartPatch: null, syncDialog: null };
+
+    if (linkedEvent.title !== newPlot.title) {
+        return {
+            counterpartPatch: { eventId: linkedEvent.id, newTitle: newPlot.title, newLastModified: newPlotLastModified },
+            syncDialog: null,
+        };
+    }
+    if (linkedEvent.description !== newPlot.summary) {
+        return { counterpartPatch: null, syncDialog: { plotId: newPlot.id, eventId: newPlot.linkedEventId } };
+    }
+    return { counterpartPatch: null, syncDialog: null };
+};
+
+export const computeEventTitleSync = (
+    oldEvent: TimelineEvent | undefined,
+    newEvent: TimelineEvent,
+    plotById: Map<string, PlotItem>,
+): TitleSyncResult<'plotId'> => {
+    if (!oldEvent || !newEvent.linkedPlotId) return { counterpartPatch: null, syncDialog: null };
+    const newEventLastModified = newEvent.lastModified || 0;
+    if (newEventLastModified <= (oldEvent.lastModified || 0)) return { counterpartPatch: null, syncDialog: null };
+    const linkedPlot = plotById.get(newEvent.linkedPlotId);
+    if (!linkedPlot) return { counterpartPatch: null, syncDialog: null };
+    if ((linkedPlot.lastModified || 0) >= newEventLastModified) return { counterpartPatch: null, syncDialog: null };
+
+    if (linkedPlot.title !== newEvent.title) {
+        return {
+            counterpartPatch: { plotId: linkedPlot.id, newTitle: newEvent.title, newLastModified: newEventLastModified },
+            syncDialog: null,
+        };
+    }
+    if (linkedPlot.summary !== newEvent.description) {
+        return { counterpartPatch: null, syncDialog: { plotId: newEvent.linkedPlotId, eventId: newEvent.id } };
+    }
+    return { counterpartPatch: null, syncDialog: null };
+};
 
 export const createDataSlice = (set, get): DataSlice => ({
     ...initialState,
@@ -198,27 +261,17 @@ export const createDataSlice = (set, get): DataSlice => ({
         const { openModal, allProjectsData, activeProjectId, setActiveProjectData, showToast } = get();
         const oldProject = allProjectsData[activeProjectId];
         // タイトルのみ自動同期 (プロット → タイムライン方向)。summary/description は SyncDialog 経路維持。
+        // PR-A1: 判定ロジックは computePlotTitleSync 純粋関数に集約済。
         const titleSyncTargets: Array<{ eventId: string; newTitle: string; newLastModified: number }> = [];
+        let firstSyncDialog: { plotId: string; eventId: string } | null = null;
         if (oldProject) {
-            const oldPlotsMap = new Map(oldProject.plotBoard.map(p => [p.id, p]));
-            const timelineMap = new Map(oldProject.timeline.map(e => [e.id, e]));
+            const oldPlotsMap = new Map<string, PlotItem>(oldProject.plotBoard.map(p => [p.id, p]));
+            const timelineMap = new Map<string, TimelineEvent>(oldProject.timeline.map(e => [e.id, e]));
 
             for (const newPlot of data.items) {
-                const oldPlot = oldPlotsMap.get(newPlot.id) as PlotItem | undefined;
-                if (oldPlot && newPlot.linkedEventId && (newPlot.lastModified || 0) > (oldPlot.lastModified || 0)) {
-                    const linkedEvent = timelineMap.get(newPlot.linkedEventId) as TimelineEvent | undefined;
-                    if (linkedEvent && (linkedEvent.lastModified || 0) < (newPlot.lastModified || 0)) {
-                        if (linkedEvent.title !== newPlot.title) {
-                            titleSyncTargets.push({
-                                eventId: linkedEvent.id,
-                                newTitle: newPlot.title,
-                                newLastModified: newPlot.lastModified || Date.now(),
-                            });
-                        } else if (linkedEvent.description !== newPlot.summary) {
-                            openModal('syncDialog', { plotId: newPlot.id, eventId: newPlot.linkedEventId });
-                        }
-                    }
-                }
+                const result = computePlotTitleSync(oldPlotsMap.get(newPlot.id), newPlot, timelineMap);
+                if (result.counterpartPatch) titleSyncTargets.push(result.counterpartPatch);
+                else if (result.syncDialog && !firstSyncDialog) firstSyncDialog = result.syncDialog;
             }
         }
 
@@ -245,9 +298,120 @@ export const createDataSlice = (set, get): DataSlice => ({
             lastModified: new Date().toISOString(),
         }), { type: 'plot', label: 'プロットボードを更新' });
 
+        if (firstSyncDialog) openModal('syncDialog', firstSyncDialog);
         if (titleSyncTargets.length > 0) {
             showToast(`タイムラインの${titleSyncTargets.length}件のリンクイベントのタイトルを同期しました`, 'success');
         }
+    },
+    // PR-A1: カード単体保存。フッター保存を待たずに 2 秒 debounce で IndexedDB に反映される。
+    // history ノードは積まない (自動保存は履歴の意味的単位ではない、PR-A2 で UI 切替時にユーザー操作粒度を再設計)。
+    upsertPlotItem: (newItem: PlotItem) => {
+        const { activeProjectId, allProjectsData, setActiveProjectData, openModal, showToast } = get();
+        if (!activeProjectId) return;
+        const project = allProjectsData[activeProjectId];
+        if (!project) return;
+
+        const oldItem = project.plotBoard.find(p => p.id === newItem.id);
+        // title 変更検知時のみ lastModified を更新 (Codex 指摘 M: 無変更保存で同期優先権を奪わない)。
+        const titleChanged = !oldItem || oldItem.title !== newItem.title;
+        const itemWithTimestamp: PlotItem = titleChanged
+            ? { ...newItem, lastModified: Date.now() }
+            : { ...newItem, lastModified: oldItem?.lastModified ?? newItem.lastModified };
+
+        const timelineById = new Map<string, TimelineEvent>(project.timeline.map(e => [e.id, e]));
+        const syncResult = computePlotTitleSync(oldItem, itemWithTimestamp, timelineById);
+
+        setActiveProjectData(d => {
+            const exists = d.plotBoard.some(p => p.id === itemWithTimestamp.id);
+            const newPlotBoard = exists
+                ? d.plotBoard.map(p => p.id === itemWithTimestamp.id ? itemWithTimestamp : p)
+                : [...d.plotBoard, itemWithTimestamp];
+            // 新規追加時のデフォルト position (既存 PlotBoardModal.handleSaveCard と同等の動作)
+            const newPositions = exists
+                ? d.plotNodePositions
+                : [...(d.plotNodePositions || []), { plotId: itemWithTimestamp.id, x: 120, y: 120 }];
+            const newTimeline = syncResult.counterpartPatch
+                ? d.timeline.map(e => e.id === syncResult.counterpartPatch!.eventId
+                    ? { ...e, title: syncResult.counterpartPatch!.newTitle, lastModified: syncResult.counterpartPatch!.newLastModified }
+                    : e)
+                : d.timeline;
+            return {
+                ...d,
+                plotBoard: newPlotBoard,
+                plotNodePositions: newPositions,
+                timeline: newTimeline,
+                lastModified: new Date().toISOString(),
+            };
+        });
+
+        if (syncResult.counterpartPatch) {
+            showToast('リンクされたタイムラインイベントのタイトルを同期しました', 'success');
+        } else if (syncResult.syncDialog) {
+            openModal('syncDialog', syncResult.syncDialog);
+        }
+    },
+    deletePlotItem: (id: string) => {
+        const { setActiveProjectData } = get();
+        setActiveProjectData(d => ({
+            ...d,
+            plotBoard: d.plotBoard.filter(p => p.id !== id),
+            plotRelations: (d.plotRelations || []).filter(r => r.source !== id && r.target !== id),
+            plotNodePositions: (d.plotNodePositions || []).filter(p => p.plotId !== id),
+            timeline: (d.timeline || []).map(event =>
+                event.linkedPlotId === id ? { ...event, linkedPlotId: undefined } : event
+            ),
+            lastModified: new Date().toISOString(),
+        }));
+    },
+    upsertTimelineEvent: (newEvent: TimelineEvent) => {
+        const { activeProjectId, allProjectsData, setActiveProjectData, openModal, showToast } = get();
+        if (!activeProjectId) return;
+        const project = allProjectsData[activeProjectId];
+        if (!project) return;
+
+        const oldEvent = project.timeline.find(e => e.id === newEvent.id);
+        const titleChanged = !oldEvent || oldEvent.title !== newEvent.title;
+        const eventWithTimestamp: TimelineEvent = titleChanged
+            ? { ...newEvent, lastModified: Date.now() }
+            : { ...newEvent, lastModified: oldEvent?.lastModified ?? newEvent.lastModified };
+
+        const plotById = new Map<string, PlotItem>(project.plotBoard.map(p => [p.id, p]));
+        const syncResult = computeEventTitleSync(oldEvent, eventWithTimestamp, plotById);
+
+        setActiveProjectData(d => {
+            const exists = d.timeline.some(e => e.id === eventWithTimestamp.id);
+            const newTimeline = exists
+                ? d.timeline.map(e => e.id === eventWithTimestamp.id ? eventWithTimestamp : e)
+                : [...d.timeline, eventWithTimestamp];
+            const newPlotBoard = syncResult.counterpartPatch
+                ? d.plotBoard.map(p => p.id === syncResult.counterpartPatch!.plotId
+                    ? { ...p, title: syncResult.counterpartPatch!.newTitle, lastModified: syncResult.counterpartPatch!.newLastModified }
+                    : p)
+                : d.plotBoard;
+            return {
+                ...d,
+                timeline: newTimeline,
+                plotBoard: newPlotBoard,
+                lastModified: new Date().toISOString(),
+            };
+        });
+
+        if (syncResult.counterpartPatch) {
+            showToast('リンクされたプロットカードのタイトルを同期しました', 'success');
+        } else if (syncResult.syncDialog) {
+            openModal('syncDialog', syncResult.syncDialog);
+        }
+    },
+    deleteTimelineEvent: (id: string) => {
+        const { setActiveProjectData } = get();
+        setActiveProjectData(d => ({
+            ...d,
+            timeline: (d.timeline || []).filter(e => e.id !== id),
+            plotBoard: (d.plotBoard || []).map(p =>
+                p.linkedEventId === id ? { ...p, linkedEventId: undefined } : p
+            ),
+            lastModified: new Date().toISOString(),
+        }));
     },
     handleDisplaySettingChange: (key, value) => {
         get().setActiveProjectData(d => ({ ...d, displaySettings: { ...d.displaySettings, [key]: value } }), { type: 'settings', label: '表示設定を更新' });
@@ -259,27 +423,17 @@ export const createDataSlice = (set, get): DataSlice => ({
         const { openModal, allProjectsData, activeProjectId, setActiveProjectData, showToast } = get();
         const oldProject = allProjectsData[activeProjectId];
         // タイトルのみ自動同期 (タイムライン → プロット方向)。summary/description は SyncDialog 経路維持。
+        // PR-A1: 判定ロジックは computeEventTitleSync 純粋関数に集約済。
         const titleSyncTargets: Array<{ plotId: string; newTitle: string; newLastModified: number }> = [];
+        let firstSyncDialog: { plotId: string; eventId: string } | null = null;
         if (oldProject) {
-            const oldEventsMap = new Map(oldProject.timeline.map(e => [e.id, e]));
-            const plotBoardMap = new Map(oldProject.plotBoard.map(p => [p.id, p]));
+            const oldEventsMap = new Map<string, TimelineEvent>(oldProject.timeline.map(e => [e.id, e]));
+            const plotBoardMap = new Map<string, PlotItem>(oldProject.plotBoard.map(p => [p.id, p]));
 
             for (const newEvent of timeline) {
-                const oldEvent = oldEventsMap.get(newEvent.id) as TimelineEvent | undefined;
-                if (oldEvent && newEvent.linkedPlotId && (newEvent.lastModified || 0) > (oldEvent.lastModified || 0)) {
-                    const linkedPlot = plotBoardMap.get(newEvent.linkedPlotId) as PlotItem | undefined;
-                    if (linkedPlot && (linkedPlot.lastModified || 0) < (newEvent.lastModified || 0)) {
-                        if (linkedPlot.title !== newEvent.title) {
-                            titleSyncTargets.push({
-                                plotId: linkedPlot.id,
-                                newTitle: newEvent.title,
-                                newLastModified: newEvent.lastModified || Date.now(),
-                            });
-                        } else if (linkedPlot.summary !== newEvent.description) {
-                            openModal('syncDialog', { plotId: newEvent.linkedPlotId, eventId: newEvent.id });
-                        }
-                    }
-                }
+                const result = computeEventTitleSync(oldEventsMap.get(newEvent.id), newEvent, plotBoardMap);
+                if (result.counterpartPatch) titleSyncTargets.push(result.counterpartPatch);
+                else if (result.syncDialog && !firstSyncDialog) firstSyncDialog = result.syncDialog;
             }
         }
 
@@ -304,6 +458,7 @@ export const createDataSlice = (set, get): DataSlice => ({
             lastModified: new Date().toISOString()
         }), { type: 'timeline', label: 'タイムラインを更新' });
 
+        if (firstSyncDialog) openModal('syncDialog', firstSyncDialog);
         if (titleSyncTargets.length > 0) {
             showToast(`プロットボードの${titleSyncTargets.length}件のリンクカードのタイトルを同期しました`, 'success');
         }
