@@ -1,6 +1,5 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { v4 as uuidv4 } from 'uuid';
 import * as Icons from '../icons';
 import { TimelineEvent, TimelineLane, SettingItem, PlotItem } from '../types';
 import { getContrastingTextColor } from '../utils';
@@ -40,6 +39,7 @@ export const TimelineModal: React.FC<{
     // PR-A2: イベント単体保存を即時 Redux 反映 (local state 維持 + 二重書き)
     // タイトル同期 (computeEventTitleSync) と debounce 自動保存をフッター保存待ちなく発火させるため。
     const upsertTimelineEvent = useStore(state => state.upsertTimelineEvent);
+    const ensureDefaultLane = useStore(state => state.ensureDefaultLane);
     const eventsContainerRef = useRef<HTMLDivElement>(null);
 
 
@@ -71,9 +71,17 @@ export const TimelineModal: React.FC<{
     }, [highlightedEventId, isOpen]);
 
 
+    // モバイルでも実行する: 閲覧専用 UI と矛盾するように見えるが、timelineLanes が空のまま
+    // モバイルで開くと event.laneId が孤児化して表示が破綻するため、副作用一貫性を優先する。
     useEffect(() => {
         if (isOpen) {
-            const initialLanes = lanes?.length > 0 ? [...lanes] : [{ id: uuidv4(), name: 'メインストーリー', color: '#6b7280' }];
+            ensureDefaultLane();
+        }
+    }, [isOpen, ensureDefaultLane]);
+
+    useEffect(() => {
+        if (isOpen) {
+            const initialLanes = lanes && lanes.length > 0 ? [...lanes] : [];
             const initialTimeline = timeline || [];
             setLocalTimeline([...initialTimeline]);
             setLocalLanes(initialLanes);
