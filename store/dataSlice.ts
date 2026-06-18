@@ -33,6 +33,9 @@ export interface DataSlice {
     deletePlotItem: (id: string) => void;
     upsertTimelineEvent: (event: TimelineEvent) => void;
     deleteTimelineEvent: (id: string) => void;
+    // PR-A2 リグレッション解消 (Issue #181 Phase 1): timelineLanes が空の時のみ
+    // デフォルトレーンを store に実体作成する。既存 lane があれば no-op。
+    ensureDefaultLane: () => void;
     handleDisplaySettingChange: (key: keyof DisplaySettings, value: any) => void;
     handleSaveChart: (relations: Relation[], positions: NodePosition[]) => void;
     handleSaveTimeline: (timeline: TimelineEvent[], lanes: TimelineLane[]) => void;
@@ -410,6 +413,27 @@ export const createDataSlice = (set, get): DataSlice => ({
             plotBoard: (d.plotBoard || []).map(p =>
                 p.linkedEventId === id ? { ...p, linkedEventId: undefined } : p
             ),
+            lastModified: new Date().toISOString(),
+        }));
+    },
+    ensureDefaultLane: () => {
+        const { allProjectsData, activeProjectId, setActiveProjectData } = get();
+        if (!activeProjectId) return;
+        const project = allProjectsData[activeProjectId];
+        if (!project) return;
+        if (project.timelineLanes && project.timelineLanes.length > 0) return;
+        // PR-A2 リグレッション孤児救済 (Codex セカンドオピニオン指摘): lanes 空でも既存 event があれば、
+        // その laneId を採用して新 default lane と一致させる (event 側は不変、最小侵襲)。
+        // createEventFromPlot の 'default' フォールバック値、過去に動的生成された uuid のどちらでも復旧する。
+        // 複数 event が distinct laneId を持つ場合は最初の event の laneId のみ救済 (Phase 2/3 で残りを対応)。
+        const orphanLaneId = project.timeline && project.timeline.length > 0
+            ? project.timeline[0]?.laneId
+            : undefined;
+        const defaultLaneId = orphanLaneId ?? uuidv4();
+        const defaultLane: TimelineLane = { id: defaultLaneId, name: 'メインストーリー', color: '#6b7280' };
+        setActiveProjectData(d => ({
+            ...d,
+            timelineLanes: [defaultLane],
             lastModified: new Date().toISOString(),
         }));
     },
