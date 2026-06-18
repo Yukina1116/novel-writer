@@ -45,10 +45,8 @@ export const ModalManager: React.FC<ModalManagerProps> = ({ displayMenuButtonRef
     const openModal = useStore(state => state.openModal);
     const handleSaveSetting = useStore(state => state.handleSaveSetting);
     const handleDeleteSetting = useStore(state => state.handleDeleteSetting);
-    const handleSavePlotBoard = useStore(state => state.handleSavePlotBoard);
     const handleDisplaySettingChange = useStore(state => state.handleDisplaySettingChange);
     const handleSaveChart = useStore(state => state.handleSaveChart);
-    const handleSaveTimeline = useStore(state => state.handleSaveTimeline);
     const handleSaveChapterSettings = useStore(state => state.handleSaveChapterSettings);
     const navigateToSetting = useStore(state => state.navigateToSetting);
     const navigateToKnowledge = useStore(state => state.navigateToKnowledge);
@@ -109,7 +107,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({ displayMenuButtonRef
                 modalContent = <KnowledgeModal isOpen={true} onClose={closeModal} onSave={(item) => handleSaveSetting(item, 'knowledge')} itemToEdit={modalPayload as KnowledgeItem | null} allKnowledge={knowledgeBase} isMobile={isMobile} />;
                 break;
             case 'plot':
-                modalContent = <PlotBoardModal isOpen={true} onClose={closeModal} onSave={handleSavePlotBoard} plotItems={plotBoard} relations={plotRelations} nodePositions={plotNodePositions} plotTypeColors={plotTypeColors} itemToEdit={modalPayload as PlotItem | null} isMobile={isMobile} />;
+                modalContent = <PlotBoardModal isOpen={true} onClose={closeModal} plotItems={plotBoard} relations={plotRelations} nodePositions={plotNodePositions} plotTypeColors={plotTypeColors} itemToEdit={modalPayload as PlotItem | null} isMobile={isMobile} />;
                 break;
             case 'aiSettings':
                 modalContent = <AiSettingsModal isOpen={true} onClose={closeModal} settings={aiSettings} onHelpClick={(topic) => openModal('help', { topic })} userProfile={activeProjectData?.userProfile} setActiveProjectData={setActiveProjectData} displaySettings={displaySettings} handleDisplaySettingChange={handleDisplaySettingChange} isMobile={isMobile} />;
@@ -127,7 +125,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({ displayMenuButtonRef
                 modalContent = <HtmlExportModal isOpen={true} onClose={closeModal} onExport={exportHtml} displaySettings={displaySettings} settings={settings} />;
                 break;
             case 'timeline':
-                modalContent = <TimelineModal isOpen={true} onClose={closeModal} timeline={timeline} lanes={timelineLanes} onSave={handleSaveTimeline} allSettings={settings} plotBoard={plotBoard} isMobile={isMobile} />;
+                modalContent = <TimelineModal isOpen={true} onClose={closeModal} timeline={timeline} lanes={timelineLanes} allSettings={settings} plotBoard={plotBoard} isMobile={isMobile} />;
                 break;
             case 'nameGenerator':
                 modalContent = <NameGenerator isOpen={true} onClose={closeModal} onGenerate={handleGenerateNames} onApply={(name) => { navigator.clipboard.writeText(name); useStore.getState().showToast(`「${name}」をコピーしました`); closeModal(); }} applyButtonText="コピー" initialCategory={NAME_CATEGORY.FANTASY} />;

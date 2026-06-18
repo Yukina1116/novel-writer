@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as Icons from '../icons';
 import { getContrastingTextColor } from '../utils';
 import { PlotItem, PlotRelation, PlotNodePosition } from '../types';
+// 内側 CardEditorModal の保存ボタン UX で利用 (Phase 3 方針: 内側モーダルは現状維持)
 import { UnsavedChangesPopover } from './UnsavedChangesPopover';
 // FIX: The file 'store.ts' does not exist, changed import to 'store/index.ts'.
 import { useStore } from '../store/index';
@@ -305,7 +306,7 @@ const RelationEditorDrawer = ({ relation, plotItems, onSave, onClose, plotTypeCo
 
 
 // --- Main Plot Board Modal ---
-export const PlotBoardModal = ({ isOpen, onClose, onSave, plotItems, relations, nodePositions, plotTypeColors: initialColors, itemToEdit, isMobile = false }) => {
+export const PlotBoardModal = ({ isOpen, onClose, plotItems, relations, nodePositions, plotTypeColors: initialColors, itemToEdit, isMobile = false }) => {
     const [items, setItems] = useState<PlotItem[]>([]);
     const [localRelations, setLocalRelations] = useState<PlotRelation[]>([]);
     const [positions, setPositions] = useState<{ [key: string]: { x: number, y: number } }>({});
@@ -314,11 +315,8 @@ export const PlotBoardModal = ({ isOpen, onClose, onSave, plotItems, relations, 
     const [editingRelation, setEditingRelation] = useState<PlotRelation | null>(null);
     const [mode, setMode] = useState<'navigate' | 'add_relation' | 'delete_relation'>('navigate');
     const [relationStart, setRelationStart] = useState<string | null>(null);
-    const [activeDrag, setActiveDrag] = useState<{ nodeId: string, offsetX: number, offsetY: number } | null>(null);
+    const [activeDrag, setActiveDrag] = useState<{ nodeId: string, offsetX: number, offsetY: number, initialX: number, initialY: number } | null>(null);
     const svgRef = useRef<SVGSVGElement>(null);
-    const [isConfirmCloseOpen, setIsConfirmCloseOpen] = useState(false);
-    const [initialStateString, setInitialStateString] = useState('');
-    const closeButtonRef = useRef(null);
     const [deletingCardId, setDeletingCardId] = useState<string | null>(null);
 
     const setHelpTopic = useStore(state => state.setHelpTopic);
@@ -328,6 +326,13 @@ export const PlotBoardModal = ({ isOpen, onClose, onSave, plotItems, relations, 
     // PR-A2: カード単体保存を即時 Redux 反映 (local state 維持 + 二重書き)
     // タイトル同期 (computePlotTitleSync) と debounce 自動保存をフッター保存待ちなく発火させるため。
     const upsertPlotItem = useStore(state => state.upsertPlotItem);
+    // Phase 3 (#180+#181 統合): フッター保存ボタン廃止に伴い、各 mutation で store 単体反映する。
+    // local state は UI render と既存 useEffect の整合性のため維持し、store action を併用 (二重書き)。
+    const movePlotNode = useStore(state => state.movePlotNode);
+    const upsertPlotRelation = useStore(state => state.upsertPlotRelation);
+    const deletePlotRelation = useStore(state => state.deletePlotRelation);
+    const setPlotTypeColorAction = useStore(state => state.setPlotTypeColor);
+    const deletePlotItemAction = useStore(state => state.deletePlotItem);
 
     const hasCompletedGlobalPlotBoardTutorial = useStore(state => state.hasCompletedGlobalPlotBoardTutorial);
     const startPlotBoardTutorial = useStore(state => state.startPlotBoardTutorial);
@@ -351,19 +356,13 @@ export const PlotBoardModal = ({ isOpen, onClose, onSave, plotItems, relations, 
                 acc[pos.plotId] = { x: pos.x, y: pos.y };
                 return acc;
             }, {} as { [key: string]: { x: number, y: number } });
-            
+
             plotItems.forEach((item, index) => {
                 if (!initialPositions[item.id]) {
                     initialPositions[item.id] = { x: 100 + (index % 5) * 220, y: 100 + Math.floor(index / 5) * 160 };
                 }
             });
             setPositions(initialPositions);
-            setInitialStateString(JSON.stringify({
-                items: plotItems,
-                relations: relations || [],
-                positions: initialPositions,
-                colors: initialColors || {}
-            }));
 
             if(itemToEdit) {
                  const card = plotItems.find(p => p.id === itemToEdit.id);
@@ -371,47 +370,6 @@ export const PlotBoardModal = ({ isOpen, onClose, onSave, plotItems, relations, 
             }
         }
     }, [isOpen, plotItems, relations, nodePositions, initialColors, itemToEdit]);
-
-    const isDirty = useMemo(() => {
-        if (!initialStateString) return false;
-        
-        const initialData = JSON.parse(initialStateString);
-        
-        const normalizedCurrentState = {
-            items,
-            relations: localRelations,
-            positions: Object.entries(positions).map(([plotId, pos]) => ({ plotId, x: (pos as any).x, y: (pos as any).y })),
-            colors: plotTypeColors,
-        };
-        
-        const normalizedInitialState = {
-            items: initialData.items,
-            relations: initialData.relations,
-            positions: Object.entries(initialData.positions).map(([plotId, pos]) => ({ plotId, x: (pos as any).x, y: (pos as any).y })),
-            colors: initialData.colors,
-        };
-        
-        return JSON.stringify(normalizedCurrentState) !== JSON.stringify(normalizedInitialState);
-    }, [items, localRelations, positions, plotTypeColors, initialStateString]);
-
-    const handleSave = () => {
-        const finalPositions = Object.entries(positions).map(([plotId, pos]) => ({ plotId, x: (pos as any).x, y: (pos as any).y }));
-        onSave({ items, relations: localRelations, positions: finalPositions, colors: plotTypeColors });
-        onClose();
-    };
-
-    const handleCloseRequest = () => {
-        if (isDirty) {
-            setIsConfirmCloseOpen(true);
-        } else {
-            onClose();
-        }
-    };
-    
-    const handleSaveAndClose = () => {
-        handleSave();
-        setIsConfirmCloseOpen(false);
-    };
 
     const handleSaveCard = (card) => {
         const exists = items.some(i => i.id === card.id);
@@ -438,6 +396,8 @@ export const PlotBoardModal = ({ isOpen, onClose, onSave, plotItems, relations, 
         if (editingCard && (editingCard as PlotItem).id === cardId) {
             setEditingCard(null);
         }
+        // Phase 3: 即時 store 反映 (plotBoard / plotRelations / plotNodePositions / timeline.linkedPlotId cascade)
+        deletePlotItemAction(cardId);
     };
     
     const handleDeleteClick = (e: React.MouseEvent, cardId: string) => {
@@ -468,10 +428,13 @@ export const PlotBoardModal = ({ isOpen, onClose, onSave, plotItems, relations, 
         const point = getSVGPoint(e);
         const nodePos = positions[nodeId];
         if (point && nodePos) {
+            // initialX/Y は mouseUp 時の no-op skip 判定に使う (Phase 3 review #3)
             setActiveDrag({
                 nodeId,
                 offsetX: point.x - nodePos.x,
                 offsetY: point.y - nodePos.y,
+                initialX: nodePos.x,
+                initialY: nodePos.y,
             });
         }
     };
@@ -490,6 +453,15 @@ export const PlotBoardModal = ({ isOpen, onClose, onSave, plotItems, relations, 
         }
     };
     const handleMouseUp = (e: React.MouseEvent) => {
+        // Phase 3: drag 終了時に最新 position を store に即時反映 (movePlotNode)。
+        // mouseLeave 経路でも同じ handler が呼ばれるため activeDrag が null の場合はスキップ。
+        // review #3: クリック (距離 0) では markDirty / IndexedDB 書込みを発火しない。
+        if (activeDrag) {
+            const finalPos = positions[activeDrag.nodeId];
+            if (finalPos && (finalPos.x !== activeDrag.initialX || finalPos.y !== activeDrag.initialY)) {
+                movePlotNode(activeDrag.nodeId, finalPos.x, finalPos.y);
+            }
+        }
         setActiveDrag(null);
     };
 
@@ -506,12 +478,29 @@ export const PlotBoardModal = ({ isOpen, onClose, onSave, plotItems, relations, 
                     memo: '',
                     color: '#3b82f6'
                 };
+                // review #1: drawer 開く時点では local のみ反映。store 書込みは drawer onSave で行う
+                // (drawer 閉じで cancel された場合に phantom relation が永続化されるのを防ぐ)。
                 setLocalRelations(prev => [...prev, newRelation]);
                 setEditingRelation(newRelation);
                 setRelationStart(null);
                 setMode('navigate');
             }
         }
+    };
+
+    // review #1: RelationEditorDrawer 閉じで、新規追加 (store 未永続化) の relation を local からも除去する。
+    // 既存編集 (store に永続化済) なら local 編集を破棄して store の値に同期 (evaluator 指摘 MEDIUM)。
+    const handleRelationDrawerClose = () => {
+        if (editingRelation) {
+            const persisted = (relations || []).find(r => r.id === editingRelation.id);
+            if (!persisted) {
+                setLocalRelations(prev => prev.filter(r => r.id !== editingRelation.id));
+            } else {
+                // 編集途中の local 値を store の値に revert (再 open まで乖離させない)
+                setLocalRelations(prev => prev.map(r => r.id === persisted.id ? persisted : r));
+            }
+        }
+        setEditingRelation(null);
     };
     
     if (!isOpen) return null;
@@ -520,13 +509,6 @@ export const PlotBoardModal = ({ isOpen, onClose, onSave, plotItems, relations, 
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-[70] p-4">
             <PlotBoardTutorial />
             <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl h-[90vh] flex flex-col border border-gray-700 relative">
-                <UnsavedChangesPopover
-                    isOpen={isConfirmCloseOpen}
-                    targetRef={closeButtonRef}
-                    onCancel={() => setIsConfirmCloseOpen(false)}
-                    onCloseWithoutSaving={() => { setIsConfirmCloseOpen(false); onClose(); }}
-                    onSaveAndClose={handleSaveAndClose}
-                />
                 <div className="flex justify-between items-center p-4 border-b border-gray-700">
                     <h2 className="text-xl font-bold text-cyan-400 flex items-center gap-2"><Icons.ClipboardListIcon />プロットボード</h2>
                     <div className="flex items-center gap-4">
@@ -543,7 +525,7 @@ export const PlotBoardModal = ({ isOpen, onClose, onSave, plotItems, relations, 
                         <button onClick={() => setHelpTopic('plotBoard')} className="p-1.5 rounded-full text-gray-400 hover:text-white hover:bg-gray-700 transition btn-pressable" title="ヘルプ">
                             <Icons.HelpCircleIcon className="h-5 w-5" />
                         </button>
-                        <button ref={closeButtonRef} onClick={handleCloseRequest} className="p-2 rounded-full hover:bg-gray-700 transition text-white"><Icons.XIcon /></button>
+                        <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700 transition text-white"><Icons.XIcon /></button>
                     </div>
                 </div>
                 <div 
@@ -567,11 +549,17 @@ export const PlotBoardModal = ({ isOpen, onClose, onSave, plotItems, relations, 
                              const textColor = getContrastingTextColor(color);
                              
                              return (
-                                 <g key={rel.id} 
+                                 <g key={rel.id}
                                     onClick={() => {
                                         if (isMobile) return;
-                                        mode === 'delete_relation' ? setLocalRelations(prev => prev.filter(r => r.id !== rel.id)) : setEditingRelation(rel)
-                                    }} 
+                                        if (mode === 'delete_relation') {
+                                            setLocalRelations(prev => prev.filter(r => r.id !== rel.id));
+                                            // Phase 3: 即時 store 反映
+                                            deletePlotRelation(rel.id);
+                                        } else {
+                                            setEditingRelation(rel);
+                                        }
+                                    }}
                                     className={isMobile ? "" : "cursor-pointer"}
                                  >
                                      <line x1={sourcePos.x} y1={sourcePos.y} x2={targetPos.x} y2={targetPos.y} stroke={color} strokeWidth="2" />
@@ -638,19 +626,24 @@ export const PlotBoardModal = ({ isOpen, onClose, onSave, plotItems, relations, 
                         {isMobile && <span className="text-xs text-orange-400 font-bold px-2 py-0.5 border border-orange-400 rounded">閲覧専用モード</span>}
                     </div>
                     <div className="flex gap-3">
-                        <button type="button" onClick={handleCloseRequest} className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-500 transition btn-pressable">
+                        <button type="button" onClick={onClose} className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-500 transition btn-pressable">
                             <Icons.XIcon className="h-4 w-4" />
-                            {isMobile ? '閉じる' : 'キャンセル'}
+                            閉じる
                         </button>
-                        {!isMobile && <button id="tutorial-plotboard-save-btn" type="button" onClick={handleSave} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition btn-pressable">
-                            <Icons.CheckIcon className="h-4 w-4" />
-                            保存
-                        </button>}
                     </div>
                 </div>
-                {editingRelation && <RelationEditorDrawer relation={editingRelation} plotItems={items} plotTypeColors={plotTypeColors} onClose={() => setEditingRelation(null)} onSave={(rel) => { setLocalRelations(prev => prev.map(r => r.id === rel.id ? rel : r)); setEditingRelation(null); }} />}
+                {editingRelation && <RelationEditorDrawer relation={editingRelation} plotItems={items} plotTypeColors={plotTypeColors} onClose={handleRelationDrawerClose} onSave={(rel) => {
+                    setLocalRelations(prev => prev.map(r => r.id === rel.id ? rel : r));
+                    // Phase 3: 即時 store 反映 (新規 / 既存どちらも upsertPlotRelation で OK、id 一致で upsert)
+                    upsertPlotRelation(rel);
+                    setEditingRelation(null);
+                }} />}
             </div>
-            {editingCard && <CardEditorModal card={editingCard as PlotItem} onSave={handleSaveCard} onDelete={confirmDeleteCard} onClose={() => setEditingCard(null)} plotTypeColors={plotTypeColors} onUpdateColor={(type, color) => setPlotTypeColors(prev => ({...prev, [type]: color}))} readOnly={isMobile} />}
+            {editingCard && <CardEditorModal card={editingCard as PlotItem} onSave={handleSaveCard} onDelete={confirmDeleteCard} onClose={() => setEditingCard(null)} plotTypeColors={plotTypeColors} onUpdateColor={(type, color) => {
+                setPlotTypeColors(prev => ({...prev, [type]: color}));
+                // Phase 3: 即時 store 反映
+                setPlotTypeColorAction(type, color);
+            }} readOnly={isMobile} />}
         </div>,
         document.body
     );

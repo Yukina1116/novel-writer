@@ -26,10 +26,9 @@ const timelineTutorialSteps = [
         placement: 'top-start',
     },
     {
-        title: '④ 保存',
-        content: '編集が終わったら、忘れずに保存ボタンを押してくださいね。',
-        targetId: 'tutorial-timeline-save-btn',
-        placement: 'top',
+        title: '④ 自動保存',
+        content: 'イベントやレーンの変更は自動的に保存されます。安心して編集を続けてください。',
+        targetId: null,
     },
     {
         title: '準備完了！',
