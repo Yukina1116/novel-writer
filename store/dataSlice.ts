@@ -33,6 +33,17 @@ export interface DataSlice {
     deletePlotItem: (id: string) => void;
     upsertTimelineEvent: (event: TimelineEvent) => void;
     deleteTimelineEvent: (id: string) => void;
+    // Phase 2: レーンの単体追加・更新 (PR-A2 の upsertTimelineEvent と対称)。
+    // フッター保存を待たず即時 store 反映 + markDirty で IndexedDB debounce 発火させる。
+    upsertTimelineLane: (lane: TimelineLane) => void;
+    // Phase 2: レーン削除 + 配下 event cascade + plot.linkedEventId orphan 解除を
+    // 1 つの setActiveProjectData updater に集約する (Codex 指摘: 別 transaction 連打だと
+    // debounced save / 別操作が挟まった時に壊れた中間状態が保存される)。
+    deleteTimelineLane: (id: string) => void;
+    // Phase 2: drag-drop 用の単一 event 移動 action。
+    // store の現在値を起点に再計算するため、local snapshot 上書きリスクを構造的に排除する。
+    // 責務縮小契約 (Codex 指摘): title sync しない / plot link cleanup しない / history 積まない。
+    moveTimelineEvent: (eventId: string, targetLaneId: string, insertBeforeEventId: string | null) => void;
     // timelineLanes が空の時のみデフォルトレーンを store に実体作成する (idempotent)。
     // useEffect 側で uuid を動的生成すると props 変化で再発火するたびに新 ID になり
     // event.laneId が孤児化するため、ID 発行を store 側に集約している。
@@ -416,6 +427,84 @@ export const createDataSlice = (set, get): DataSlice => ({
             ),
             lastModified: new Date().toISOString(),
         }));
+    },
+    upsertTimelineLane: (lane: TimelineLane) => {
+        const { activeProjectId, allProjectsData, setActiveProjectData } = get();
+        if (!activeProjectId) return;
+        const project = allProjectsData[activeProjectId];
+        if (!project) return;
+
+        setActiveProjectData(d => {
+            const lanes = d.timelineLanes || [];
+            const exists = lanes.some(l => l.id === lane.id);
+            const newLanes = exists
+                ? lanes.map(l => l.id === lane.id ? lane : l)
+                : [...lanes, lane];
+            return {
+                ...d,
+                timelineLanes: newLanes,
+                lastModified: new Date().toISOString(),
+            };
+        });
+    },
+    deleteTimelineLane: (id: string) => {
+        const { activeProjectId, allProjectsData, setActiveProjectData } = get();
+        if (!activeProjectId) return;
+        const project = allProjectsData[activeProjectId];
+        if (!project) return;
+        // 該当 lane が存在しない場合は markDirty を発火させない (no-op)
+        if (!(project.timelineLanes || []).some(l => l.id === id)) return;
+
+        // Codex must-fix: lane 削除 → 配下 event filter → plot.linkedEventId orphan 解除を
+        // 同一 updater 内で atomic に行う。removedEventIds は updater 引数 d から再計算して
+        // setActiveProjectData の前提と一致させる (TOCTOU 回避)。
+        setActiveProjectData(d => {
+            const removedEventIds = new Set(
+                (d.timeline || []).filter(e => e.laneId === id).map(e => e.id)
+            );
+            const nowMs = Date.now();
+            return {
+                ...d,
+                timelineLanes: (d.timelineLanes || []).filter(l => l.id !== id),
+                timeline: (d.timeline || []).filter(e => e.laneId !== id),
+                plotBoard: (d.plotBoard || []).map(p =>
+                    p.linkedEventId !== undefined && removedEventIds.has(p.linkedEventId)
+                        ? { ...p, linkedEventId: undefined, lastModified: nowMs }
+                        : p
+                ),
+                lastModified: new Date().toISOString(),
+            };
+        });
+    },
+    moveTimelineEvent: (eventId: string, targetLaneId: string, insertBeforeEventId: string | null) => {
+        const { activeProjectId, allProjectsData, setActiveProjectData } = get();
+        if (!activeProjectId) return;
+        const project = allProjectsData[activeProjectId];
+        if (!project) return;
+        // 該当 event が存在しない場合は markDirty を発火させない (no-op)
+        if (!(project.timeline || []).some(e => e.id === eventId)) return;
+
+        setActiveProjectData(d => {
+            const timeline = d.timeline || [];
+            const target = timeline.find(e => e.id === eventId);
+            if (!target) return d;
+            const movedEvent: TimelineEvent = target.laneId === targetLaneId
+                ? target
+                : { ...target, laneId: targetLaneId };
+            const without = timeline.filter(e => e.id !== eventId);
+            // insertBeforeEventId が指定されてかつ存在すれば直前挿入、それ以外は末尾挿入。
+            const insertIndex = insertBeforeEventId
+                ? without.findIndex(e => e.id === insertBeforeEventId)
+                : -1;
+            const newTimeline = insertIndex >= 0
+                ? [...without.slice(0, insertIndex), movedEvent, ...without.slice(insertIndex)]
+                : [...without, movedEvent];
+            return {
+                ...d,
+                timeline: newTimeline,
+                lastModified: new Date().toISOString(),
+            };
+        });
     },
     ensureDefaultLane: () => {
         const { allProjectsData, activeProjectId, setActiveProjectData } = get();

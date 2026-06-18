@@ -40,6 +40,12 @@ export const TimelineModal: React.FC<{
     // タイトル同期 (computeEventTitleSync) と debounce 自動保存をフッター保存待ちなく発火させるため。
     const upsertTimelineEvent = useStore(state => state.upsertTimelineEvent);
     const ensureDefaultLane = useStore(state => state.ensureDefaultLane);
+    // Phase 2: lane / event 操作の単体保存。フッター保存に依存せず未保存閉じでも消えない UX。
+    // Codex セカンドオピニオン PR の指針に従い moveTimelineEvent は順序計算ベース。
+    const upsertTimelineLane = useStore(state => state.upsertTimelineLane);
+    const deleteTimelineLane = useStore(state => state.deleteTimelineLane);
+    const deleteTimelineEvent = useStore(state => state.deleteTimelineEvent);
+    const moveTimelineEvent = useStore(state => state.moveTimelineEvent);
     const eventsContainerRef = useRef<HTMLDivElement>(null);
 
 
@@ -129,6 +135,8 @@ export const TimelineModal: React.FC<{
         } else {
             setLocalLanes([...localLanes, laneToSave]);
         }
+        // Phase 2: 即時 store 反映 (フッター保存待ちで未保存閉じ消失を回避)。
+        upsertTimelineLane(laneToSave);
         setEditingLane(null);
         setIsAddingLane(false);
     };
@@ -137,9 +145,11 @@ export const TimelineModal: React.FC<{
         if (window.confirm('このレーンを削除しますか？レーン内のすべてのイベントも削除されます。')) {
             setLocalLanes(localLanes.filter(l => l.id !== laneId));
             setLocalTimeline(localTimeline.filter(e => e.laneId !== laneId));
+            // Phase 2: store 側で lane + 配下 event + plot.linkedEventId orphan 解除を atomic に実行 (Codex must-fix)。
+            deleteTimelineLane(laneId);
         }
     };
-    
+
     // Event handlers
     const handleSaveEvent = (eventToSave: TimelineEvent) => {
         const exists = localTimeline.some(e => e.id === eventToSave.id);
@@ -155,6 +165,8 @@ export const TimelineModal: React.FC<{
 
     const handleDeleteEvent = (eventId: string) => {
         setLocalTimeline(localTimeline.filter(e => e.id !== eventId));
+        // Phase 2: 即時 store 反映 + plot.linkedEventId orphan 解除 (deleteTimelineEvent 既存契約)。
+        deleteTimelineEvent(eventId);
     };
 
     // Drag and Drop handlers
@@ -208,11 +220,19 @@ export const TimelineModal: React.FC<{
         const newTimeline = localTimeline.filter(event => event.id !== draggedEventId);
         const updatedDraggedEvent = { ...draggedEvent, laneId: targetLaneId };
 
+        // Phase 2: store 側 moveTimelineEvent に渡す insertBeforeEventId を計算 (Codex 推奨の責務分離)。
+        // dragOverInfo.position === 'top' → 当該 event の直前、'bottom' → 直後 (= 次の event の直前)。
+        // dragOverInfo なし時は targetLaneId 内の末尾扱い → insertBeforeEventId = null。
+        let insertBeforeEventId: string | null = null;
         if (dragOverInfo) {
             const targetIndex = newTimeline.findIndex(event => event.id === dragOverInfo.eventId);
             if (targetIndex !== -1) {
                 const insertIndex = dragOverInfo.position === 'top' ? targetIndex : targetIndex + 1;
                 newTimeline.splice(insertIndex, 0, updatedDraggedEvent);
+                // insertIndex が末尾なら null、それ以外なら直後の event ID。
+                insertBeforeEventId = insertIndex < newTimeline.length - 1
+                    ? newTimeline[insertIndex + 1]?.id ?? null
+                    : null;
             } else {
                 newTimeline.push(updatedDraggedEvent);
             }
@@ -224,9 +244,18 @@ export const TimelineModal: React.FC<{
                     break;
                 }
             }
-            newTimeline.splice(lastEventInLaneIndex + 1, 0, updatedDraggedEvent);
+            const insertIndex = lastEventInLaneIndex + 1;
+            newTimeline.splice(insertIndex, 0, updatedDraggedEvent);
+            // /code-review 指摘 (must-fix): else 分岐でも insertBeforeEventId を計算しないと
+            // store 側で配列末尾挿入されてしまい local と不整合になる (lane 末尾 vs 配列末尾)。
+            // 直後の event の id を渡せば store も同じ位置に挿入できる。
+            insertBeforeEventId = insertIndex < newTimeline.length - 1
+                ? newTimeline[insertIndex + 1]?.id ?? null
+                : null;
         }
         setLocalTimeline(newTimeline);
+        // Phase 2: 即時 store 反映 (Codex 推奨: store 現在値から再計算する責務縮小契約)。
+        moveTimelineEvent(draggedEventId, targetLaneId, insertBeforeEventId);
         handleDragEnd(); // Reset dragging state
     };
 
