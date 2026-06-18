@@ -34,4 +34,12 @@ describe('TimelineModal default lane hotfix (Issue #181 Phase 1)', () => {
         // 新パターン: lanes && lanes.length > 0 ? [...lanes] : []
         expect(source).toMatch(/lanes\s*&&\s*lanes\.length\s*>\s*0\s*\?\s*\[\.\.\.lanes\]\s*:\s*\[\]/);
     });
+
+    it('AC-5: ensureDefaultLane の useEffect に !isMobile ガードを追加していない (孤児化回避のためモバイルでも発火する規律 pin)', () => {
+        // モバイルでは閲覧専用 UI のため副作用を避けたくなるが、timelineLanes が空のまま
+        // モバイルで開くと event.laneId が孤児化して表示が破綻する。
+        // 「!isMobile && ensureDefaultLane()」のような将来の "fix" を grep で阻止する。
+        expect(source).not.toMatch(/if\s*\(isOpen\s*&&\s*!isMobile\)\s*\{\s*ensureDefaultLane/);
+        expect(source).not.toMatch(/!isMobile\s*&&\s*ensureDefaultLane\(\)/);
+    });
 });

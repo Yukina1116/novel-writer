@@ -39,8 +39,6 @@ export const TimelineModal: React.FC<{
     // PR-A2: イベント単体保存を即時 Redux 反映 (local state 維持 + 二重書き)
     // タイトル同期 (computeEventTitleSync) と debounce 自動保存をフッター保存待ちなく発火させるため。
     const upsertTimelineEvent = useStore(state => state.upsertTimelineEvent);
-    // Issue #181 Phase 1 hotfix: timelineLanes 空時に store にデフォルトレーンを実体作成。
-    // useEffect の uuid 再生成パターンを廃止し、event.laneId の孤児化を防ぐ。
     const ensureDefaultLane = useStore(state => state.ensureDefaultLane);
     const eventsContainerRef = useRef<HTMLDivElement>(null);
 
@@ -73,11 +71,8 @@ export const TimelineModal: React.FC<{
     }, [highlightedEventId, isOpen]);
 
 
-    // Issue #181 Phase 1 hotfix: isOpen 時に store にデフォルトレーンを確保。
-    // これにより props.lanes は常に length > 0 となり、後段 useEffect で uuid 再生成しない。
-    // モバイル (isMobile=true) でも実行する: 閲覧専用 UI と矛盾するように見えるが、空 timelineLanes の
-    // 表示破綻 (event の laneId が孤児化) を避けるため一貫性優先で発火させる。Phase 2 で
-    // store 側の invariant (project load 時に default lane を保証) に責務を移す予定。
+    // モバイルでも実行する: 閲覧専用 UI と矛盾するように見えるが、timelineLanes が空のまま
+    // モバイルで開くと event.laneId が孤児化して表示が破綻するため、副作用一貫性を優先する。
     useEffect(() => {
         if (isOpen) {
             ensureDefaultLane();

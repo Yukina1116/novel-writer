@@ -33,8 +33,9 @@ export interface DataSlice {
     deletePlotItem: (id: string) => void;
     upsertTimelineEvent: (event: TimelineEvent) => void;
     deleteTimelineEvent: (id: string) => void;
-    // PR-A2 リグレッション解消 (Issue #181 Phase 1): timelineLanes が空の時のみ
-    // デフォルトレーンを store に実体作成する。既存 lane があれば no-op。
+    // timelineLanes が空の時のみデフォルトレーンを store に実体作成する (idempotent)。
+    // useEffect 側で uuid を動的生成すると props 変化で再発火するたびに新 ID になり
+    // event.laneId が孤児化するため、ID 発行を store 側に集約している。
     ensureDefaultLane: () => void;
     handleDisplaySettingChange: (key: keyof DisplaySettings, value: any) => void;
     handleSaveChart: (relations: Relation[], positions: NodePosition[]) => void;
@@ -418,18 +419,35 @@ export const createDataSlice = (set, get): DataSlice => ({
     },
     ensureDefaultLane: () => {
         const { allProjectsData, activeProjectId, setActiveProjectData } = get();
-        if (!activeProjectId) return;
+        if (!activeProjectId) {
+            warnOnceInDev(
+                'ensure-default-lane-no-active-project',
+                'ensureDefaultLane: activeProjectId is null while TimelineModal opened (UI/store desync)',
+                {},
+                'dataSlice',
+            );
+            return;
+        }
         const project = allProjectsData[activeProjectId];
-        if (!project) return;
+        if (!project) {
+            warnOnceInDev(
+                'ensure-default-lane-project-missing',
+                'ensureDefaultLane: activeProjectId set but project entry missing in allProjectsData (TOCTOU)',
+                { activeProjectId },
+                'dataSlice',
+            );
+            return;
+        }
         if (project.timelineLanes && project.timelineLanes.length > 0) return;
-        // PR-A2 リグレッション孤児救済 (Codex セカンドオピニオン指摘): lanes 空でも既存 event があれば、
-        // その laneId を採用して新 default lane と一致させる (event 側は不変、最小侵襲)。
-        // createEventFromPlot の 'default' フォールバック値、過去に動的生成された uuid のどちらでも復旧する。
-        // 複数 event が distinct laneId を持つ場合は最初の event の laneId のみ救済 (Phase 2/3 で残りを対応)。
-        const orphanLaneId = project.timeline && project.timeline.length > 0
+        // lanes が空でも既存 event があれば、その laneId を新 default lane の id として採用する
+        // (event 側は不変)。これにより過去に動的 uuid または 'default' フォールバックで作られて
+        // 孤児化した event を救済する。複数 event が distinct laneId を持つ場合は最初の event の
+        // laneId のみ採用し、残りは孤児のまま (呼び出し側で別途解決)。
+        // 空文字 laneId は型上許容されるため truthy guard で除外し、その場合は uuidv4 を生成。
+        const orphanCandidate = project.timeline && project.timeline.length > 0
             ? project.timeline[0]?.laneId
             : undefined;
-        const defaultLaneId = orphanLaneId ?? uuidv4();
+        const defaultLaneId = (orphanCandidate && orphanCandidate.length > 0) ? orphanCandidate : uuidv4();
         const defaultLane: TimelineLane = { id: defaultLaneId, name: 'メインストーリー', color: '#6b7280' };
         setActiveProjectData(d => ({
             ...d,

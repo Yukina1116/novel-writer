@@ -191,6 +191,22 @@ describe('ensureDefaultLane (action) — Issue #181 Phase 1 hotfix', () => {
         expect(updated.timeline).toEqual([eventA, eventB]);
     });
 
+    it("AC-7: event の laneId が空文字 '' の場合は uuidv4 で新規生成 (nullish coalescing trap 回避)", () => {
+        // types.ts の TimelineEvent.laneId は string 型 (空文字を排除しない)。
+        // backup 取り込み / 手動 JSON 編集等で laneId='' が混入した場合、
+        // '' ?? uuidv4() は '' を返してしまうため、truthy guard で除外する。
+        const orphanEvent = eventFixture({ laneId: '' });
+        const project: Project = { ...baseProject(), timeline: [orphanEvent] };
+        const { fake } = mountSlice(project);
+
+        fake.state.ensureDefaultLane();
+
+        const updated = fake.state.allProjectsData['p-1'];
+        expect(updated.timelineLanes).toHaveLength(1);
+        expect(updated.timelineLanes[0].id).not.toBe('');
+        expect(updated.timelineLanes[0].id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    });
+
     it('AC-7: event が空の場合は uuidv4 で新規生成 (既存挙動を維持)', () => {
         const project: Project = { ...baseProject(), timeline: [] };
         const { fake } = mountSlice(project);
@@ -213,5 +229,17 @@ describe('ensureDefaultLane (action) — Issue #181 Phase 1 hotfix', () => {
         const updated = fake.state.allProjectsData['p-1'];
         expect(updated.lastModified).not.toBe(beforeLastModified);
         expect(new Date(updated.lastModified).getTime()).toBe(new Date('2026-06-18T00:00:00Z').getTime());
+    });
+
+    it('追加成功時に markDirty が 1 回呼ばれる (auto-save signal の positive case pin)', () => {
+        // pr-test-analyzer 指摘: AC-3 で not-called を pin しているが、success path で called を pin しないと
+        // 将来 setActiveProjectData を直接 set() に置き換えた時に silent に自動保存が無効化される
+        // (PR-A2 と同種の regression family を見逃す)。
+        const project: Project = { ...baseProject() };
+        const { fake, markDirty } = mountSlice(project);
+
+        fake.state.ensureDefaultLane();
+
+        expect(markDirty).toHaveBeenCalledTimes(1);
     });
 });
