@@ -27,10 +27,18 @@ export interface DataSlice {
     setActiveProjectData: (updater: (data: Project) => Project, historyLabel?: { type: HistoryType; label: string }, options?: { mode: 'merge' | 'replace' }) => void;
     handleSaveSetting: (newItem: Partial<SettingItem | KnowledgeItem>, type?: 'character' | 'world' | 'knowledge') => void;
     handleDeleteSetting: (id: string, type: 'character' | 'world' | 'knowledge' | 'plot', skipConfirm?: boolean) => void;
-    handleSavePlotBoard: (data: { items: PlotItem[], relations: PlotRelation[], positions: PlotNodePosition[], colors: { [key: string]: string } }) => void;
     // PR-A1: カード/イベント単体の自動保存 action。history ノードは積まない (markDirty のみ)。
     upsertPlotItem: (item: PlotItem) => void;
     deletePlotItem: (id: string) => void;
+    // Phase 3 (#180+#181 統合): プロットボードの単体保存 action 群。
+    // フッター「保存」ボタンを廃止し、drag / 編集ごとに即時 store 反映 + markDirty で
+    // IndexedDB debounce を発火させる。history ノードは積まない (PR-A2 と同方針)。
+    movePlotNode: (plotId: string, x: number, y: number) => void;
+    upsertPlotRelation: (relation: PlotRelation) => void;
+    // 該当 id が存在しない場合は markDirty を発火させない (no-op、deleteTimelineLane と同方針)。
+    deletePlotRelation: (id: string) => void;
+    // 1 type ごとの個別更新 (UI 経路の CardEditorModal onUpdateColor と整合)。
+    setPlotTypeColor: (type: string, color: string) => void;
     upsertTimelineEvent: (event: TimelineEvent) => void;
     deleteTimelineEvent: (id: string) => void;
     // Phase 2: レーンの単体追加・更新 (PR-A2 の upsertTimelineEvent と対称)。
@@ -50,7 +58,6 @@ export interface DataSlice {
     ensureDefaultLane: () => void;
     handleDisplaySettingChange: (key: keyof DisplaySettings, value: any) => void;
     handleSaveChart: (relations: Relation[], positions: NodePosition[]) => void;
-    handleSaveTimeline: (timeline: TimelineEvent[], lanes: TimelineLane[]) => void;
     handleSaveChapterSettings: (details: { id: string; newTitle: string; newMemo: string; isUncategorized: boolean }) => void;
     handleDeleteChapter: (chapterId: string) => void;
     handleNovelTextChange: (chunkId: string, newText: string) => void;
@@ -272,52 +279,6 @@ export const createDataSlice = (set, get): DataSlice => ({
         }, { type, label: labelText });
         get().closeModal();
     },
-    handleSavePlotBoard: (data: { items: PlotItem[], relations: PlotRelation[], positions: PlotNodePosition[], colors: { [key: string]: string } }) => {
-        const { openModal, allProjectsData, activeProjectId, setActiveProjectData, showToast } = get();
-        const oldProject = allProjectsData[activeProjectId];
-        // タイトルのみ自動同期 (プロット → タイムライン方向)。summary/description は SyncDialog 経路維持。
-        // PR-A1: 判定ロジックは computePlotTitleSync 純粋関数に集約済。
-        const titleSyncTargets: Array<{ eventId: string; newTitle: string; newLastModified: number }> = [];
-        let firstSyncDialog: { plotId: string; eventId: string } | null = null;
-        if (oldProject) {
-            const oldPlotsMap = new Map<string, PlotItem>(oldProject.plotBoard.map(p => [p.id, p]));
-            const timelineMap = new Map<string, TimelineEvent>(oldProject.timeline.map(e => [e.id, e]));
-
-            for (const newPlot of data.items) {
-                const result = computePlotTitleSync(oldPlotsMap.get(newPlot.id), newPlot, timelineMap);
-                if (result.counterpartPatch) titleSyncTargets.push(result.counterpartPatch);
-                else if (result.syncDialog && !firstSyncDialog) firstSyncDialog = result.syncDialog;
-            }
-        }
-
-        const currentProject = allProjectsData[activeProjectId];
-        const newPlotIds = new Set(data.items.map(p => p.id));
-        const titleSyncMap = new Map(titleSyncTargets.map(t => [t.eventId, t]));
-        const updatedTimeline = currentProject ? currentProject.timeline.map(event => {
-            const sync = titleSyncMap.get(event.id);
-            const linkCleared = event.linkedPlotId && !newPlotIds.has(event.linkedPlotId)
-                ? { ...event, linkedPlotId: undefined }
-                : event;
-            return sync
-                ? { ...linkCleared, title: sync.newTitle, lastModified: sync.newLastModified }
-                : linkCleared;
-        }) : [];
-
-        setActiveProjectData(d => ({
-            ...d,
-            plotBoard: data.items,
-            plotRelations: data.relations,
-            plotNodePositions: data.positions,
-            plotTypeColors: data.colors,
-            timeline: updatedTimeline,
-            lastModified: new Date().toISOString(),
-        }), { type: 'plot', label: 'プロットボードを更新' });
-
-        if (firstSyncDialog) openModal('syncDialog', firstSyncDialog);
-        if (titleSyncTargets.length > 0) {
-            showToast(`タイムラインの${titleSyncTargets.length}件のリンクイベントのタイトルを同期しました`, 'success');
-        }
-    },
     // PR-A1: カード単体保存。フッター保存を待たずに 2 秒 debounce で IndexedDB に反映される。
     // history ノードは積まない (自動保存は履歴の意味的単位ではない、PR-A2 で UI 切替時にユーザー操作粒度を再設計)。
     upsertPlotItem: (newItem: PlotItem) => {
@@ -375,6 +336,57 @@ export const createDataSlice = (set, get): DataSlice => ({
             timeline: (d.timeline || []).map(event =>
                 event.linkedPlotId === id ? { ...event, linkedPlotId: undefined } : event
             ),
+            lastModified: new Date().toISOString(),
+        }));
+    },
+    movePlotNode: (plotId: string, x: number, y: number) => {
+        const { setActiveProjectData } = get();
+        setActiveProjectData(d => {
+            const positions = d.plotNodePositions || [];
+            const exists = positions.some(p => p.plotId === plotId);
+            const newPositions = exists
+                ? positions.map(p => p.plotId === plotId ? { plotId, x, y } : p)
+                : [...positions, { plotId, x, y }];
+            return {
+                ...d,
+                plotNodePositions: newPositions,
+                lastModified: new Date().toISOString(),
+            };
+        });
+    },
+    upsertPlotRelation: (newRelation: PlotRelation) => {
+        const { setActiveProjectData } = get();
+        setActiveProjectData(d => {
+            const relations = d.plotRelations || [];
+            const exists = relations.some(r => r.id === newRelation.id);
+            const newRelations = exists
+                ? relations.map(r => r.id === newRelation.id ? newRelation : r)
+                : [...relations, newRelation];
+            return {
+                ...d,
+                plotRelations: newRelations,
+                lastModified: new Date().toISOString(),
+            };
+        });
+    },
+    deletePlotRelation: (id: string) => {
+        const { activeProjectId, allProjectsData, setActiveProjectData } = get();
+        if (!activeProjectId) return;
+        const project = allProjectsData[activeProjectId];
+        if (!project) return;
+        // 該当 relation が存在しない場合は markDirty を発火させない (no-op)
+        if (!(project.plotRelations || []).some(r => r.id === id)) return;
+        setActiveProjectData(d => ({
+            ...d,
+            plotRelations: (d.plotRelations || []).filter(r => r.id !== id),
+            lastModified: new Date().toISOString(),
+        }));
+    },
+    setPlotTypeColor: (type: string, color: string) => {
+        const { setActiveProjectData } = get();
+        setActiveProjectData(d => ({
+            ...d,
+            plotTypeColors: { ...(d.plotTypeColors || {}), [type]: color },
             lastModified: new Date().toISOString(),
         }));
     },
@@ -549,50 +561,6 @@ export const createDataSlice = (set, get): DataSlice => ({
     },
     handleSaveChart: (relations, positions) => {
         get().setActiveProjectData(d => ({ ...d, characterRelations: relations, nodePositions: positions, lastModified: new Date().toISOString() }), { type: 'chart', label: '相関図を更新' });
-    },
-    handleSaveTimeline: (timeline: TimelineEvent[], lanes: TimelineLane[]) => {
-        const { openModal, allProjectsData, activeProjectId, setActiveProjectData, showToast } = get();
-        const oldProject = allProjectsData[activeProjectId];
-        // タイトルのみ自動同期 (タイムライン → プロット方向)。summary/description は SyncDialog 経路維持。
-        // PR-A1: 判定ロジックは computeEventTitleSync 純粋関数に集約済。
-        const titleSyncTargets: Array<{ plotId: string; newTitle: string; newLastModified: number }> = [];
-        let firstSyncDialog: { plotId: string; eventId: string } | null = null;
-        if (oldProject) {
-            const oldEventsMap = new Map<string, TimelineEvent>(oldProject.timeline.map(e => [e.id, e]));
-            const plotBoardMap = new Map<string, PlotItem>(oldProject.plotBoard.map(p => [p.id, p]));
-
-            for (const newEvent of timeline) {
-                const result = computeEventTitleSync(oldEventsMap.get(newEvent.id), newEvent, plotBoardMap);
-                if (result.counterpartPatch) titleSyncTargets.push(result.counterpartPatch);
-                else if (result.syncDialog && !firstSyncDialog) firstSyncDialog = result.syncDialog;
-            }
-        }
-
-        const currentProject = allProjectsData[activeProjectId];
-        const newEventIds = new Set(timeline.map(e => e.id));
-        const titleSyncMap = new Map(titleSyncTargets.map(t => [t.plotId, t]));
-        const updatedPlotBoard = currentProject ? currentProject.plotBoard.map(plot => {
-            const sync = titleSyncMap.get(plot.id);
-            const linkCleared = plot.linkedEventId && !newEventIds.has(plot.linkedEventId)
-                ? { ...plot, linkedEventId: undefined }
-                : plot;
-            return sync
-                ? { ...linkCleared, title: sync.newTitle, lastModified: sync.newLastModified }
-                : linkCleared;
-        }) : [];
-
-        setActiveProjectData(d => ({
-            ...d,
-            timeline: timeline,
-            timelineLanes: lanes,
-            plotBoard: updatedPlotBoard,
-            lastModified: new Date().toISOString()
-        }), { type: 'timeline', label: 'タイムラインを更新' });
-
-        if (firstSyncDialog) openModal('syncDialog', firstSyncDialog);
-        if (titleSyncTargets.length > 0) {
-            showToast(`プロットボードの${titleSyncTargets.length}件のリンクカードのタイトルを同期しました`, 'success');
-        }
     },
     handleSaveChapterSettings: ({ id, newTitle, newMemo, isUncategorized }) => {
         get().setActiveProjectData(d => {

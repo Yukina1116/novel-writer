@@ -172,7 +172,7 @@ describe('moveTimelineEvent (action) — Issue #181 Phase 2 single-save (drag-dr
         expect(updated.timeline.map((e: TimelineEvent) => e.id)).toEqual(['e2', 'e1']);
     });
 
-    it('Codex 指摘: plotBoard を変更しない (link cleanup は責務外、handleSaveTimeline / deleteTimelineEvent の責務)', () => {
+    it('Codex 指摘: plotBoard を変更しない (link cleanup は責務外、deleteTimelineEvent の責務)', () => {
         const project: Project = {
             ...baseProject(),
             timeline: [event('e1', 'lane-A')],

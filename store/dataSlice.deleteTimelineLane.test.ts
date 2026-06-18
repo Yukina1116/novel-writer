@@ -102,7 +102,7 @@ describe('deleteTimelineLane (action) — Issue #181 Phase 2 single-save', () =>
     it('AC-2c (Codex must-fix): cascade 削除された event を指す plotBoard.linkedEventId を undefined に解除する', () => {
         // Codex セカンドオピニオン指摘:
         // lane 削除 → 配下 event filter → 削除済 event を指す plot.linkedEventId が orphan に残る。
-        // 既存 handleSaveTimeline (フッター保存) との link cleanup 責務の非対称を回避する。
+        // Phase 2 当時の handleSaveTimeline (フッター保存、Phase 3 で削除済) との link cleanup 責務の非対称を回避する。
         const project: Project = {
             ...baseProject(),
             timelineLanes: [lane('remove')],

@@ -3,7 +3,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as Icons from '../icons';
 import { TimelineEvent, TimelineLane, SettingItem, PlotItem } from '../types';
 import { getContrastingTextColor } from '../utils';
-import { UnsavedChangesPopover } from './UnsavedChangesPopover';
 import { useStore } from '../store/index';
 import { TimelineTutorial } from './TimelineTutorial';
 import { EventForm } from './modals/EventForm';
@@ -19,9 +18,8 @@ export const TimelineModal: React.FC<{
     lanes: TimelineLane[];
     allSettings: SettingItem[];
     plotBoard: PlotItem[];
-    onSave: (timeline: TimelineEvent[], lanes: TimelineLane[]) => void;
     isMobile?: boolean;
-}> = ({ isOpen, onClose, timeline, lanes, allSettings, plotBoard, onSave, isMobile = false }) => {
+}> = ({ isOpen, onClose, timeline, lanes, allSettings, plotBoard, isMobile = false }) => {
     const [localTimeline, setLocalTimeline] = useState<TimelineEvent[]>([]);
     const [localLanes, setLocalLanes] = useState<TimelineLane[]>([]);
     const [editingEvent, setEditingEvent] = useState<Partial<TimelineEvent> | null>(null);
@@ -29,9 +27,6 @@ export const TimelineModal: React.FC<{
     const [isAddingLane, setIsAddingLane] = useState(false);
     const [draggedItem, setDraggedItem] = useState<{ eventId: string; sourceLaneId: string } | null>(null);
     const [dragOverInfo, setDragOverInfo] = useState<{ eventId: string; position: 'top' | 'bottom' } | null>(null);
-    const [isConfirmCloseOpen, setIsConfirmCloseOpen] = useState(false);
-    const [initialStateString, setInitialStateString] = useState('');
-    const closeButtonRef = useRef(null);
     const setHelpTopic = useStore(state => state.setHelpTopic);
     const highlightedEventId = useStore(state => state.highlightedEventId);
     const setHighlightedEventId = useStore(state => state.setHighlightedEventId);
@@ -91,42 +86,14 @@ export const TimelineModal: React.FC<{
             const initialTimeline = timeline || [];
             setLocalTimeline([...initialTimeline]);
             setLocalLanes(initialLanes);
-            setInitialStateString(JSON.stringify({ timeline: initialTimeline, lanes: initialLanes }));
         }
     }, [isOpen, timeline, lanes]);
-
-    const isDirty = useMemo(() => {
-        if (!initialStateString) return false;
-        const currentState = {
-            timeline: localTimeline,
-            lanes: localLanes,
-        };
-        return JSON.stringify(currentState) !== initialStateString;
-    }, [localTimeline, localLanes, initialStateString]);
 
     const locationMap = useMemo(() => {
         if (!allSettings) return new Map();
         return new Map(allSettings.map(item => [item.id, item.name]));
     }, [allSettings]);
 
-    const handleSave = () => {
-        onSave(localTimeline, localLanes);
-        onClose();
-    };
-    
-    const handleCloseRequest = () => {
-        if (isDirty && !isMobile) {
-            setIsConfirmCloseOpen(true);
-        } else {
-            onClose();
-        }
-    };
-
-    const handleSaveAndClose = () => {
-        handleSave();
-        setIsConfirmCloseOpen(false);
-    };
-    
     // Lane handlers
     const handleSaveLane = (laneToSave: TimelineLane) => {
         const exists = localLanes.some(l => l.id === laneToSave.id);
@@ -265,13 +232,6 @@ export const TimelineModal: React.FC<{
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-[70] p-4">
             {!isMobile && <TimelineTutorial />}
             <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-7xl h-[90vh] flex flex-col border border-gray-700">
-                <UnsavedChangesPopover
-                    isOpen={isConfirmCloseOpen}
-                    targetRef={closeButtonRef}
-                    onCancel={() => setIsConfirmCloseOpen(false)}
-                    onCloseWithoutSaving={() => { setIsConfirmCloseOpen(false); onClose(); }}
-                    onSaveAndClose={handleSaveAndClose}
-                />
                 <div className="flex justify-between items-center p-4 border-b border-gray-700">
                     <div className="flex items-center gap-2">
                         <h2 className="text-xl font-bold text-orange-400 flex items-center gap-2"><Icons.ClockIcon />タイムライン</h2>
@@ -280,7 +240,7 @@ export const TimelineModal: React.FC<{
                         <button onClick={() => setHelpTopic('timeline')} className="p-1.5 rounded-full text-gray-400 hover:text-white hover:bg-gray-700 transition btn-pressable" title="ヘルプ">
                             <Icons.HelpCircleIcon className="h-5 w-5" />
                         </button>
-                        <button ref={closeButtonRef} type="button" onClick={handleCloseRequest} className="p-2 rounded-full hover:bg-gray-700 transition btn-pressable"><Icons.XIcon /></button>
+                        <button type="button" onClick={onClose} className="p-2 rounded-full hover:bg-gray-700 transition btn-pressable"><Icons.XIcon /></button>
                     </div>
                 </div>
                 <div id="tutorial-timeline-board" ref={eventsContainerRef} className="flex-grow p-4 overflow-x-auto overflow-y-hidden min-h-0">
@@ -370,14 +330,10 @@ export const TimelineModal: React.FC<{
                         {isMobile && <span className="text-xs text-orange-400 font-bold px-2 py-0.5 border border-orange-400 rounded">閲覧専用モード</span>}
                     </div>
                     <div className="flex gap-3">
-                        <button type="button" onClick={handleCloseRequest} className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-500 transition btn-pressable">
+                        <button type="button" onClick={onClose} className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-500 transition btn-pressable">
                             <Icons.XIcon className="h-4 w-4" />
-                            {isMobile ? '閉じる' : 'キャンセル'}
+                            閉じる
                         </button>
-                        {!isMobile && <button id="tutorial-timeline-save-btn" type="button" onClick={handleSave} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition btn-pressable">
-                            <Icons.CheckIcon className="h-4 w-4" />
-                            保存
-                        </button>}
                     </div>
                 </div>
                 {(!!editingEvent) && (
