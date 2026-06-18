@@ -841,24 +841,31 @@ export const createDataSlice = (set, get): DataSlice => ({
         set({ highlightedEventId: eventId });
     },
     createEventFromPlot: (plotId: string, currentPlotData?: { items: PlotItem[], relations: PlotRelation[], positions: PlotNodePosition[], colors: { [key: string]: string } }) => {
-        const { setActiveProjectData, allProjectsData, activeProjectId, showToast } = get();
+        const { setActiveProjectData, allProjectsData, activeProjectId, showToast, ensureDefaultLane } = get();
         const project = allProjectsData[activeProjectId];
         if (!project) return;
-        
+
         const plotBoard = currentPlotData ? currentPlotData.items : project.plotBoard;
         const plot = plotBoard.find(p => p.id === plotId);
         if (!plot) return;
-        
+
         if (plot.linkedEventId) {
             showToast('このプロットはすでにリンクされています', 'info');
             return;
         }
+        // Issue #182: timelineLanes が空の場合、旧実装は laneId='default' でフォールバックしていたが
+        // TimelineModal が useEffect で uuid 動的生成するレーン id と一致せず event が孤児化していた。
+        // ensureDefaultLane を呼んで store にデフォルトレーンを実体作成し、両者の laneId を整合させる。
+        ensureDefaultLane();
+        const refreshedProject = get().allProjectsData[activeProjectId];
+        const laneId = refreshedProject?.timelineLanes[0]?.id;
+        if (!laneId) return; // ensureDefaultLane no-op 経路 (activeProjectId null 等) — 防衛
         const newEvent: TimelineEvent = {
             id: uuidv4(),
             title: plot.title,
             description: plot.summary,
             timestamp: '未設定',
-            laneId: project.timelineLanes[0]?.id || 'default',
+            laneId,
             linkedPlotId: plot.id,
             lastModified: Date.now(),
         };
