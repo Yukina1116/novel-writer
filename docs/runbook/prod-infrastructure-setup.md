@@ -61,6 +61,22 @@ gcloud artifacts repositories create novel-writer \
   --project=novel-writer-prod
 ```
 
+#### T3.1: cleanup policy (最新 2 件保持、`rules/gcp.md` MUST、PR-C-prereq で後付け)
+
+```bash
+# policy 定義は docs/runbook/cleanup-policy.json (dev と同等)
+gcloud artifacts repositories set-cleanup-policies novel-writer \
+  --project=novel-writer-prod --location=asia-northeast1 \
+  --policy=docs/runbook/cleanup-policy.json --dry-run
+
+# 問題なければ apply
+gcloud artifacts repositories set-cleanup-policies novel-writer \
+  --project=novel-writer-prod --location=asia-northeast1 \
+  --policy=docs/runbook/cleanup-policy.json --no-dry-run
+```
+
+確認: `gcloud artifacts repositories describe novel-writer --project=novel-writer-prod --location=asia-northeast1 --format="value(cleanupPolicies)"` で `keep-latest-2` + `delete-all-others` 両方表示されること。
+
 ### T4: Service Account 2 種
 
 ```bash
@@ -126,7 +142,7 @@ gcloud iam workload-identity-pools providers create-oidc github-provider \
   --display-name="GitHub Actions Provider" \
   --issuer-uri="https://token.actions.githubusercontent.com/" \
   --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref,attribute.repository_owner=assertion.repository_owner" \
-  --attribute-condition="assertion.repository=='yasushi-honda/novel-writer' && assertion.ref=='refs/heads/main'"
+  --attribute-condition="assertion.repository=='Yukina1116/novel-writer' && assertion.ref=='refs/heads/main'"
 ```
 
 ### T7: github-deploy SA に WIF impersonation 権限
@@ -138,7 +154,7 @@ gcloud iam service-accounts add-iam-policy-binding \
   github-deploy@novel-writer-prod.iam.gserviceaccount.com \
   --project=novel-writer-prod \
   --role=roles/iam.workloadIdentityUser \
-  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github-pool/attribute.repository/yasushi-honda/novel-writer"
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github-pool/attribute.repository/Yukina1116/novel-writer"
 ```
 
 ### T8: Firestore Native 初期化
