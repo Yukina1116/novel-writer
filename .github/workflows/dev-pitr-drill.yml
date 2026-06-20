@@ -57,13 +57,15 @@ jobs:
           GCLOUD_PROJECT: ${{ env.PROJECT_ID }}
         run: npx tsx scripts/pitr-drill.ts create
 
-      - name: Wait 60s + record SNAPSHOT_TIME
+      - name: Wait 90s + record SNAPSHOT_TIME (whole minute)
         id: snapshot
         run: |
-          # 60 秒待機: snapshot 時刻が確実に「create 完了後」になるよう余裕を持たせる
-          sleep 60
-          # GNU date (ubuntu-latest): 30 秒前を snapshot として記録
-          SNAPSHOT_TIME=$(date -u -d '-30 seconds' +%Y-%m-%dT%H:%M:%SZ)
+          # 90 秒待機: snapshot 時刻が確実に「create 完了後」になるよう余裕を持たせる
+          sleep 90
+          # gcloud firestore databases clone の制約:
+          #   snapshot-time は whole minute (秒 :00) かつ in the past である必要あり
+          # GNU date (ubuntu-latest): 1 分前を秒 00 で記録
+          SNAPSHOT_TIME=$(date -u -d '-1 minute' +%Y-%m-%dT%H:%M:00Z)
           echo "snapshot_time=$SNAPSHOT_TIME" >> "$GITHUB_OUTPUT"
           echo "Recorded SNAPSHOT_TIME: $SNAPSHOT_TIME"
 
@@ -72,27 +74,29 @@ jobs:
           GCLOUD_PROJECT: ${{ env.PROJECT_ID }}
         run: npx tsx scripts/pitr-drill.ts delete
 
-      - name: PITR restore to new database
-        id: restore
+      - name: PITR clone to new database
+        # PITR snapshot からの復旧は `gcloud firestore databases clone` を使う
+        # `gcloud firestore databases restore` は Backup 専用、PITR 用ではない
+        id: clone
         run: |
           DEST_DB="drill-restore-$(date +%s)"
           echo "dest_db=$DEST_DB" >> "$GITHUB_OUTPUT"
-          gcloud firestore databases restore \
+          gcloud firestore databases clone \
             --source-database="projects/$PROJECT_ID/databases/(default)" \
             --destination-database="$DEST_DB" \
             --snapshot-time="${{ steps.snapshot.outputs.snapshot_time }}" \
             --project="$PROJECT_ID"
-          echo "Restored to: $DEST_DB"
+          echo "Cloned to: $DEST_DB"
 
-      - name: Verify restored doc (must EXIST in restored db)
+      - name: Verify cloned doc (must EXIST in cloned db)
         env:
           GCLOUD_PROJECT: ${{ env.PROJECT_ID }}
-        run: npx tsx scripts/pitr-drill.ts verify "${{ steps.restore.outputs.dest_db }}"
+        run: npx tsx scripts/pitr-drill.ts verify "${{ steps.clone.outputs.dest_db }}"
 
-      - name: Cleanup restored database
+      - name: Cleanup cloned database
         if: always()
         run: |
-          DEST_DB="${{ steps.restore.outputs.dest_db }}"
+          DEST_DB="${{ steps.clone.outputs.dest_db }}"
           if [ -n "$DEST_DB" ]; then
             gcloud firestore databases delete "$DEST_DB" \
               --project="$PROJECT_ID" \

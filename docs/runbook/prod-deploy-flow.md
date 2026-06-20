@@ -209,7 +209,7 @@ Phase 3 段階では Firestore PITR が **未有効**。データ汚染が起き
 - Firebase Console から該当 doc を**手動削除** (irreversible、復元不可)
 - 本田様自身の uid のみ書き込まれている前提のため、影響範囲は限定的
 
-**恒久対応 (Phase 4 で再設計)**: `phase3-tasks.md §Phase 4 GO チェック GO-3` で PITR 有効化を着手条件にしている。PITR 有効後は `gcloud firestore databases restore` でデータ rollback 可能になる。
+**恒久対応 (Phase 4 で再設計)**: `phase3-tasks.md §Phase 4 GO チェック GO-3` で PITR 有効化を着手条件にしている。PITR 有効後は `gcloud firestore databases clone --source-database --snapshot-time` でデータ rollback 可能になる (`restore` は Backup 専用、PITR は `clone`)。
 
 ## データ同期 NG ポリシー
 
