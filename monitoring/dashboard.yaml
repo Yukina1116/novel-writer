@@ -116,8 +116,10 @@ mosaicLayout:
                 perSeriesAligner: ALIGN_MAX
                 crossSeriesReducer: REDUCE_MAX
           thresholds:
+            # Threshold.direction (公式必須): ABOVE = 閾値以上で強調、BELOW = 閾値以下で強調
             - value: 2
               color: RED
+              direction: ABOVE
 
     # W6: Firestore ERROR レベル log 件数 (scorecard、A5 alerting source)
     - width: 3
@@ -135,8 +137,10 @@ mosaicLayout:
                 perSeriesAligner: ALIGN_COUNT
                 crossSeriesReducer: REDUCE_SUM
           thresholds:
+            # Threshold.direction (公式必須): ABOVE = 閾値以上で強調 (ERROR log 1 件以上で黄色)
             - value: 1
               color: YELLOW
+              direction: ABOVE
 
     # W7: Vertex AI quota 利用率 (line chart、段階 2/3 で正確な metric に refactor 予定)
     - width: 6
