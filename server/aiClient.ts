@@ -6,9 +6,19 @@ export const getAiClient = (): GoogleGenAI => {
     if (client) return client;
 
     if (process.env.USE_VERTEX_AI === 'true') {
+        // 2026-06-20 Phase 2 prod migration の paired fail-fast (firebaseAdmin.ts と同設計)。
+        // hardcoded 'novel-writer-dev' fallback は本番で wrong project に AI 呼出を撃つ
+        // silent bug を生む (Vertex AI is per-project)。env 未設定で startup error にする。
+        const project = process.env.GCP_PROJECT;
+        if (!project) {
+            throw new Error(
+                'Vertex AI client initialization failed: GCP_PROJECT env var must be set when USE_VERTEX_AI=true. ' +
+                'Check Cloud Run / GitHub Actions deploy workflow env-vars (.github/workflows/deploy*.yml).'
+            );
+        }
         client = new GoogleGenAI({
             vertexai: true,
-            project: process.env.GCP_PROJECT || 'novel-writer-dev',
+            project,
             location: process.env.GCP_LOCATION || 'asia-northeast1',
         });
     } else {

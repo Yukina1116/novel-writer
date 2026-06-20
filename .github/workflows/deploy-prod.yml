@@ -106,7 +106,7 @@ jobs:
             --timeout=300
             --max-instances=2
             --allow-unauthenticated
-            --set-env-vars=GCP_PROJECT=novel-writer-prod,GCP_LOCATION=asia-northeast1,USE_VERTEX_AI=true,NODE_ENV=production
+            --set-env-vars=GCP_PROJECT=novel-writer-prod,GCLOUD_PROJECT=novel-writer-prod,GCP_LOCATION=asia-northeast1,USE_VERTEX_AI=true,NODE_ENV=production
 
       - name: Output URL
         run: echo "Deployed to ${{ steps.deploy.outputs.url }}"

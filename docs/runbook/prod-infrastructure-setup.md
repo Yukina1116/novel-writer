@@ -226,6 +226,61 @@ gh api repos/$REPO/actions/secrets --jq '.secrets[].name' | grep "^PROD_VITE_FIR
 
 **注**: `<apiKey>` は機密扱い。本 runbook には記載せず、Firebase Console (`https://console.firebase.google.com/project/novel-writer-prod/settings/general`) で確認可能。
 
+### T11.5: Firebase Authentication 設定 (Phase 2 段階で漏れ発覚、PR #198 系で補完)
+
+**警告**: T10 (`firebase apps:create WEB`) は App ID を取得するだけで、Authentication 側は何も設定されない。次の 3 件を別途設定しないと `auth/configuration-not-found` エラーで全 login が失敗する。
+
+#### T11.5.1: Google sign-in provider を有効化 (Firebase Console UI で OAuth Web client 自動作成)
+
+1. `https://console.firebase.google.com/project/novel-writer-prod/authentication/providers` を本田様アカウント (`hy.unimail.11@gmail.com`) で開く
+2. 「Sign-in method」タブ → Google を選択
+3. Enable トグル ON
+4. Public-facing name: `novel-writer` (任意)
+5. Project support email: `hy.unimail.11@gmail.com`
+6. Save
+
+→ OAuth Web client `1026420855688-<random>.apps.googleusercontent.com` が自動作成される。
+
+#### T11.5.2: authorizedDomains 追加 (CLI / REST API)
+
+```bash
+TOKEN=$(gcloud auth print-access-token)
+curl -X PATCH \
+  "https://identitytoolkit.googleapis.com/admin/v2/projects/novel-writer-prod/config?updateMask=authorizedDomains" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Goog-User-Project: novel-writer-prod" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "authorizedDomains": [
+      "localhost",
+      "novel-writer-prod.firebaseapp.com",
+      "novel-writer-prod.web.app",
+      "novel-writer-df263ic6wa-an.a.run.app",
+      "novel-writer-1026420855688.asia-northeast1.run.app"
+    ]
+  }'
+```
+
+`novel-writer-df263ic6wa-an.a.run.app` は Phase 2 初回 deploy で発行された Cloud Run URL (T5 で `gcloud run services describe` で取得)。
+
+#### T11.5.3: 確認
+
+```bash
+TOKEN=$(gcloud auth print-access-token)
+
+# Google provider 有効化確認
+curl -s "https://identitytoolkit.googleapis.com/admin/v2/projects/novel-writer-prod/defaultSupportedIdpConfigs" \
+  -H "Authorization: Bearer $TOKEN" -H "X-Goog-User-Project: novel-writer-prod" \
+  | jq '.defaultSupportedIdpConfigs[]? | {name, enabled, clientId}'
+
+# authorizedDomains 確認
+curl -s "https://identitytoolkit.googleapis.com/admin/v2/projects/novel-writer-prod/config" \
+  -H "Authorization: Bearer $TOKEN" -H "X-Goog-User-Project: novel-writer-prod" \
+  | jq '.authorizedDomains'
+```
+
+期待: Google provider `enabled: true`、authorizedDomains 5 件。
+
 ### T12: 予算アラート
 
 ```bash

@@ -47,6 +47,7 @@ Phase 1 では prod 環境のリソースのみ整備し、実デプロイは Ph
 | T9 | `.firebaserc` prod alias 追加 (PR #192) + rules deploy | ✅ | AI (PR-A) | AC-8 |
 | T10 | Firebase Web App 登録 (`firebase apps:create WEB`) | ✅ | AI | AC-9 (前段) |
 | T11 | GitHub Secrets に PROD_VITE_FIREBASE_* 6 件登録 | ✅ | AI (gh CLI) | AC-9 |
+| T11.5 | Firebase Auth: Google provider 有効化 + authorizedDomains 5 件追加 (Phase 2 段階で漏れ発覚、`docs/runbook/prod-infrastructure-setup.md` T11.5.1〜T11.5.3 で補完) | ✅ | 本田様 UI + AI REST API (PR #198 系) | AC-15 / AC-16 |
 | T12 | 予算アラート (¥1,000/月、50/80/100/120% 閾値) | ✅ | AI (本田様承認後) | AC-10 |
 | T13 | Vertex AI quota / region 確認 (asia-northeast1 default quota) | ✅ | AI | AC-11 |
 | T14 | runbook + tasks 文書化 (本 PR) | 🚧 進行中 | AI (PR-B) | AC-12 |
@@ -69,6 +70,8 @@ Phase 1 では prod 環境のリソースのみ整備し、実デプロイは Ph
 | AC-12 | runbook + tasks 文書 | 本 PR でマージ予定 🚧 |
 | AC-13 | 未認証 `/api/*` が 401 | **Phase 2 deploy 後検証** (Phase 1 では文書化のみ) 📋 |
 | AC-14 | 静的 UI (`/`) 未認証到達 | **Phase 2 deploy 後検証** (Phase 1 では文書化のみ) 📋 |
+| AC-15 | Firebase Auth Google provider 有効 (prod) | `curl .../defaultSupportedIdpConfigs` で `enabled: true` + clientId 取得 ✅ (Phase 2 段階で補完) |
+| AC-16 | Firebase Auth authorizedDomains に Cloud Run URL 含む | `curl .../config` で 5 ドメイン (`novel-writer-df263ic6wa-an.a.run.app` 含む) 取得 ✅ (Phase 2 段階で補完) |
 
 ## Phase 2 への引き継ぎ事項
 
