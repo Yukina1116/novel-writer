@@ -1,0 +1,113 @@
+name: Deploy to Cloud Run (prod)
+
+# Phase 2: prod 環境への手動デプロイ専用 workflow
+# - workflow_dispatch のみ (push trigger なし、main 自動デプロイは dev だけ)
+# - WIF Provider は novel-writer-prod (project number 1026420855688) を使用
+# - PROD_VITE_FIREBASE_* secrets を build-arg として注入
+# - 既存 deploy.yml (dev) には一切影響を与えない
+#
+# 起動方法: GitHub UI → Actions → "Deploy to Cloud Run (prod)" → Run workflow → Branch: main
+# 詳細手順 / 証跡: docs/runbook/prod-phase2-deploy.md
+
+on:
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: novel-writer-prod
+  REGION: asia-northeast1
+  SERVICE: novel-writer
+  REPOSITORY: novel-writer
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run test
+
+      - run: npm run test:firestore-rules
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/1026420855688/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-deploy@novel-writer-prod.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          VITE_FIREBASE_API_KEY: ${{ secrets.PROD_VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.PROD_VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.PROD_VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.PROD_VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.PROD_VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.PROD_VITE_FIREBASE_APP_ID }}
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${SERVICE}:${IMAGE_TAG}"
+          docker build \
+            --build-arg VITE_FIREBASE_API_KEY="$VITE_FIREBASE_API_KEY" \
+            --build-arg VITE_FIREBASE_AUTH_DOMAIN="$VITE_FIREBASE_AUTH_DOMAIN" \
+            --build-arg VITE_FIREBASE_PROJECT_ID="$VITE_FIREBASE_PROJECT_ID" \
+            --build-arg VITE_FIREBASE_STORAGE_BUCKET="$VITE_FIREBASE_STORAGE_BUCKET" \
+            --build-arg VITE_FIREBASE_MESSAGING_SENDER_ID="$VITE_FIREBASE_MESSAGING_SENDER_ID" \
+            --build-arg VITE_FIREBASE_APP_ID="$VITE_FIREBASE_APP_ID" \
+            -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - id: deploy
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          service: ${{ env.SERVICE }}
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE }}:${{ github.sha }}
+          # --allow-unauthenticated: BE 側で `verifyIdToken` middleware が全
+          # /api/* を保護しており (server/aiRoutes.ts の mountAiRoutes 経由)、
+          # public 化しても無認証 access は構造的に不可能。詳細は
+          # ADR-0001 §M3 振り返り / docs/spec/m3/tasks.md PR-G。
+          # この flag を外すと FE が 403 で詰むため、本番 rollback 時のみ
+          # `gcloud run services update novel-writer --no-allow-unauthenticated` を使う。
+          flags: >-
+            --service-account=novel-writer-run@novel-writer-prod.iam.gserviceaccount.com
+            --memory=512Mi
+            --timeout=300
+            --max-instances=2
+            --allow-unauthenticated
+            --set-env-vars=GCP_PROJECT=novel-writer-prod,GCP_LOCATION=asia-northeast1,USE_VERTEX_AI=true,NODE_ENV=production
+
+      - name: Output URL
+        run: echo "Deployed to ${{ steps.deploy.outputs.url }}"
+
+      # Rollback 手順 (緊急時、deploy 失敗時はこの workflow は実行されない)
+      # 1. 直前 revision に戻す:
+      #    gcloud run services update-traffic novel-writer \
+      #      --to-revisions=<REVISION_NAME>=100 \
+      #      --region=asia-northeast1 --project=novel-writer-prod
+      # 2. service 自体を取り消し (最終手段):
+      #    gcloud run services delete novel-writer \
+      #      --region=asia-northeast1 --project=novel-writer-prod
