@@ -225,7 +225,7 @@ jsonPayload.path=~"^appearance\."
 ### 5.3 notification channel の設定
 
 1. [https://console.cloud.google.com/monitoring/alerting/notifications](https://console.cloud.google.com/monitoring/alerting/notifications)
-2. "ADD NEW" → Email を選択 → `sanwaminamihonda@gmail.com` 等を入力
+2. "ADD NEW" → Email を選択 → `hy.unimail.11@gmail.com` 等を入力
 3. 作成した channel ID をメモ
 4. 各 alert policy の "Notifications" に channel を紐付け
 

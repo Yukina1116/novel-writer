@@ -110,7 +110,7 @@ Playwright MCP で実際にブラウザ open:
 
 T7 と context を分離する理由: Playwright MCP の browser context は OS のキーチェーン / Chrome の Google session を共有せず、Google OAuth login flow は別 context で完結させた方が手順が単純で確実。
 
-本田様自身の Google アカウント (`sanwaminamihonda@gmail.com`) で login し、AI 機能を実呼出する。
+本田様自身の Google アカウント (`hy.unimail.11@gmail.com`、Phase 1 runbook §前提に記載の業務 GCP / Firebase / GitHub アカウント) で login し、AI 機能を実呼出する。
 
 1. 本田様の通常ブラウザで `https://<CLOUD_RUN_URL>/` を開く
 2. 「Google でログイン」→ 本田様アカウントで認証 (Google OAuth popup)
