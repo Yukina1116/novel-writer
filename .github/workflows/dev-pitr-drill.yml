@@ -1,0 +1,116 @@
+name: dev PITR drill
+
+# Phase 4 段階 2 GO-3: dev で Firestore PITR 復旧演習を実走
+# 隔離 collection `pitr-drill/test-doc-1` のみ操作、本番データには触れない
+# workflow_dispatch only (誤起動防止)
+# 参考: docs/runbook/prod-pitr.md §復旧演習、docs/adr/0003-public-launch-operations.md §Decision 1
+
+on:
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: novel-writer-dev
+  PROJECT_NUMBER: '446321146441'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/446321146441/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-deploy@novel-writer-dev.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Pre-check PITR state
+        run: |
+          gcloud firestore databases describe \
+            --database='(default)' \
+            --project="$PROJECT_ID" \
+            --format='value(pointInTimeRecoveryEnablement,earliestVersionTime,versionRetentionPeriod)'
+
+      - name: Enable PITR (idempotent — no-op if already enabled)
+        run: |
+          gcloud firestore databases update \
+            --database='(default)' \
+            --project="$PROJECT_ID" \
+            --enable-pitr
+
+      - name: Create test doc
+        env:
+          GCLOUD_PROJECT: ${{ env.PROJECT_ID }}
+        run: npx tsx scripts/pitr-drill.ts create
+
+      - name: Wait 60s + record SNAPSHOT_TIME
+        id: snapshot
+        run: |
+          # 60 秒待機: snapshot 時刻が確実に「create 完了後」になるよう余裕を持たせる
+          sleep 60
+          # GNU date (ubuntu-latest): 30 秒前を snapshot として記録
+          SNAPSHOT_TIME=$(date -u -d '-30 seconds' +%Y-%m-%dT%H:%M:%SZ)
+          echo "snapshot_time=$SNAPSHOT_TIME" >> "$GITHUB_OUTPUT"
+          echo "Recorded SNAPSHOT_TIME: $SNAPSHOT_TIME"
+
+      - name: Delete test doc (destroy)
+        env:
+          GCLOUD_PROJECT: ${{ env.PROJECT_ID }}
+        run: npx tsx scripts/pitr-drill.ts delete
+
+      - name: PITR restore to new database
+        id: restore
+        run: |
+          DEST_DB="drill-restore-$(date +%s)"
+          echo "dest_db=$DEST_DB" >> "$GITHUB_OUTPUT"
+          gcloud firestore databases restore \
+            --source-database="projects/$PROJECT_ID/databases/(default)" \
+            --destination-database="$DEST_DB" \
+            --snapshot-time="${{ steps.snapshot.outputs.snapshot_time }}" \
+            --project="$PROJECT_ID"
+          echo "Restored to: $DEST_DB"
+
+      - name: Verify restored doc (must EXIST in restored db)
+        env:
+          GCLOUD_PROJECT: ${{ env.PROJECT_ID }}
+        run: npx tsx scripts/pitr-drill.ts verify "${{ steps.restore.outputs.dest_db }}"
+
+      - name: Cleanup restored database
+        if: always()
+        run: |
+          DEST_DB="${{ steps.restore.outputs.dest_db }}"
+          if [ -n "$DEST_DB" ]; then
+            gcloud firestore databases delete "$DEST_DB" \
+              --project="$PROJECT_ID" \
+              --quiet
+            echo "Cleaned up: $DEST_DB"
+          fi
+
+      - name: Post-check PITR state
+        run: |
+          gcloud firestore databases describe \
+            --database='(default)' \
+            --project="$PROJECT_ID" \
+            --format='value(pointInTimeRecoveryEnablement,earliestVersionTime,versionRetentionPeriod)'
+
+      - name: Cleanup any leftover test docs in (default)
+        if: always()
+        env:
+          GCLOUD_PROJECT: ${{ env.PROJECT_ID }}
+        run: |
+          # 演習で create したが delete されずに残った doc を念のため削除 (best-effort)
+          npx tsx scripts/pitr-drill.ts delete 2>/dev/null || true
