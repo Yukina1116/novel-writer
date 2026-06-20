@@ -1,7 +1,7 @@
 # Runbook: Cloud Logging dashboard + alerting policy (Phase 4)
 
-- Status: 🚧 Draft (本書は AI 起草の **草案**。dashboard / alerting policy / 通知 channel の実機構築は **decision-maker = owner (本田様)** の番号単位明示認可後に AI が executor として実施する)
-- Last Updated: 2026-06-20
+- Status: ✅ Phase 4 段階 2 実機構築完了 (2026-06-21、本田様番号単位認可下で AI executor が dashboard + 5 alerting policies + email channel を構築。後述「監視 dashboard 履歴」「監視構築履歴」参照)
+- Last Updated: 2026-06-21
 - Owner: yasushi-honda
 - Related ADR: [ADR-0003](../adr/0003-public-launch-operations.md) §Decision 2 (本書の判断基準を裏付ける規範)
 - Related: [Phase 4 spec](../spec/prod-migration/phase4-tasks.md), [runbook prod-slo.md](./prod-slo.md) (本書 alerting 閾値と SLO 指標を整合)
@@ -123,10 +123,15 @@ email 通知先 (本田様 Gmail address) の確定は **decision-maker = 本田
 
 | 日時 | 実行者 | dashboard 名 | URL | 備考 |
 |---|---|---|---|---|
-| (段階 2 PR で本田様番号単位認可後に追記) | - | - | - | - |
+| 2026-06-21T00:25Z | AI (github-deploy SA, workflow [#27887069695](https://github.com/Yukina1116/novel-writer/actions/runs/27887069695)) | `novel-writer-prod 監視` | https://console.cloud.google.com/monitoring/dashboards/builder/5d5790d9-b11a-49f6-9776-c6b6163b1891?project=novel-writer-prod | 8 widget (W1-W8) 構築。W7/W8 は placeholder filter、段階 2/3 で log-based metric に refactor 予定 |
 
 ## 監視構築履歴
 
 | 日時 | policy name | 通知到達確認 | 備考 |
 |---|---|---|---|
-| (段階 2 PR で本田様番号単位認可後に追記) | - | - | - |
+| 2026-06-21T00:25Z | prod-5xx-rate-high (A1) | ⏳ 未確認 (段階 3 で実 traffic 観測時に検証) | COMPARISON_GT 0.5/sec, 300s |
+| 2026-06-21T00:25Z | prod-auth-fail-rate-high (A2) | ⏳ 未確認 (段階 3 で実 traffic 観測時に検証) | COMPARISON_GT 1.0/sec, 300s |
+| 2026-06-21T00:25Z | prod-vertex-ai-quota-error (A3) | ⏳ 未確認 (段階 3 で実 traffic 観測時に検証) | COMPARISON_GT 0.3/sec, 300s, regex 429\|503\|504 |
+| 2026-06-21T00:25Z | prod-instance-saturation (A4) | ⏳ 未確認 (段階 3 で実 traffic 観測時に検証) | COMPARISON_GT 1, 300s (instance_count>1 ≡ ≥2、max-instances=2 張付き検知) |
+| 2026-06-21T00:25Z | prod-firestore-error (A5) | ⏳ 未確認 (段階 3 で実 traffic 観測時に検証) | COMPARISON_GT 0, 300s, severity=ERROR |
+| 2026-06-21T00:25Z | notification channel prod-email-channel (email hy.unimail.11@gmail.com) | ⏳ 未確認 (実 alert 発火時に到達確認) | type=email |
