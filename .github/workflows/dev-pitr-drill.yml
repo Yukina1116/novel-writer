@@ -88,6 +88,14 @@ jobs:
             --project="$PROJECT_ID"
           echo "Cloned to: $DEST_DB"
 
+      - name: Wait for cloned database to be READY (clone is LRO)
+        # gcloud firestore databases clone は LRO (Long-Running Operation)。
+        # コマンド return 後も database が restoring 状態のため、
+        # FAILED_PRECONDITION (code 9) が返らなくなるまで poll する。
+        env:
+          GCLOUD_PROJECT: ${{ env.PROJECT_ID }}
+        run: npx tsx scripts/pitr-drill.ts wait-ready "${{ steps.clone.outputs.dest_db }}"
+
       - name: Verify cloned doc (must EXIST in cloned db)
         env:
           GCLOUD_PROJECT: ${{ env.PROJECT_ID }}
