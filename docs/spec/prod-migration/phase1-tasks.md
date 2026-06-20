@@ -59,7 +59,7 @@ Phase 1 では prod 環境のリソースのみ整備し、実デプロイは Ph
 | AC-2 | 必要 9 API が ENABLED | `gcloud services list --enabled` で 9 種確認 ✅ |
 | AC-3 | Artifact Registry repository 存在 | `gcloud artifacts repositories describe novel-writer --location=asia-northeast1` ✅ |
 | AC-4 | SA 2 種存在 | `gcloud iam service-accounts list --project novel-writer-prod` ✅ |
-| AC-5 | WIF Provider に repo + branch 制約 | `assertion.repository=='yasushi-honda/novel-writer' && assertion.ref=='refs/heads/main'` ✅ |
+| AC-5 | WIF Provider に repo + branch 制約 | `assertion.repository=='Yukina1116/novel-writer' && assertion.ref=='refs/heads/main'` ✅ |
 | AC-6 | WIF impersonation 権限付与 | `roles/iam.workloadIdentityUser` + principalSet ✅ |
 | AC-7 | Firestore Native, asia-northeast1 | `FIRESTORE_NATIVE` / `asia-northeast1` ✅ |
 | AC-8 | firestore.rules prod 反映 | `firebase deploy --only firestore:rules --project prod` 成功 ✅ |
