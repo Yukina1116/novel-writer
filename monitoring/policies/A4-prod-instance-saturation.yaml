@@ -11,8 +11,9 @@ conditions:
   - displayName: Cloud Run instance count saturates max-instances
     conditionThreshold:
       filter: 'metric.type="run.googleapis.com/container/instance_count" AND resource.type="cloud_run_revision" AND resource.label."service_name"="novel-writer"'
-      comparison: COMPARISON_GTE
+      comparison: COMPARISON_GE
       # max-instances=2 に張り付き (Phase 1 で max-instances=2 設定)
+      # ComparisonType enum (公式): COMPARISON_GT(>) / COMPARISON_GE(>=) / COMPARISON_LT / COMPARISON_LE / COMPARISON_EQ / COMPARISON_NE
       thresholdValue: 2
       duration: 300s
       aggregations:
