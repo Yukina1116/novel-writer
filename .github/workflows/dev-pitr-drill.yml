@@ -4,6 +4,14 @@ name: dev PITR drill
 # 隔離 collection `pitr-drill/test-doc-1` のみ操作、本番データには触れない
 # workflow_dispatch only (誤起動防止)
 # 参考: docs/runbook/prod-pitr.md §復旧演習、docs/adr/0003-public-launch-operations.md §Decision 1
+#
+# 既知の制約 (2026-06-20 セッションでの実証結果):
+#   gcloud firestore databases clone は LRO で、destination database が READY 状態
+#   になるまでに分〜時間オーダーで時間がかかる (公式: minutes〜hours)。
+#   GitHub Actions の標準 timeout 内で完走しないことがある。
+#   現状の運用方針: Phase 4 段階 3 で手動 Console 演習を 1 回実施 (本 workflow は
+#   将来の自動化試行用に残す、timeout は 90 分に延長して将来再試行可能性を維持)。
+#   詳細は docs/runbook/prod-pitr.md §復旧演習の方針
 
 on:
   workflow_dispatch:
@@ -19,7 +27,7 @@ permissions:
 jobs:
   drill:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
 
@@ -92,8 +100,11 @@ jobs:
         # gcloud firestore databases clone は LRO (Long-Running Operation)。
         # コマンド return 後も database が restoring 状態のため、
         # FAILED_PRECONDITION (code 9) が返らなくなるまで poll する。
+        # timeout は workflow 全体 (90 分) - 他 step 余裕分を script 側で吸収。
         env:
           GCLOUD_PROJECT: ${{ env.PROJECT_ID }}
+          PITR_WAIT_MAX_ATTEMPTS: '480'
+          PITR_WAIT_INTERVAL_MS: '10000'
         run: npx tsx scripts/pitr-drill.ts wait-ready "${{ steps.clone.outputs.dest_db }}"
 
       - name: Verify cloned doc (must EXIST in cloned db)
@@ -106,7 +117,10 @@ jobs:
         run: |
           DEST_DB="${{ steps.clone.outputs.dest_db }}"
           if [ -n "$DEST_DB" ]; then
-            gcloud firestore databases delete "$DEST_DB" \
+            # gcloud firestore databases delete は --database=<NAME> flag 必須
+            # (positional arg ではない)
+            gcloud firestore databases delete \
+              --database="$DEST_DB" \
               --project="$PROJECT_ID" \
               --quiet
             echo "Cleaned up: $DEST_DB"
