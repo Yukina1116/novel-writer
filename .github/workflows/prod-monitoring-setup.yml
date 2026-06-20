@@ -49,26 +49,30 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v3
 
-      - name: Pre-check IAM (require roles/monitoring.editor)
+      - name: Pre-check Monitoring API access
         run: |
-          # github-deploy SA に roles/monitoring.editor が付与されているか確認
-          # 不足していたら明示エラー (本田様の IAM 変更 step が抜けていないか chk)
-          ROLES=$(gcloud projects get-iam-policy "$PROJECT_ID" \
-            --flatten=bindings \
-            --format='value(bindings.role)' \
-            --filter='bindings.members:github-deploy@novel-writer-prod.iam.gserviceaccount.com')
-          echo "Current roles for github-deploy SA:"
-          echo "$ROLES"
-          if ! echo "$ROLES" | grep -q 'roles/monitoring.editor'; then
+          # github-deploy SA が Monitoring API に対し editor 権限を持つか試行ベースで確認。
+          # gcloud projects get-iam-policy は resourcemanager.projects.getIamPolicy 権限を要求し
+          # roles/monitoring.editor の範囲外であるため、IAM 直接確認は catch-22 で使えない。
+          # 代わりに monitoring.notificationChannels.list を試行し、permission denied なら
+          # 不足ロールガイダンスを出して fail する。
+          if ! gcloud monitoring channels list \
+                --project="$PROJECT_ID" \
+                --limit=1 \
+                --format='value(name)' >/dev/null 2>monitoring-precheck.err; then
+            echo "ERROR: Monitoring API へのアクセスに失敗しました。"
+            echo "--- gcloud stderr ---"
+            cat monitoring-precheck.err
+            echo "---------------------"
             echo ""
-            echo "ERROR: github-deploy@novel-writer-prod に roles/monitoring.editor が付与されていません。"
+            echo "github-deploy@novel-writer-prod に roles/monitoring.editor が付与されていない可能性があります。"
             echo "本田様に以下のコマンドを実行いただいてから再 run してください:"
             echo "  gcloud projects add-iam-policy-binding novel-writer-prod \\"
             echo "    --member=serviceAccount:github-deploy@novel-writer-prod.iam.gserviceaccount.com \\"
             echo "    --role=roles/monitoring.editor"
             exit 1
           fi
-          echo "OK: roles/monitoring.editor 確認済"
+          echo "OK: Monitoring API アクセス確認済 (notificationChannels.list 成功)"
 
       - name: Create or get email notification channel
         id: channel
