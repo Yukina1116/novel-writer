@@ -1,0 +1,50 @@
+# Phase 4 段階 2 GO-4: Alerting policy A2
+# 目的: 認証エラー (401) の急増を検知
+# 起草意図 (runbook prod-monitoring.md §A2): /api/* 401 rate > 50% (5 分平均)
+# 実装メモ: ratio は MQL 必須、PR α では絶対 rate (件/秒) で代用 (段階 2/3 で MQL refactor)
+#           Phase 2 で env_var_drift bug 発生時に全 token reject の事例あり、
+#           本 policy はその種の構造的 fail-open を 5 分以内に検知する設計。
+#
+# Format reference: https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.alertPolicies
+displayName: prod-auth-fail-rate-high
+combiner: OR
+enabled: true
+conditions:
+  - displayName: Cloud Run 401 rate exceeds threshold
+    conditionThreshold:
+      filter: 'metric.type="run.googleapis.com/request_count" AND resource.type="cloud_run_revision" AND metric.label."response_code"="401" AND resource.label."service_name"="novel-writer"'
+      comparison: COMPARISON_GT
+      # 401 rate 閾値: 1.0 件/秒 = 60 件/分 = 300 件/5分
+      # 公開直後の identity 設定漏れ (Phase 1 Firebase Auth 設定漏れの教訓) を 5 分で検知
+      thresholdValue: 1.0
+      duration: 300s
+      aggregations:
+        - alignmentPeriod: 60s
+          perSeriesAligner: ALIGN_RATE
+          crossSeriesReducer: REDUCE_SUM
+      trigger:
+        count: 1
+documentation:
+  mimeType: text/markdown
+  content: |
+    # prod-auth-fail-rate-high (P1)
+
+    Cloud Run `novel-writer` の 401 (認証 fail) rate が閾値を超過。
+
+    **起草意図 (runbook prod-monitoring.md §A2)**: 401 rate > 50% (5 分平均)
+    **現実装**: 絶対 rate で代用、MQL refactor は段階 2/3 で予定
+
+    ## 想定原因
+    - Phase 1 Firebase Auth 設定漏れ (authorizedDomains, sign-in provider)
+    - Phase 2 env_var_drift (GCLOUD_PROJECT 未設定 → 全 token reject)
+    - Firebase project key の rotation
+    - 攻撃 (brute force など)
+
+    ## 確認手順
+    1. dashboard W3 で発生時刻 + 範囲を確認
+    2. Cloud Logging で 401 の jsonPayload を grep、特に `Firebase ID token has incorrect "aud" claim` 等を確認
+    3. 原因が deploy 後の env_var なら ADR-0002 §3 段階 1 (公開即遮断) → 修正 → 再 deploy
+
+    ## 関連 memory
+    - .claude/memory/feedback_env_var_naming_drift.md (Phase 2 教訓)
+    - .claude/memory/feedback_firebase_auth_setup_gotcha.md (Phase 1 補完事項)

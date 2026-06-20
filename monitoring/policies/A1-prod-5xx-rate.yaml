@@ -1,0 +1,45 @@
+# Phase 4 段階 2 GO-4: Alerting policy A1
+# 目的: prod Cloud Run 5xx エラーが急増したら検知
+# 起草意図 (runbook prod-monitoring.md §A1): /api/* 5xx rate > 5% (5 分平均)
+# 実装メモ: Cloud Monitoring の AlertPolicy では ratio (X%) を直接表現できないため、
+#           Phase 4 段階 1 PR α (本ファイル) では 5xx の絶対 rate (件/秒) で threshold を
+#           設定する。MQL refactor は段階 2/3 で実施 (TODO)。
+#           Phase 2 smoke 結果 (60 req → 0 件 5xx) ベースで rate を保守的に設定。
+#
+# Format reference: https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.alertPolicies
+displayName: prod-5xx-rate-high
+combiner: OR
+enabled: true
+conditions:
+  - displayName: Cloud Run 5xx rate exceeds threshold
+    conditionThreshold:
+      filter: 'metric.type="run.googleapis.com/request_count" AND resource.type="cloud_run_revision" AND metric.label."response_code_class"="5xx" AND resource.label."service_name"="novel-writer"'
+      comparison: COMPARISON_GT
+      # 5xx rate 閾値: 0.5 件/秒 = 30 件/分 = 150 件/5分
+      # Phase 2 smoke では 0 件、一般公開時の想定 DAU で再校正 (Phase 5 段階 3)
+      thresholdValue: 0.5
+      duration: 300s
+      aggregations:
+        - alignmentPeriod: 60s
+          perSeriesAligner: ALIGN_RATE
+          crossSeriesReducer: REDUCE_SUM
+      trigger:
+        count: 1
+documentation:
+  mimeType: text/markdown
+  content: |
+    # prod-5xx-rate-high (P1)
+
+    Cloud Run service `novel-writer` の 5xx エラー rate が閾値を超過。
+
+    **起草意図 (runbook prod-monitoring.md §A1)**: 5xx rate > 5% (5 分平均)
+    **現実装**: 絶対 rate (件/秒) で代用、MQL refactor は段階 2/3 で予定
+
+    ## 確認手順
+    1. dashboard W2 (5xx error rate) で時刻 + 範囲を確認
+    2. Cloud Logging で `severity>=ERROR AND resource.type=cloud_run_revision` を直近 5 分で grep
+    3. 原因が deploy 後の欠陥なら ADR-0002 §3 段階 2 (revision 切替) を検討
+
+    ## 関連 ADR / runbook
+    - ADR-0003 §Decision 2 (本 policy の規範)
+    - runbook prod-deploy-flow.md §rollback (修復手順)
