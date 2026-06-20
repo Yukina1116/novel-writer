@@ -11,10 +11,12 @@ conditions:
   - displayName: Cloud Run instance count saturates max-instances
     conditionThreshold:
       filter: 'metric.type="run.googleapis.com/container/instance_count" AND resource.type="cloud_run_revision" AND resource.label."service_name"="novel-writer"'
-      comparison: COMPARISON_GE
+      comparison: COMPARISON_GT
       # max-instances=2 に張り付き (Phase 1 で max-instances=2 設定)
-      # ComparisonType enum (公式): COMPARISON_GT(>) / COMPARISON_GE(>=) / COMPARISON_LT / COMPARISON_LE / COMPARISON_EQ / COMPARISON_NE
-      thresholdValue: 2
+      # 公式 ComparisonType enum は GT/GE/LT/LE/EQ/NE を定義するが、
+      # AlertPolicy MetricThreshold の実装は GT/LT のみサポート (公式 docs / Terraform / Python client 共通)。
+      # 起草意図「instance_count >= 2」は整数値特性により「instance_count > 1」と等価。
+      thresholdValue: 1
       duration: 300s
       aggregations:
         - alignmentPeriod: 60s
