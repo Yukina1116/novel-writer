@@ -319,6 +319,16 @@ export const PlotBoardModal = ({ isOpen, onClose, plotItems, relations, nodePosi
     const svgRef = useRef<SVGSVGElement>(null);
     const [deletingCardId, setDeletingCardId] = useState<string | null>(null);
 
+    // itemToEdit を 1 ID 1 回だけ editingCard に反映するための ref ガード。
+    // 旧実装は plotItems を含む単一 useEffect 内で setEditingCard(card) を毎回再注入していたため、
+    // upsertPlotItem 後の plotItems 参照更新を契機に CardEditorModal が自動再オープンし、
+    // 「保存ボタンが押せない (押しても閉じない)」UX バグを生んでいた。
+    // 加えてキャンセル後に別カードを開いた瞬間にも editingCard が itemToEdit 側に上書きされ、
+    // 「以前の未保存のものが勝手に入る」現象につながっていた。
+    // 修正方針 (Codex セカンドオピニオン承認 (b) 案): effect を 2 つに分割し、itemToEdit の反映は
+    // ID 単位で 1 回だけ。モーダルを閉じた時点で ref をリセットして次回 open を許容する。
+    const handledItemToEditIdRef = useRef<string | null>(null);
+
     const setHelpTopic = useStore(state => state.setHelpTopic);
     const createEventFromPlot = useStore(state => state.createEventFromPlot);
     const navigateToEvent = useStore(state => state.navigateToEvent);
@@ -346,30 +356,47 @@ export const PlotBoardModal = ({ isOpen, onClose, plotItems, relations, nodePosi
         }
     }, [isOpen, hasCompletedGlobalPlotBoardTutorial, startPlotBoardTutorial]);
 
+    // 1. store → local board 同期 (plotItems / relations / positions / colors)
+    //    Phase 3 全自動保存と整合させるため、store 変化のたびに local state を追随させる。
+    //    editingCard には触れない (= itemToEdit 由来の再注入はここでは絶対に起こさない)。
     useEffect(() => {
-        if (isOpen) {
-            setItems(plotItems);
-            setLocalRelations(relations || []);
-            setPlotTypeColors(initialColors || {});
+        if (!isOpen) return;
+        setItems(plotItems);
+        setLocalRelations(relations || []);
+        setPlotTypeColors(initialColors || {});
 
-            const initialPositions = (nodePositions || []).reduce((acc, pos) => {
-                acc[pos.plotId] = { x: pos.x, y: pos.y };
-                return acc;
-            }, {} as { [key: string]: { x: number, y: number } });
+        const initialPositions = (nodePositions || []).reduce((acc, pos) => {
+            acc[pos.plotId] = { x: pos.x, y: pos.y };
+            return acc;
+        }, {} as { [key: string]: { x: number, y: number } });
 
-            plotItems.forEach((item, index) => {
-                if (!initialPositions[item.id]) {
-                    initialPositions[item.id] = { x: 100 + (index % 5) * 220, y: 100 + Math.floor(index / 5) * 160 };
-                }
-            });
-            setPositions(initialPositions);
+        plotItems.forEach((item, index) => {
+            if (!initialPositions[item.id]) {
+                initialPositions[item.id] = { x: 100 + (index % 5) * 220, y: 100 + Math.floor(index / 5) * 160 };
+            }
+        });
+        setPositions(initialPositions);
+    }, [isOpen, plotItems, relations, nodePositions, initialColors]);
 
-            if(itemToEdit) {
-                 const card = plotItems.find(p => p.id === itemToEdit.id);
-                 if (card) setEditingCard(card);
+    // 2. itemToEdit → 内側 CardEditorModal の初期表示。
+    //    ref ガードで「同一 ID は 1 回だけ反映」を保証し、保存後の plotItems 更新で
+    //    setEditingCard(card) が再発火することを防ぐ。close 時に ref をリセット。
+    //    deps に plotItems も入れているのは、itemToEdit が先に届いて plotItems が後追いで
+    //    ロードされる稀なケースで find が成立するまで再評価できるようにするため
+    //    (ref ガードで多重 set はブロック)。
+    useEffect(() => {
+        if (!isOpen) {
+            handledItemToEditIdRef.current = null;
+            return;
+        }
+        if (itemToEdit && handledItemToEditIdRef.current !== itemToEdit.id) {
+            const card = plotItems.find(p => p.id === itemToEdit.id);
+            if (card) {
+                setEditingCard(card);
+                handledItemToEditIdRef.current = itemToEdit.id;
             }
         }
-    }, [isOpen, plotItems, relations, nodePositions, initialColors, itemToEdit]);
+    }, [isOpen, itemToEdit, plotItems]);
 
     const handleSaveCard = (card) => {
         const exists = items.some(i => i.id === card.id);
