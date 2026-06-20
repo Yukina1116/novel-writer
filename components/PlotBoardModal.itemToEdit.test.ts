@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-// バグ修正 (Issue: タイムライン編集→プロット戻り時の編集モーダル復元バグ):
+// バグ修正 (PlotListPanel.edit / navigateToPlot で開いた編集モーダルが保存後も閉じない /
+// キャンセル後に別カードへ前データ混入):
 // 旧実装は `useEffect([isOpen, plotItems, ..., itemToEdit])` の単一 effect 内で
 // itemToEdit から editingCard を毎回再注入していたため、plotItems が変わるたびに
 // (= upsertPlotItem の保存後やタイムライン編集の title sync の度に) CardEditorModal が
@@ -13,8 +14,11 @@ import { resolve } from 'node:path';
 // 修正: effect を 2 つに分割。
 //   1. store→local 同期 (plotItems / relations / positions / colors の追随)
 //   2. itemToEdit→editingCard 初期表示 (handledItemToEditIdRef で ID 単位 1 回ガード)
+// 加えて find が undefined を返す経路を racing-load (再評価可) と permanent miss
+// (削除済 / stale payload / 型不一致) で分離し、後者は showToast で通知して
+// 「クリックしても反応なし」のサイレント失敗を防ぐ。
 //
-// 本テストは構造的に pin して、将来の refactor で単一 effect 内に戻るのを阻止する。
+// 本テストは「単一 effect + 無ガード setEditingCard」の旧構造への退行を構造的に pin する。
 
 describe('PlotBoardModal itemToEdit re-entry guard (bug fix)', () => {
     const source = readFileSync(resolve(__dirname, 'PlotBoardModal.tsx'), 'utf-8');
@@ -33,11 +37,13 @@ describe('PlotBoardModal itemToEdit re-entry guard (bug fix)', () => {
     });
 
     it('itemToEdit を扱う useEffect は ref ガード経由でのみ setEditingCard を呼ぶ', () => {
-        // ref ガードの直後に setEditingCard が来ることを構造的に確認
-        // パターン: handledItemToEditIdRef.current !== itemToEdit.id → setEditingCard
-        expect(source).toMatch(
-            /handledItemToEditIdRef\.current\s*!==\s*itemToEdit\.id[\s\S]{0,400}setEditingCard\s*\(\s*card\s*\)/
-        );
+        // ref ガード (`current === itemToEdit.id` で早期 return、または `!==` で進入) の直後に
+        // setEditingCard が来ることを構造的に確認。
+        const hasEqualReturnGuard = /handledItemToEditIdRef\.current\s*===\s*itemToEdit\.id[\s\S]{0,200}return/.test(source);
+        const hasNotEqualEnterGuard = /handledItemToEditIdRef\.current\s*!==\s*itemToEdit\.id/.test(source);
+        expect(hasEqualReturnGuard || hasNotEqualEnterGuard).toBe(true);
+        // ガードの先に setEditingCard(card) が現れる
+        expect(source).toMatch(/setEditingCard\s*\(\s*card\s*\)/);
     });
 
     it('ref ガード成立後に handledItemToEditIdRef.current を更新している', () => {
@@ -47,10 +53,29 @@ describe('PlotBoardModal itemToEdit re-entry guard (bug fix)', () => {
         );
     });
 
-    it('!isOpen 時に handledItemToEditIdRef.current を null にリセットしている', () => {
-        // モーダルを閉じた次に同じ ID で再 open しても動くようリセット必須
+    it('!isOpen または !itemToEdit 時に handledItemToEditIdRef.current を null にリセットしている', () => {
+        // モーダルを閉じた / itemToEdit がクリアされた次に同じ ID で再 open しても動くようリセット必須。
+        // silent-failure-hunter I-1 対策: !isOpen のみのリセットは modalPayload 残留経路で脆いため、
+        // !itemToEdit でも reset するよう拡張。
         expect(source).toMatch(
-            /!\s*isOpen[\s\S]{0,200}handledItemToEditIdRef\.current\s*=\s*null/
+            /!\s*isOpen\s*\|\|\s*!\s*itemToEdit[\s\S]{0,200}handledItemToEditIdRef\.current\s*=\s*null/
+        );
+    });
+
+    it('plotItems で permanent miss (length > 0 & find undefined) 時に showToast で通知する', () => {
+        // silent-failure-hunter Critical 1 対策: find が undefined を返したとき、
+        // racing-load (plotItems.length === 0) は ref を進めず再評価を許容、
+        // permanent miss (length > 0) は showToast + ref 前進で「クリックしても無反応」を防ぐ。
+        // 構造: plotItems.length === 0 → return; の直後に showToast('編集対象', 'error')
+        expect(source).toMatch(/plotItems\.length\s*===\s*0\s*\)\s*return/);
+        expect(source).toMatch(/showToast\s*\(\s*['"`]編集対象のプロットが見つかりませんでした['"`]\s*,\s*['"`]error['"`]\s*\)/);
+    });
+
+    it('permanent miss 時に handledItemToEditIdRef.current を進めて永久リトライを防ぐ', () => {
+        // showToast 直後に ref.current = itemToEdit.id を立てておかないと、plotItems 更新ごとに
+        // toast が発火し続ける。silent-failure 緩和とノイズ抑止の両立。
+        expect(source).toMatch(
+            /showToast\s*\([^)]*['"`]error['"`]\s*\)\s*;?\s*handledItemToEditIdRef\.current\s*=\s*itemToEdit\.id/
         );
     });
 
