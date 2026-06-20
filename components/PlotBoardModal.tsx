@@ -319,10 +319,24 @@ export const PlotBoardModal = ({ isOpen, onClose, plotItems, relations, nodePosi
     const svgRef = useRef<SVGSVGElement>(null);
     const [deletingCardId, setDeletingCardId] = useState<string | null>(null);
 
+    // itemToEdit を 1 ID 1 回だけ editingCard に反映するための ref ガード。
+    //
+    // [現仕様] effect を 2 つに分割し、itemToEdit の反映は ID 単位で 1 回だけ。
+    //          モーダルを閉じた時点で ref をリセットして次回 open を許容する。
+    //
+    // [旧バグ] 旧実装は plotItems を含む単一 useEffect 内で setEditingCard(card) を毎回
+    //          再注入していたため、upsertPlotItem 後の plotItems 参照更新を契機に
+    //          CardEditorModal が自動再オープンし「保存ボタンが押せない」UX バグが発生。
+    //          加えてキャンセル後に別カードを開いた瞬間に editingCard が itemToEdit 側に
+    //          上書きされ「以前の未保存のものが勝手に入る」現象も同 root cause。
+    const handledItemToEditIdRef = useRef<string | null>(null);
+
     const setHelpTopic = useStore(state => state.setHelpTopic);
     const createEventFromPlot = useStore(state => state.createEventFromPlot);
     const navigateToEvent = useStore(state => state.navigateToEvent);
     const userMode = useStore(state => state.userMode);
+    // itemToEdit が plotItems 上で permanent miss した時の通知 (silent failure 防止)。
+    const showToast = useStore(state => state.showToast);
     // PR-A2: カード単体保存を即時 Redux 反映 (local state 維持 + 二重書き)
     // タイトル同期 (computePlotTitleSync) と debounce 自動保存をフッター保存待ちなく発火させるため。
     const upsertPlotItem = useStore(state => state.upsertPlotItem);
@@ -346,30 +360,59 @@ export const PlotBoardModal = ({ isOpen, onClose, plotItems, relations, nodePosi
         }
     }, [isOpen, hasCompletedGlobalPlotBoardTutorial, startPlotBoardTutorial]);
 
+    // 1. store → local board 同期 (plotItems / relations / positions / colors)
+    //    全自動保存方針 (mutation 都度 store に upsert) と整合させるため、store 変化のたびに
+    //    local state を追随させる。
+    //    editingCard には触れない (= itemToEdit 由来の再注入はここでは絶対に起こさない)。
     useEffect(() => {
-        if (isOpen) {
-            setItems(plotItems);
-            setLocalRelations(relations || []);
-            setPlotTypeColors(initialColors || {});
+        if (!isOpen) return;
+        setItems(plotItems);
+        setLocalRelations(relations || []);
+        setPlotTypeColors(initialColors || {});
 
-            const initialPositions = (nodePositions || []).reduce((acc, pos) => {
-                acc[pos.plotId] = { x: pos.x, y: pos.y };
-                return acc;
-            }, {} as { [key: string]: { x: number, y: number } });
+        const initialPositions = (nodePositions || []).reduce((acc, pos) => {
+            acc[pos.plotId] = { x: pos.x, y: pos.y };
+            return acc;
+        }, {} as { [key: string]: { x: number, y: number } });
 
-            plotItems.forEach((item, index) => {
-                if (!initialPositions[item.id]) {
-                    initialPositions[item.id] = { x: 100 + (index % 5) * 220, y: 100 + Math.floor(index / 5) * 160 };
-                }
-            });
-            setPositions(initialPositions);
-
-            if(itemToEdit) {
-                 const card = plotItems.find(p => p.id === itemToEdit.id);
-                 if (card) setEditingCard(card);
+        plotItems.forEach((item, index) => {
+            if (!initialPositions[item.id]) {
+                initialPositions[item.id] = { x: 100 + (index % 5) * 220, y: 100 + Math.floor(index / 5) * 160 };
             }
+        });
+        setPositions(initialPositions);
+    }, [isOpen, plotItems, relations, nodePositions, initialColors]);
+
+    // 2. itemToEdit → 内側 CardEditorModal の初期表示。
+    //    ref ガードで「同一 ID は 1 回だけ反映」を保証し、保存後の plotItems 更新で
+    //    setEditingCard(card) が再発火することを防ぐ。close / itemToEdit クリア時に ref をリセット。
+    //    deps に plotItems も入れているのは、itemToEdit が先に届いて plotItems が後追いで
+    //    ロードされる稀なケースで find が成立するまで再評価できるようにするため
+    //    (ref ガードで多重 set はブロック)。
+    //
+    //    [silent failure 対策] plotItems.find が undefined を返すケースを 2 つに分離:
+    //    - racing-load (plotItems.length === 0): ref を進めず再評価を許容
+    //    - permanent miss (plotItems.length > 0): 対象 ID が削除済 / stale / 型不一致なので
+    //        toast でユーザーに通知し、ref を進めて永久リトライ ループ + 「クリックしても反応なし」
+    //        サイレント失敗を防ぐ
+    useEffect(() => {
+        if (!isOpen || !itemToEdit) {
+            handledItemToEditIdRef.current = null;
+            return;
         }
-    }, [isOpen, plotItems, relations, nodePositions, initialColors, itemToEdit]);
+        if (handledItemToEditIdRef.current === itemToEdit.id) return;
+        const card = plotItems.find(p => p.id === itemToEdit.id);
+        if (card) {
+            setEditingCard(card);
+            handledItemToEditIdRef.current = itemToEdit.id;
+            return;
+        }
+        // racing-load: plotItems がまだロードされていない → ref は進めず次回 plotItems 更新で再評価。
+        if (plotItems.length === 0) return;
+        // permanent miss: 削除 / stale payload / 型 cast バイパス。サイレント失敗を防ぐ。
+        showToast('編集対象のプロットが見つかりませんでした', 'error');
+        handledItemToEditIdRef.current = itemToEdit.id;
+    }, [isOpen, itemToEdit, plotItems, showToast]);
 
     const handleSaveCard = (card) => {
         const exists = items.some(i => i.id === card.id);
