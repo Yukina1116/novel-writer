@@ -95,6 +95,8 @@ PITR 有効化だけで復旧できる保証はない。本番インシデント
 
 ### 演習手順 (dev で実施、本番影響なし)
 
+> **注**: 本手順は **同一 shell session** で順次実行する前提。途中で shell を閉じると `DEST_DB` 変数が失われ Step 7 で削除対象が特定できなくなる。新 shell で再開する場合は Step 4 で表示される `DEST_DB` の値をメモして、Step 7 で `DEST_DB=<メモした値>` を再 export してから実行する。
+
 ```bash
 # 1. dev で PITR 有効化 (まだ未有効なら)
 gcloud firestore databases update \
@@ -106,25 +108,39 @@ gcloud firestore databases update \
 #    → IndexedDB に保存 → 通常使用
 
 # 3. 5-10 分待機後、現在時刻を snapshot 候補時刻として記録
-SNAPSHOT_TIME=$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+#    macOS (BSD date) と Linux (GNU date) で構文が異なるため両対応:
+if date -u -v-5M +%Y-%m-%dT%H:%M:%SZ >/dev/null 2>&1; then
+  # macOS (BSD date)
+  SNAPSHOT_TIME=$(date -u -v-5M +%Y-%m-%dT%H:%M:%SZ)
+else
+  # Linux (GNU date、Cloud Shell 等)
+  SNAPSHOT_TIME=$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+fi
 echo "Snapshot time: $SNAPSHOT_TIME"
 
-# 4. テストデータを (敢えて) 破壊
+# 4. 演習用 destination database 名を変数保持 (Step 5 / Step 7 共通参照)
+export DEST_DB="drill-restore-$(date +%s)"
+echo "Destination database: $DEST_DB"
+# 注: 同一 shell session で Step 5 / Step 7 まで実行すること。
+#     shell を閉じて再開する場合は上記 echo の値をメモし、
+#     Step 7 実行前に `export DEST_DB=<メモした値>` で再注入する。
+
+# 5. テストデータを (敢えて) 破壊
 #    → Firebase Console で users/<dev uid> ドキュメントを手動削除
 #    → アプリでログイン → users/init で初期化 (旧データ消失確認)
 
-# 5. PITR restore (新規 database 作成)
+# 6. PITR restore (Step 4 で保持した DEST_DB に新規 database 作成)
 gcloud firestore databases restore \
   --source-database=projects/novel-writer-dev/databases/'(default)' \
-  --destination-database=drill-restore-$(date +%s) \
-  --snapshot-time=$SNAPSHOT_TIME \
+  --destination-database="$DEST_DB" \
+  --snapshot-time="$SNAPSHOT_TIME" \
   --project=novel-writer-dev
 
-# 6. 復旧 database の検証 (Firebase Console で確認)
+# 7. 復旧 database の検証 (Firebase Console で確認)
 #    → 破壊前のドキュメントが存在することを確認
 
-# 7. 演習完了後、復旧用 database を削除 (コスト最小化)
-gcloud firestore databases delete drill-restore-<timestamp> \
+# 8. 演習完了後、復旧用 database を削除 (コスト最小化)
+gcloud firestore databases delete "$DEST_DB" \
   --project=novel-writer-dev
 ```
 
