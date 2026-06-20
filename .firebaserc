@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "novel-writer-dev"
+    "default": "novel-writer-dev",
+    "dev": "novel-writer-dev",
+    "prod": "novel-writer-prod"
   }
 }
