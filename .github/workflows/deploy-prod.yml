@@ -12,6 +12,11 @@ name: Deploy to Cloud Run (prod)
 on:
   workflow_dispatch:
 
+# top-level default permissions: 最小権限 (read-only)。deploy job のみ id-token: write を別途宣言。
+# repo 設定の default workflow permissions に依存せず明示する (PR #195 セカンドオピニオン指摘反映)。
+permissions:
+  contents: read
+
 env:
   PROJECT_ID: novel-writer-prod
   REGION: asia-northeast1
@@ -20,6 +25,9 @@ env:
 
 jobs:
   test:
+    # workflow_dispatch で誤って feature branch を選んだ場合に test job が無駄に走るのを防ぐ
+    # (Free plan の monthly minutes 上限を踏まないため。deploy job 側にも同じ if あり)
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
