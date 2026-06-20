@@ -43,13 +43,25 @@ export function getFirebaseAdminApp(): App {
 
   const projectId =
     process.env.GCLOUD_PROJECT ??
-    process.env.FIREBASE_PROJECT_ID ??
-    'novel-writer-dev';
+    process.env.FIREBASE_PROJECT_ID;
+
+  // 2026-06-20 Phase 2 prod migration で、hardcoded 'novel-writer-dev' fallback が
+  // dev project token を expected audience として強制し、prod token を全 401 reject
+  // する fail-open bug を起こした。env 未設定で本番運用に進めず、起動時に fail-fast
+  // する (deploy*.yml の env-vars と一対の paired signal)。emulator mode のみ
+  // ローカル placeholder project ID で初期化を許容する (ADC 不要、Firestore Auth
+  // emulator が project ID を識別子としてしか使わないため)。
+  if (!projectId && !isEmulatorMode()) {
+    throw new Error(
+      'Firebase Admin SDK initialization failed: GCLOUD_PROJECT or FIREBASE_PROJECT_ID env var must be set in non-emulator mode. ' +
+      'Check Cloud Run / GitHub Actions deploy workflow env-vars (.github/workflows/deploy*.yml).'
+    );
+  }
 
   // emulator 利用時は credential を渡さない: applicationDefault() は ADC 未設定環境
   // (CI / ローカル開発初期端末) で初期化エラーになり、emulator は credential 不要
   return isEmulatorMode()
-    ? initializeApp({ projectId })
+    ? initializeApp({ projectId: projectId ?? 'demo-novel-writer' })
     : initializeApp({ credential: applicationDefault(), projectId });
 }
 
