@@ -48,6 +48,11 @@ jobs:
           service_account: github-deploy@novel-writer-prod.iam.gserviceaccount.com
 
       - uses: google-github-actions/setup-gcloud@v3
+        with:
+          # `gcloud monitoring channels` は GA に存在しない (GA は dashboards / policies / snoozes / uptime のみ)。
+          # notification channel 操作には beta が必要なため install_components で明示し、
+          # 以降は `gcloud beta monitoring channels` を使用する。
+          install_components: beta
 
       - name: Pre-check Monitoring API access
         run: |
@@ -56,7 +61,7 @@ jobs:
           # roles/monitoring.editor の範囲外であるため、IAM 直接確認は catch-22 で使えない。
           # 代わりに monitoring.notificationChannels.list を試行し、permission denied なら
           # 不足ロールガイダンスを出して fail する。
-          if ! gcloud monitoring channels list \
+          if ! gcloud beta monitoring channels list \
                 --project="$PROJECT_ID" \
                 --limit=1 \
                 --format='value(name)' >/dev/null 2>monitoring-precheck.err; then
@@ -79,13 +84,13 @@ jobs:
         run: |
           # idempotent: 既存 channel があれば ID 取得、なければ作成
           EMAIL='${{ inputs.email_address }}'
-          CHANNEL_ID=$(gcloud monitoring channels list \
+          CHANNEL_ID=$(gcloud beta monitoring channels list \
             --filter="displayName=\"$CHANNEL_DISPLAY_NAME\"" \
             --format='value(name)' \
             --project="$PROJECT_ID" | head -1)
           if [ -z "$CHANNEL_ID" ]; then
             echo "Channel not found, creating..."
-            CHANNEL_ID=$(gcloud monitoring channels create \
+            CHANNEL_ID=$(gcloud beta monitoring channels create \
               --display-name="$CHANNEL_DISPLAY_NAME" \
               --type=email \
               --channel-labels="email_address=$EMAIL" \
@@ -95,7 +100,7 @@ jobs:
           else
             echo "Existing channel found: $CHANNEL_ID"
             # email_address が変わっている可能性、update
-            gcloud monitoring channels update "$CHANNEL_ID" \
+            gcloud beta monitoring channels update "$CHANNEL_ID" \
               --update-channel-labels="email_address=$EMAIL" \
               --project="$PROJECT_ID"
             echo "Updated channel email_address to: $EMAIL"
@@ -148,7 +153,7 @@ jobs:
       - name: Verify created resources
         run: |
           echo "=== Notification channels ==="
-          gcloud monitoring channels list \
+          gcloud beta monitoring channels list \
             --filter="displayName=\"$CHANNEL_DISPLAY_NAME\"" \
             --format='table(name,displayName,type,labels.email_address)' \
             --project="$PROJECT_ID"
