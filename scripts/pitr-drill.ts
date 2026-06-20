@@ -40,9 +40,11 @@ async function main() {
     // gcloud firestore databases clone は LRO で、コマンド return 後も
     // database が restoring 状態のことがある (FAILED_PRECONDITION エラー)。
     // ready になるまで poll する。
+    // PITR_WAIT_MAX_ATTEMPTS / PITR_WAIT_INTERVAL_MS で env override 可
+    // (workflow 側で全体 timeout に合わせて指定)。
     const dbLabel = restoreDb || '(default)'
-    const maxAttempts = 60
-    const intervalMs = 10_000
+    const maxAttempts = Number(process.env.PITR_WAIT_MAX_ATTEMPTS) || 60
+    const intervalMs = Number(process.env.PITR_WAIT_INTERVAL_MS) || 10_000
     for (let i = 0; i < maxAttempts; i++) {
       try {
         await db.collection(COLLECTION).limit(1).get()
