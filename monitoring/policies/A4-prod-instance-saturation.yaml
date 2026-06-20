@@ -1,0 +1,42 @@
+# Phase 4 段階 2 GO-4: Alerting policy A4
+# 目的: Cloud Run instance count が max-instances (=2) で 5 分継続 → 課金リスクの兆候
+# 起草意図 (runbook prod-monitoring.md §A4): instance_count = max-instances を 5 分継続
+# 実装メモ: 比較対象は固定値 2 (Phase 1 で max-instances=2 設定済、ADR-0001 §Consequences §4)
+#
+# Format reference: https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.alertPolicies
+displayName: prod-instance-saturation
+combiner: OR
+enabled: true
+conditions:
+  - displayName: Cloud Run instance count saturates max-instances
+    conditionThreshold:
+      filter: 'metric.type="run.googleapis.com/container/instance_count" AND resource.type="cloud_run_revision" AND resource.label."service_name"="novel-writer"'
+      comparison: COMPARISON_GTE
+      # max-instances=2 に張り付き (Phase 1 で max-instances=2 設定)
+      thresholdValue: 2
+      duration: 300s
+      aggregations:
+        - alignmentPeriod: 60s
+          perSeriesAligner: ALIGN_MAX
+          crossSeriesReducer: REDUCE_MAX
+      trigger:
+        count: 1
+documentation:
+  mimeType: text/markdown
+  content: |
+    # prod-instance-saturation (P1)
+
+    Cloud Run `novel-writer` の instance count が max-instances (=2) に 5 分継続で張り付き。
+
+    **起草意図**: 突発 traffic 警告 + 課金リスクの早期検知
+    **背景**: ADR-0001 §Consequences §4 で「緊急対応 max-instances=2 + 月 ¥1,000 予算アラート」
+
+    ## 確認手順
+    1. dashboard W5 で発生時刻 + 持続時間を確認
+    2. dashboard W1 (request rate) で traffic spike を確認
+    3. 想定範囲なら本田様判断で max-instances を 5 or 10 に拡張 (`gcloud run services update --max-instances`)
+    4. 想定外なら ADR-0002 §3 段階 1 (公開即遮断) で課金暴走を止血
+
+    ## 関連
+    - ADR-0001 §Consequences §4 (max-instances=2 設計根拠)
+    - GO-2 課金クォータ申請 draft (phase4-tasks.md)

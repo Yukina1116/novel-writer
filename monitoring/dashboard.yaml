@@ -1,0 +1,188 @@
+# Phase 4 段階 2 GO-4: prod Cloud Monitoring Dashboard
+# 8 widget (W1-W8) で prod 監視全体像を 1 画面に集約
+# 起草: docs/runbook/prod-monitoring.md §dashboard 構成
+# Format reference: https://cloud.google.com/monitoring/api/ref_v3/rest/v1/projects.dashboards
+#
+# 実装メモ:
+# - mosaicLayout (12 列グリッド) を採用
+# - W7 (Vertex AI quota) / W8 (usage reserve-commit-cancel) は log-based metric が必要、
+#   PR α では placeholder filter (5xx 系で代替) で起草、段階 2/3 で正確な metric に refactor
+# - widget サイズは 6 columns × 4 rows (line chart) / 3 × 3 (scorecard) を基本に
+displayName: novel-writer-prod 監視
+mosaicLayout:
+  columns: 12
+  tiles:
+    # W1: /api/* request rate (1 分粒度、24h、line chart)
+    - width: 6
+      height: 4
+      xPos: 0
+      yPos: 0
+      widget:
+        title: W1 / /api/* request rate
+        xyChart:
+          dataSets:
+            - timeSeriesQuery:
+                timeSeriesFilter:
+                  filter: 'metric.type="run.googleapis.com/request_count" resource.type="cloud_run_revision" resource.label."service_name"="novel-writer"'
+                  aggregation:
+                    alignmentPeriod: 60s
+                    perSeriesAligner: ALIGN_RATE
+                    crossSeriesReducer: REDUCE_SUM
+              plotType: LINE
+          timeshiftDuration: 0s
+          yAxis:
+            label: req/sec
+            scale: LINEAR
+
+    # W2: 5xx error rate (5 分粒度、24h、line chart)
+    - width: 6
+      height: 4
+      xPos: 6
+      yPos: 0
+      widget:
+        title: W2 / 5xx error rate (A1 alerting source)
+        xyChart:
+          dataSets:
+            - timeSeriesQuery:
+                timeSeriesFilter:
+                  filter: 'metric.type="run.googleapis.com/request_count" resource.type="cloud_run_revision" metric.label."response_code_class"="5xx" resource.label."service_name"="novel-writer"'
+                  aggregation:
+                    alignmentPeriod: 300s
+                    perSeriesAligner: ALIGN_RATE
+                    crossSeriesReducer: REDUCE_SUM
+              plotType: LINE
+          timeshiftDuration: 0s
+          yAxis:
+            label: 5xx/sec
+            scale: LINEAR
+
+    # W3: auth fail rate (401 rate) (line chart)
+    - width: 6
+      height: 4
+      xPos: 0
+      yPos: 4
+      widget:
+        title: W3 / auth fail rate (401, A2 alerting source)
+        xyChart:
+          dataSets:
+            - timeSeriesQuery:
+                timeSeriesFilter:
+                  filter: 'metric.type="run.googleapis.com/request_count" resource.type="cloud_run_revision" metric.label."response_code"="401" resource.label."service_name"="novel-writer"'
+                  aggregation:
+                    alignmentPeriod: 300s
+                    perSeriesAligner: ALIGN_RATE
+                    crossSeriesReducer: REDUCE_SUM
+              plotType: LINE
+          timeshiftDuration: 0s
+          yAxis:
+            label: 401/sec
+            scale: LINEAR
+
+    # W4: Vertex AI 429/503/504 rate (line chart、A3 alerting source)
+    - width: 6
+      height: 4
+      xPos: 6
+      yPos: 4
+      widget:
+        title: W4 / Vertex AI 429/503/504 rate (A3 alerting source)
+        xyChart:
+          dataSets:
+            - timeSeriesQuery:
+                timeSeriesFilter:
+                  filter: 'metric.type="run.googleapis.com/request_count" resource.type="cloud_run_revision" metric.label."response_code"=monitoring.regex.full_match("(429|503|504)") resource.label."service_name"="novel-writer"'
+                  aggregation:
+                    alignmentPeriod: 300s
+                    perSeriesAligner: ALIGN_RATE
+                    crossSeriesReducer: REDUCE_SUM
+              plotType: LINE
+          timeshiftDuration: 0s
+          yAxis:
+            label: 4xx-5xx/sec
+            scale: LINEAR
+
+    # W5: Cloud Run instance count (scorecard、A4 alerting source)
+    - width: 3
+      height: 3
+      xPos: 0
+      yPos: 8
+      widget:
+        title: W5 / instance count (A4 alerting source)
+        scorecard:
+          timeSeriesQuery:
+            timeSeriesFilter:
+              filter: 'metric.type="run.googleapis.com/container/instance_count" resource.type="cloud_run_revision" resource.label."service_name"="novel-writer"'
+              aggregation:
+                alignmentPeriod: 60s
+                perSeriesAligner: ALIGN_MAX
+                crossSeriesReducer: REDUCE_MAX
+          thresholds:
+            - value: 2
+              color: RED
+
+    # W6: Firestore ERROR レベル log 件数 (scorecard、A5 alerting source)
+    - width: 3
+      height: 3
+      xPos: 3
+      yPos: 8
+      widget:
+        title: W6 / Cloud Run ERROR log count (A5 alerting source)
+        scorecard:
+          timeSeriesQuery:
+            timeSeriesFilter:
+              filter: 'metric.type="logging.googleapis.com/log_entry_count" resource.type="cloud_run_revision" metric.label."severity"="ERROR" resource.label."service_name"="novel-writer"'
+              aggregation:
+                alignmentPeriod: 300s
+                perSeriesAligner: ALIGN_COUNT
+                crossSeriesReducer: REDUCE_SUM
+          thresholds:
+            - value: 1
+              color: YELLOW
+
+    # W7: Vertex AI quota 利用率 (line chart、段階 2/3 で正確な metric に refactor 予定)
+    - width: 6
+      height: 4
+      xPos: 0
+      yPos: 11
+      widget:
+        title: 'W7 / Vertex AI quota (placeholder、段階 2/3 で gemini-2.5-flash quota metric に refactor)'
+        xyChart:
+          dataSets:
+            - timeSeriesQuery:
+                timeSeriesFilter:
+                  filter: 'metric.type="serviceruntime.googleapis.com/quota/rate/net_usage" resource.type="consumer_quota"'
+                  aggregation:
+                    alignmentPeriod: 300s
+                    perSeriesAligner: ALIGN_RATE
+                    crossSeriesReducer: REDUCE_SUM
+              plotType: LINE
+          timeshiftDuration: 0s
+          yAxis:
+            label: quota usage
+            scale: LINEAR
+
+    # W8: usage reserve/commit/cancel 比率 (placeholder、log-based metric 必要)
+    - width: 6
+      height: 4
+      xPos: 6
+      yPos: 11
+      widget:
+        title: 'W8 / usage reserve/commit/cancel (placeholder、log-based metric は段階 2/3 で追加)'
+        xyChart:
+          dataSets:
+            - timeSeriesQuery:
+                timeSeriesFilter:
+                  filter: 'metric.type="logging.googleapis.com/log_entry_count" resource.type="cloud_run_revision" resource.label."service_name"="novel-writer"'
+                  aggregation:
+                    alignmentPeriod: 300s
+                    perSeriesAligner: ALIGN_RATE
+                    crossSeriesReducer: REDUCE_SUM
+              plotType: LINE
+          timeshiftDuration: 0s
+          yAxis:
+            label: log entries/sec
+            scale: LINEAR
+
+dashboardFilters: []
+labels:
+  environment: prod
+  phase: phase4-stage2-go4

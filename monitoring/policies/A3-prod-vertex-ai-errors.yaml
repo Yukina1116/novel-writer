@@ -1,0 +1,47 @@
+# Phase 4 段階 2 GO-4: Alerting policy A3
+# 目的: Vertex AI quota 超過 / 503 / 504 を検知
+# 起草意図 (runbook prod-monitoring.md §A3): Vertex AI 429/503/504 rate > 10% (5 分平均)
+# 実装メモ: ratio は MQL 必須、PR α では Cloud Run 5xx + log-based ベース simplifier
+#           Vertex AI の直接 quota metric (aiplatform.googleapis.com/quota) はあるが、
+#           policy としては「server endpoint からの 5xx 系」で検知する方が確実。
+#           より正確な検知は log-based metric (custom metric) で段階 2/3 に refactor 想定。
+#
+# Format reference: https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.alertPolicies
+displayName: prod-vertex-ai-quota-error
+combiner: OR
+enabled: true
+conditions:
+  - displayName: Vertex AI quota / 503 / 504 errors via Cloud Run 5xx
+    conditionThreshold:
+      filter: 'metric.type="run.googleapis.com/request_count" AND resource.type="cloud_run_revision" AND metric.label."response_code"=monitoring.regex.full_match("(429|503|504)") AND resource.label."service_name"="novel-writer"'
+      comparison: COMPARISON_GT
+      # 429/503/504 rate 閾値: 0.3 件/秒 = 90 件/5分
+      # Vertex AI quota 接近 + region 障害を 5 分で検知
+      thresholdValue: 0.3
+      duration: 300s
+      aggregations:
+        - alignmentPeriod: 60s
+          perSeriesAligner: ALIGN_RATE
+          crossSeriesReducer: REDUCE_SUM
+      trigger:
+        count: 1
+documentation:
+  mimeType: text/markdown
+  content: |
+    # prod-vertex-ai-quota-error (P1)
+
+    Cloud Run `novel-writer` で 429/503/504 (Vertex AI 経由が主因) が閾値を超過。
+
+    **起草意図 (runbook prod-monitoring.md §A3)**: Vertex AI 429/503/504 rate > 10% (5 分平均)
+    **現実装**: Cloud Run 5xx の log-based proxy、log-based metric refactor は段階 2/3 で予定
+
+    ## 想定原因
+    - Vertex AI quota 接近 / 超過 (429)
+    - Vertex AI region 障害 (503)
+    - Cloud Run cold start 中の Vertex AI timeout (504)
+
+    ## 確認手順
+    1. dashboard W4 で発生時刻 + 範囲を確認
+    2. Cloud Logging で `severity=ERROR AND jsonPayload.statusCode IN (429,503,504)` を grep
+    3. quota 接近なら本田様に申請 trigger 報告 (phase4-tasks.md §GO-2 課金クォータ申請 draft)
+    4. region 障害なら GCP status page 確認 + 短時間なら待機、長時間なら ADR-0002 §3 段階 1 検討

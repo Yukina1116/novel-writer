@@ -1,0 +1,169 @@
+name: prod monitoring setup
+
+# Phase 4 段階 2 GO-4: prod Cloud Monitoring 構築
+# - email notification channel 作成
+# - 5 alerting policy (A1-A5) 作成
+# - dashboard 作成 (8 widget)
+# workflow_dispatch only (誤起動防止)
+# 参考: docs/runbook/prod-monitoring.md、docs/adr/0003-public-launch-operations.md §Decision 2
+#
+# 必須前提作業 (本田様実行、本 PR merge 後・workflow run 前):
+#   gcloud projects add-iam-policy-binding novel-writer-prod \
+#     --member=serviceAccount:github-deploy@novel-writer-prod.iam.gserviceaccount.com \
+#     --role=roles/monitoring.editor
+#
+# 既知の制約:
+#   - alerting policy の filter は絶対 rate (件/秒) で起草、ratio (X%) は段階 2/3 で MQL refactor
+#   - W7 (Vertex AI quota) / W8 (usage reserve-commit-cancel) は placeholder filter、段階 2/3 で実際の metric/log-based metric に refactor
+
+on:
+  workflow_dispatch:
+    inputs:
+      email_address:
+        description: 'Email address to receive alerts (e.g. owner@example.com)'
+        required: true
+        type: string
+
+env:
+  PROJECT_ID: novel-writer-prod
+  PROJECT_NUMBER: '1026420855688'
+  CHANNEL_DISPLAY_NAME: prod-email-channel
+  DASHBOARD_DISPLAY_NAME: 'novel-writer-prod 監視'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/1026420855688/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-deploy@novel-writer-prod.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Pre-check IAM (require roles/monitoring.editor)
+        run: |
+          # github-deploy SA に roles/monitoring.editor が付与されているか確認
+          # 不足していたら明示エラー (本田様の IAM 変更 step が抜けていないか chk)
+          ROLES=$(gcloud projects get-iam-policy "$PROJECT_ID" \
+            --flatten=bindings \
+            --format='value(bindings.role)' \
+            --filter='bindings.members:github-deploy@novel-writer-prod.iam.gserviceaccount.com')
+          echo "Current roles for github-deploy SA:"
+          echo "$ROLES"
+          if ! echo "$ROLES" | grep -q 'roles/monitoring.editor'; then
+            echo ""
+            echo "ERROR: github-deploy@novel-writer-prod に roles/monitoring.editor が付与されていません。"
+            echo "本田様に以下のコマンドを実行いただいてから再 run してください:"
+            echo "  gcloud projects add-iam-policy-binding novel-writer-prod \\"
+            echo "    --member=serviceAccount:github-deploy@novel-writer-prod.iam.gserviceaccount.com \\"
+            echo "    --role=roles/monitoring.editor"
+            exit 1
+          fi
+          echo "OK: roles/monitoring.editor 確認済"
+
+      - name: Create or get email notification channel
+        id: channel
+        run: |
+          # idempotent: 既存 channel があれば ID 取得、なければ作成
+          EMAIL='${{ inputs.email_address }}'
+          CHANNEL_ID=$(gcloud monitoring channels list \
+            --filter="displayName=\"$CHANNEL_DISPLAY_NAME\"" \
+            --format='value(name)' \
+            --project="$PROJECT_ID" | head -1)
+          if [ -z "$CHANNEL_ID" ]; then
+            echo "Channel not found, creating..."
+            CHANNEL_ID=$(gcloud monitoring channels create \
+              --display-name="$CHANNEL_DISPLAY_NAME" \
+              --type=email \
+              --channel-labels="email_address=$EMAIL" \
+              --project="$PROJECT_ID" \
+              --format='value(name)')
+            echo "Created channel: $CHANNEL_ID"
+          else
+            echo "Existing channel found: $CHANNEL_ID"
+            # email_address が変わっている可能性、update
+            gcloud monitoring channels update "$CHANNEL_ID" \
+              --update-channel-labels="email_address=$EMAIL" \
+              --project="$PROJECT_ID"
+            echo "Updated channel email_address to: $EMAIL"
+          fi
+          echo "channel_id=$CHANNEL_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Create or replace alerting policies (A1-A5)
+        env:
+          CHANNEL_ID: ${{ steps.channel.outputs.channel_id }}
+        run: |
+          # idempotent: 既存同名 policy は delete してから create
+          for policy_file in monitoring/policies/*.yaml; do
+            display_name=$(grep '^displayName:' "$policy_file" | awk '{$1=""; print $0}' | sed 's/^ //')
+            echo "=== Processing policy: $display_name ($policy_file) ==="
+            EXISTING=$(gcloud monitoring policies list \
+              --filter="displayName=\"$display_name\"" \
+              --format='value(name)' \
+              --project="$PROJECT_ID" | head -1)
+            if [ -n "$EXISTING" ]; then
+              echo "Existing policy found, deleting: $EXISTING"
+              gcloud monitoring policies delete "$EXISTING" \
+                --quiet \
+                --project="$PROJECT_ID"
+            fi
+            gcloud monitoring policies create \
+              --policy-from-file="$policy_file" \
+              --notification-channels="$CHANNEL_ID" \
+              --project="$PROJECT_ID"
+            echo "Created: $display_name"
+          done
+
+      - name: Create or replace dashboard
+        run: |
+          # idempotent: 既存同名 dashboard は delete してから create
+          EXISTING=$(gcloud monitoring dashboards list \
+            --filter="displayName=\"$DASHBOARD_DISPLAY_NAME\"" \
+            --format='value(name)' \
+            --project="$PROJECT_ID" | head -1)
+          if [ -n "$EXISTING" ]; then
+            echo "Existing dashboard found, deleting: $EXISTING"
+            gcloud monitoring dashboards delete "$EXISTING" \
+              --quiet \
+              --project="$PROJECT_ID"
+          fi
+          gcloud monitoring dashboards create \
+            --config-from-file=monitoring/dashboard.yaml \
+            --project="$PROJECT_ID"
+          echo "Created dashboard: $DASHBOARD_DISPLAY_NAME"
+
+      - name: Verify created resources
+        run: |
+          echo "=== Notification channels ==="
+          gcloud monitoring channels list \
+            --filter="displayName=\"$CHANNEL_DISPLAY_NAME\"" \
+            --format='table(name,displayName,type,labels.email_address)' \
+            --project="$PROJECT_ID"
+          echo ""
+          echo "=== Alerting policies ==="
+          gcloud monitoring policies list \
+            --format='table(displayName,enabled)' \
+            --project="$PROJECT_ID"
+          echo ""
+          echo "=== Dashboards ==="
+          gcloud monitoring dashboards list \
+            --filter="displayName=\"$DASHBOARD_DISPLAY_NAME\"" \
+            --format='table(name,displayName)' \
+            --project="$PROJECT_ID"
+          echo ""
+          echo "==========================================="
+          echo "Setup completed. Dashboard URL:"
+          DASH_ID=$(gcloud monitoring dashboards list \
+            --filter="displayName=\"$DASHBOARD_DISPLAY_NAME\"" \
+            --format='value(name)' \
+            --project="$PROJECT_ID" | head -1 | awk -F'/' '{print $NF}')
+          echo "  https://console.cloud.google.com/monitoring/dashboards/builder/$DASH_ID?project=$PROJECT_ID"

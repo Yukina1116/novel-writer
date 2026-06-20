@@ -1,0 +1,45 @@
+# Phase 4 段階 2 GO-4: Alerting policy A5
+# 目的: Firestore ERROR レベル log を検知 (P2、ダイジェスト)
+# 起草意図 (runbook prod-monitoring.md §A5): Firestore ERROR レベル log 直近 5 分に 1 件以上
+# 実装メモ: Firestore の ERROR は log-based metric が必要。GA log-based metric
+#           "logging.googleapis.com/user/<NAME>" は別途作成が必要。
+#           PR α では Cloud Run の Firestore admin SDK error を server log (severity=ERROR) で
+#           間接検知する形で起草、log-based metric refactor は段階 2/3 で予定。
+#
+# Format reference: https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.alertPolicies
+displayName: prod-firestore-error
+combiner: OR
+enabled: true
+conditions:
+  - displayName: Cloud Run server log severity=ERROR (Firestore admin SDK 経由含む)
+    conditionThreshold:
+      filter: 'metric.type="logging.googleapis.com/log_entry_count" AND resource.type="cloud_run_revision" AND metric.label."severity"="ERROR" AND resource.label."service_name"="novel-writer"'
+      comparison: COMPARISON_GT
+      # ERROR log 直近 5 分に 1 件以上 (P2、ダイジェスト)
+      thresholdValue: 0
+      duration: 300s
+      aggregations:
+        - alignmentPeriod: 60s
+          perSeriesAligner: ALIGN_COUNT
+          crossSeriesReducer: REDUCE_SUM
+      trigger:
+        count: 1
+documentation:
+  mimeType: text/markdown
+  content: |
+    # prod-firestore-error (P2)
+
+    Cloud Run `novel-writer` の server log で severity=ERROR が直近 5 分に 1 件以上発生。
+
+    **起草意図 (runbook prod-monitoring.md §A5)**: Firestore ERROR レベル log を検知
+    **現実装**: Cloud Run の全 ERROR log を検知 (Firestore + その他)、Firestore 専用化は段階 2/3 で予定
+
+    ## P2 の意味
+    P2 = 24 時間以内に分析、即時対応不要。ダイジェスト email で受信。
+    既に発生時刻に問題は終わっていることが多いが、再発防止のため log analysis を残す。
+
+    ## 確認手順
+    1. dashboard W6 で発生時刻 + 範囲を確認
+    2. Cloud Logging で `severity=ERROR AND resource.type=cloud_run_revision` を直近 5 分で grep
+    3. Firestore admin SDK error なら ADR-0002 / ADR-0003 の rollback 検討対象 (P1 escalation)
+    4. それ以外の単発エラーなら GitHub Issue 起票検討 (CLAUDE.md Issue triage rule)
