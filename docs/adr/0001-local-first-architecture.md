@@ -48,7 +48,7 @@
 - **3 層プラン**:
   - Tier 0: 未ログイン（AI 不可、ローカル執筆のみ）
   - Tier 1: Google ログイン（無料、AI 月 100 円コスト上限。Imagen は 1 回 1000 sen の高コストにより上限内で最大約 10 回までの自然制限。明示的な Imagen 拒否は実装していない。詳細は `docs/spec/m3/usage-cost-config.md` 参照）
-  - Tier 2: Stripe 有料（AI 増枠、Imagen 増枠、E2EE バックアップ opt-in 可）
+  - Tier 2: 有料 (AI 増枠、Imagen 増枠、E2EE バックアップ opt-in 可)。決済基盤は **Stripe (PSP) または Lemon Squeezy / Paddle / Polar 等 (MoR) を M5 着手時に比較選定**する (2026-06-21 更新、それまで未確定)
 - **複数端末同期は実装しない**（Export/Import で持ち歩く）
 
 ### 意思決定の経緯
@@ -75,8 +75,9 @@
 - E2EE は XSS 時に鍵・平文ともに流出（DOMPurify + CSP で緩和、設計上の限界として明記）
 
 ### 開放する課題
-- Stripe 課金導入時の法務作業（利用規約、特商法、プライバシーポリシー）
-  - **2026-04-28 更新**: M7-α (P4) で Tier 0/1 範囲の stub 3 文書を `docs/legal/` に作成、本番公開前に法務確認 MUST。Tier 2 規約節 / 特商法本文の確定は M7-β（M5 Stripe 完了後）で対応
+- 課金導入時の法務作業（利用規約、特商法、プライバシーポリシー）
+  - **2026-04-28 更新**: M7-α (P4) で Tier 0/1 範囲の stub 3 文書を `docs/legal/` に作成、本番公開前に法務確認 MUST。Tier 2 規約節 / 特商法本文の確定は M7-β（M5 完了後）で対応
+  - **2026-06-21 更新**: 本番公開前法務確認の方針を緩和。Tier 0/1 無料運用範囲では「一般的な最低限の自己整備」(個人情報保護法 21 条のプライバシーポリシー設置 + 利用目的通知) で公開可とし、`LEGAL_REVIEW_REQUIRED` stub の状態で本番反映済 (2026-06-21 時点)。顧問弁護士確認は任意で、Tier 2 (有料化) 着手時の前提条件として再評価する。決済基盤も Stripe 単独前提から **Stripe / Lemon Squeezy / Paddle / Polar 等の比較選定** に変更 (M5 着手時に決定)
 - 将来「複数端末同期」要望が出た場合の対応（CRDT 検討、ただし当面は Export/Import で対応）
 - Firebase Auth Emulator と Cloud Run の本番認証フローの差異（M3 で対応）
 
@@ -89,11 +90,11 @@
 | M2 | 認証 + IndexedDB 移行 | ✅ 完了（PR-A IndexedDB 移行 2026-04-26 PR #24 / PR-Bx useLocalSync hardening 2026-04-27 PR #31 / PR-B Auth FE 2026-04-27 PR #29 / PR-C 旧ルート退役 + verifyIdToken + users/init + firestore.rules 2026-04-27） |
 | M3 | AI 認証ゲート + クォータ | ✅ 完了（PR-D テスト基盤 + 持越 #1/#4/#5 PR #37 / PR-E BE 認証ゲート + 起動 probe + handleApiError 共通化 + 持越 #3 PR #39 / PR-F usage クォータ + 持越 + Issue #40 PR #45 / PR-G FE 統合 + Cloud Run public 化 + 持越 #2 2026-04-27） |
 | M4 | Export/Import + バックアップ警告 UI | ✅ 完了（PR #48 2026-04-28） |
-| M5 | Stripe Subscription + Webhook + 法務 Tier 2 | ⏳ |
+| M5 | 課金実装 (Stripe / Lemon Squeezy / Paddle 等を着手時に比較選定) + Webhook + 法務 Tier 2 | ⏳ (着手は本田様明示指示後、2026-06-21 時点未定) |
 | M6 | E2EE 暗号化バックアップ・ローカルファイル範囲（クライアント側 AES-GCM + パスフレーズ派生 + `.enc.json` Export/Import） | ✅ 完了（PR-A spec #73 / PR-B crypto core #74 / PR-C slice integration #75 / PR-D UI #77、2026-04-29） |
 | M6.5 | E2EE 暗号化バックアップ・Cloud Storage 連携（signed URL upload/download + uid scope + Tier 2 ゲート、M5 完了後） | ⏳ |
-| M7-α | 公開準備 (Tier 0/1 法務 stub + 観測性 + エラー報告動線、Stripe 不要範囲) | ✅ 完了 (PR-A 観測性 / PR-B エラー報告 / PR-C 法務 stub / PR-D-1 BE accept-terms / PR-D-2 同意 UI、PR #67 で 2026-04-28 締め、本番公開前法務確認 MUST) |
-| M7-β | 公開最終チェック (Tier 2 規約節 + 特商法本文確定、M5 完了後) | ⏳ |
+| M7-α | 公開準備 (Tier 0/1 法務 stub + 観測性 + エラー報告動線、課金不要範囲) | ✅ 完了 (PR-A 観測性 / PR-B エラー報告 / PR-C 法務 stub / PR-D-1 BE accept-terms / PR-D-2 同意 UI、PR #67 で 2026-04-28 締め。**2026-06-21**: 本番公開前法務確認は「一般的な最低限の自己整備」で本番反映済、顧問弁護士確認は Tier 2 開始時に再評価) |
+| M7-β | 公開最終チェック (Tier 2 規約節 + 特商法本文確定 + 必要なら顧問弁護士確認、M5 完了後) | ⏳ |
 
 ### M6 / M6.5 分割の経緯（2026-04-29）
 
