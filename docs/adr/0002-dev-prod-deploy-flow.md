@@ -4,7 +4,7 @@
 - Date: 2026-06-20
 - Decision Drivers: prod 環境の安全性、Phase 2 で発覚した bug 教訓の体系化、Phase 4 一般公開前の運用フロー整備
 - Related: [Phase 3 spec](../spec/prod-migration/phase3-tasks.md), [runbook prod-deploy-flow.md](../runbook/prod-deploy-flow.md)
-- Related: [ADR-0001](./0001-local-first-architecture.md) §Consequences (緊急対応 + max-instances=2 + 法務確認 MUST)
+- Related: [ADR-0001](./0001-local-first-architecture.md) §Consequences (緊急対応 + max-instances=2 + 法務確認 (ADR-0001 2026-06-21 更新で Tier 0/1 は自己整備で公開可、Tier 2 開始時に再評価))
 - Supersedes: なし
 - Superseded by: なし
 
@@ -146,6 +146,6 @@
 - [runbook prod-deploy-flow.md](../runbook/prod-deploy-flow.md) (本 ADR の手順実装)
 - [phase2-tasks.md](../spec/prod-migration/phase2-tasks.md) §Phase 3 引き継ぎ事項 (本 ADR が答えるべき問い)
 - [prod-phase2-deploy.md](../runbook/prod-phase2-deploy.md) §Rollback 手順 (Phase 2 で実装した 3+1 段階 rollback、本 ADR で 3 段階に縮約)
-- ADR-0001 §Consequences (緊急対応 + max-instances=2 + 法務確認 MUST、本 ADR でも継承)
+- ADR-0001 §Consequences (緊急対応 + max-instances=2 + 法務確認 (ADR-0001 2026-06-21 更新で Tier 0/1 は自己整備で公開可、Tier 2 開始時に再評価)、本 ADR でも継承)
 - `.claude/memory/feedback_env_var_naming_drift.md` (Phase 2 で発覚した env_var_drift bug の教訓 memory)
 - `.claude/memory/feedback_firebase_auth_setup_gotcha.md` (Phase 1 補完事項の教訓 memory)

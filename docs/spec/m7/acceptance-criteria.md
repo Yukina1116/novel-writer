@@ -17,7 +17,7 @@
 - `docs/legal/tokushou.md` が存在する
 - 各文書冒頭に `<!-- LEGAL_REVIEW_REQUIRED -->` マーカーが含まれる
 - `terms-of-service.md` に Tier 0 / Tier 1 の制限が明記され、Tier 2 部分には `<!-- TODO(P6/M5): -->` プレースホルダがある
-- `tokushou.md` に「Tier 2 不在のため特商法表記義務なし」旨と Stripe 確定後 TODO が含まれる
+- `tokushou.md` に「Tier 2 不在のため特商法表記義務なし」旨と課金実装確定後 TODO が含まれる (決済基盤 Stripe / MoR は M5 で比較選定、ADR-0001 2026-06-21 更新)
 
 **検証方法**:
 ```bash
@@ -191,6 +191,6 @@ npm run test                                                                    
 1. ユーザー（事業主体）による全文確認
 2. 顧問弁護士または法務専門家による review
 3. `<!-- LEGAL_REVIEW_REQUIRED -->` マーカーと `<!-- TODO -->` プレースホルダの除去
-4. M7-β（Stripe 確定後）で Tier 2 / 特商法本文を確定後の再 review
+4. M7-β（課金実装確定後、決済基盤は M5 で比較選定）で Tier 2 / 特商法本文を確定後の再 review
 
 これらは AI セッション外の作業として `docs/handoff/` に明示的に申し送り、M7-α の DoD には含めない（公開準備は完了するが、公開そのものはブロック）。
