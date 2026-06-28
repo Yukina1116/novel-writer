@@ -53,7 +53,9 @@ export function ProjectSelectionScreen({ projects, onCreateProject, onDeleteProj
                 <div className="flex items-center justify-end mb-4">
                     <AuthButton />
                 </div>
-                <h1 className="text-4xl font-bold text-center text-indigo-400 mb-4">小説らいたー</h1>
+                <h1 className="text-4xl font-bold text-center text-indigo-400 mb-4 flex justify-center">
+                    <img src="/branding/logo-dark.svg" alt="小説らいたー" className="h-16 w-auto max-w-full" />
+                </h1>
                 
                 {showWarning && (
                     <div className="bg-yellow-900/30 border border-yellow-600/50 rounded-lg p-4 mb-8 flex items-start gap-3 animate-in fade-in slide-in-from-top-4">
