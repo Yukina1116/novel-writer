@@ -23,7 +23,7 @@ describe('buildCharacterAppendixHtml', () => {
         expect(html).toContain('<p>主人公の紹介文</p>');
     });
 
-    it('should NOT fallback to personality when exportDescription is empty (regression: bug fix for character export)', () => {
+    it('regression: must not leak personality into description when exportDescription is empty string', () => {
         const characters = [
             characterFixture({
                 exportDescription: '',
@@ -34,7 +34,7 @@ describe('buildCharacterAppendixHtml', () => {
         expect(html).not.toContain('冷静沈着で寡黙な性格');
     });
 
-    it('should NOT fallback to personality when exportDescription is undefined (regression: bug fix for character export)', () => {
+    it('regression: must not leak personality into description when exportDescription is undefined', () => {
         const characters = [
             characterFixture({
                 personality: '冷静沈着で寡黙な性格',
@@ -42,6 +42,20 @@ describe('buildCharacterAppendixHtml', () => {
         ];
         const html = buildCharacterAppendixHtml(characters, { addCharacterImages: false });
         expect(html).not.toContain('冷静沈着で寡黙な性格');
+    });
+
+    it('should handle per-character independence: mix of characters with and without exportDescription', () => {
+        const characters = [
+            characterFixture({ id: 'c-1', name: 'A', exportDescription: 'A の紹介', personality: 'A の性格' }),
+            characterFixture({ id: 'c-2', name: 'B', exportDescription: '', personality: 'B の性格' }),
+            characterFixture({ id: 'c-3', name: 'C', exportDescription: 'C の紹介', personality: 'C の性格' }),
+        ];
+        const html = buildCharacterAppendixHtml(characters, { addCharacterImages: false });
+        expect(html).toContain('<p>A の紹介</p>');
+        expect(html).toContain('<p>C の紹介</p>');
+        expect(html).not.toContain('A の性格');
+        expect(html).not.toContain('B の性格');
+        expect(html).not.toContain('C の性格');
     });
 
     it('should omit <p> tag entirely when exportDescription is empty', () => {
@@ -87,6 +101,35 @@ describe('buildCharacterAppendixHtml', () => {
         const html = buildCharacterAppendixHtml(characters, { addCharacterImages: false });
         expect(html).not.toContain('<script>');
         expect(html).toContain('&lt;script&gt;');
+    });
+
+    it('should escape HTML special characters in character name', () => {
+        const characters = [
+            characterFixture({ name: '<img src=x onerror=alert(1)>' }),
+        ];
+        const html = buildCharacterAppendixHtml(characters, { addCharacterImages: false });
+        expect(html).not.toContain('<img src=x onerror=alert(1)>');
+        expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    });
+
+    it('should escape HTML special characters in furigana', () => {
+        const characters = [
+            characterFixture({ furigana: '"><script>alert(1)</script>' }),
+        ];
+        const html = buildCharacterAppendixHtml(characters, { addCharacterImages: false });
+        expect(html).not.toContain('"><script>');
+        expect(html).toContain('&quot;&gt;&lt;script&gt;');
+    });
+
+    it('should escape HTML special characters in imageUrl when image rendering is enabled', () => {
+        const characters = [
+            characterFixture({
+                appearance: { imageUrl: 'x" onerror="alert(1)', traits: [] },
+            }),
+        ];
+        const html = buildCharacterAppendixHtml(characters, { addCharacterImages: true });
+        expect(html).not.toContain('onerror="alert(1)');
+        expect(html).toContain('&quot; onerror=&quot;alert(1)');
     });
 });
 
