@@ -15,7 +15,7 @@ import {
     warnOnceInDev,
 } from '../utils';
 import { renderMarkdown } from '../utils/sanitizeHtml';
-import { buildCharacterAppendixHtml } from '../utils/htmlExport';
+import { buildCharacterAppendixHtml, composeExportSections } from '../utils/htmlExport';
 import { FONT_MAP } from '../constants';
 import * as analysisApi from '../analysisApi';
 
@@ -936,9 +936,7 @@ export const createDataSlice = (set, get): DataSlice => ({
         // utils.exportChapterAnchorId で生成する。TOC と本文 anchor の id 形式不一致を
         // 構造的に防ぐため必ず両者を utils 経由にする (AC-11)。
         const chapters = buildExportChapterEntries(novelContent);
-        const body = `
-            <div class="container">
-                ${options.coverType !== 'none' ? `
+        const coverSection = options.coverType !== 'none' ? `
                     <div class="cover">
                         ${(options.coverType === 'image_only' || options.coverType === 'image_with_text') && options.coverImageSrc ? `<img src="${escapeHtml(options.coverImageSrc)}" class="cover-image" alt="Cover Image">` : ''}
                         ${(options.coverType === 'text_only' || options.coverType === 'image_with_text') ? `
@@ -946,23 +944,23 @@ export const createDataSlice = (set, get): DataSlice => ({
                             ${options.authorName ? `<p class="author">${escapeHtml(options.authorName)}</p>` : ''}
                         ` : ''}
                     </div>
-                ` : ''}
-                ${options.addToc && chapters.length > 0 ? `
+                ` : '';
+        const tocSection = options.addToc && chapters.length > 0 ? `
                     <div class="toc">
                         <h2>目次</h2>
                         <ul>
                             ${chapters.map(ch => `<li><a href="#${ch.id}">${escapeHtml(ch.title)}</a></li>`).join('')}
                         </ul>
                     </div>
-                ` : ''}
+                ` : '';
+        const contentSection = `
                 <div class="content">
                     ${novelContent.map(chunk => {
                         const anchorId = isChapterTitleChunk(chunk) ? exportChapterAnchorId(chunk) : '';
                         return `<div id="${anchorId}">${renderMarkdown(chunk.text, settings.filter(s => s.type === 'character'), knowledgeBase, aiSettings)}</div>`;
                     }).join('')}
-                </div>
-                ${buildCharacterAppendixHtml(charactersToExport, { addCharacterImages: options.addCharacterImages })}
-                ${worldSettingsToExport.length > 0 ? `
+                </div>`;
+        const worldsSection = worldSettingsToExport.length > 0 ? `
                     <div class="appendix">
                         <h2>世界観・用語集</h2>
                         ${worldSettingsToExport.map(world => `
@@ -972,8 +970,18 @@ export const createDataSlice = (set, get): DataSlice => ({
                             </div>
                         `).join('')}
                     </div>
-                ` : ''}
-                ${options.afterword ? `<div class="appendix"><h2>あとがき</h2><div>${renderMarkdown(options.afterword, [], [], aiSettings)}</div></div>` : ''}
+                ` : '';
+        const afterwordSection = options.afterword ? `<div class="appendix"><h2>あとがき</h2><div>${renderMarkdown(options.afterword, [], [], aiSettings)}</div></div>` : '';
+        const body = `
+            <div class="container">
+                ${composeExportSections({
+                    cover: coverSection,
+                    characters: buildCharacterAppendixHtml(charactersToExport, { addCharacterImages: options.addCharacterImages }),
+                    worlds: worldsSection,
+                    toc: tocSection,
+                    content: contentSection,
+                    afterword: afterwordSection,
+                })}
             </div>
         `;
         const fullHtml = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${escapeHtml(project.name)}</title><style>body { font-family: ${fontCss}; font-size: ${fontSize}px; line-height: 1.8; margin: 0; padding: 0; } .container { max-width: 800px; margin: 4rem auto; padding: 2rem; } ${themeStyles} h1, h2, h3 { line-height: 1.3; font-weight: bold; } h1.title { font-size: 2.5em; text-align: center; margin-bottom: 0.5em; } h1.chapter-title { font-size: 1.5em; margin-top: 3em; border-bottom: 1px solid; padding-bottom: 0.5em; } h2 { font-size: 1.2em; margin-top: 2em; border-bottom: 1px solid; padding-bottom: 0.3em;} p.author { text-align: center; font-size: 1.2em; color: #888; margin-bottom: 4em; } .cover { text-align: center; margin-bottom: 4rem; } .cover-image { max-width: 100%; height: auto; max-height: 70vh; margin: 0 auto 2rem; } .content > div { margin: 1.5em 0; } .toc { margin-bottom: 4rem; padding: 1.5rem; border: 1px solid #ccc; border-radius: 8px; } .toc ul { list-style: none; padding-left: 0; } .toc a { text-decoration: none; } .appendix { margin-top: 4rem; border-top: 1px solid #ccc; padding-top: 2rem; } .appendix h2 { border-bottom: none; } .char-card { margin-bottom: 2rem; overflow: hidden; } .char-card img { max-width: 150px; float: left; margin-right: 1rem; border-radius: 4px; } ruby { ruby-position: over; } rt { font-size: 0.7em; } .knowledge-link { text-decoration: none; color: inherit; font-weight: bold; }</style></head><body>${body}</body></html>`;
