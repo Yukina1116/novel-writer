@@ -54,10 +54,7 @@ export function ProjectSelectionScreen({ projects, onCreateProject, onDeleteProj
                     <AuthButton />
                 </div>
                 <h1 className="text-4xl font-bold text-center text-indigo-400 mb-4 flex justify-center">
-                    <picture>
-                        <source srcSet="/branding/logo-dark.svg" media="(prefers-color-scheme: dark)" />
-                        <img src="/branding/logo-light.svg" alt="小説らいたー" className="h-16 w-auto" />
-                    </picture>
+                    <img src="/branding/logo-dark.svg" alt="小説らいたー" className="h-16 w-auto max-w-full" />
                 </h1>
                 
                 {showWarning && (
