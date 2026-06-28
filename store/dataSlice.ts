@@ -932,6 +932,8 @@ export const createDataSlice = (set, get): DataSlice => ({
         const escapeHtml = (unsafe) => unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
         const charactersToExport = settings.filter(s => s.type === 'character' && options.selectedCharacterIds.includes(s.id));
         const worldSettingsToExport = settings.filter(s => s.type === 'world' && options.selectedWorldIds.includes(s.id));
+        const selectedKnowledgeIds: string[] = Array.isArray(options.selectedKnowledgeIds) ? options.selectedKnowledgeIds : [];
+        const knowledgeToExport = (knowledgeBase || []).filter(k => selectedKnowledgeIds.includes(k.id));
         // 章一覧は utils.buildExportChapterEntries で生成し、本文 anchor は同じ
         // utils.exportChapterAnchorId で生成する。TOC と本文 anchor の id 形式不一致を
         // 構造的に防ぐため必ず両者を utils 経由にする (AC-11)。
@@ -960,13 +962,23 @@ export const createDataSlice = (set, get): DataSlice => ({
                         return `<div id="${anchorId}">${renderMarkdown(chunk.text, settings.filter(s => s.type === 'character'), knowledgeBase, aiSettings)}</div>`;
                     }).join('')}
                 </div>`;
-        const worldsSection = worldSettingsToExport.length > 0 ? `
+        const termsEntries: { name: string; body: string }[] = [
+            ...worldSettingsToExport.map(world => ({
+                name: world.name,
+                body: world.exportDescription || world.longDescription || '',
+            })),
+            ...knowledgeToExport.map(item => ({
+                name: item.name,
+                body: item.content || '',
+            })),
+        ];
+        const worldsSection = termsEntries.length > 0 ? `
                     <div class="appendix">
                         <h2>用語説明</h2>
-                        ${worldSettingsToExport.map(world => `
+                        ${termsEntries.map(entry => `
                             <div>
-                                <h3>${escapeHtml(world.name)}</h3>
-                                <p>${escapeHtml(world.exportDescription || world.longDescription || '')}</p>
+                                <h3>${escapeHtml(entry.name)}</h3>
+                                <p>${escapeHtml(entry.body)}</p>
                             </div>
                         `).join('')}
                     </div>

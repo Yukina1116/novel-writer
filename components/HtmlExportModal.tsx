@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import * as Icons from '../icons';
-import { DisplaySettings, SettingItem } from '../types';
+import { DisplaySettings, KnowledgeItem, SettingItem } from '../types';
 import { compressImage } from '../utils';
 
 interface HtmlExportModalProps {
@@ -11,6 +11,7 @@ interface HtmlExportModalProps {
   onExport: (options: any) => void;
   displaySettings: DisplaySettings;
   settings: SettingItem[];
+  knowledgeBase: KnowledgeItem[];
 }
 
 const Checkbox: React.FC<{
@@ -98,9 +99,10 @@ const DescriptionEditorPopover = ({ editingItem, onClose, onSave }) => {
 };
 
 
-export const HtmlExportModal = ({ isOpen, onClose, onExport, displaySettings, settings }: HtmlExportModalProps) => {
+export const HtmlExportModal = ({ isOpen, onClose, onExport, displaySettings, settings, knowledgeBase }: HtmlExportModalProps) => {
     const [localCharacters, setLocalCharacters] = useState<SettingItem[]>([]);
     const [localWorldSettings, setLocalWorldSettings] = useState<SettingItem[]>([]);
+    const [localKnowledge, setLocalKnowledge] = useState<KnowledgeItem[]>([]);
     const [editingItem, setEditingItem] = useState<{ item: SettingItem; type: 'character' | 'world'; anchorEl: HTMLElement } | null>(null);
 
     const [options, setOptions] = useState({
@@ -115,15 +117,18 @@ export const HtmlExportModal = ({ isOpen, onClose, onExport, displaySettings, se
         selectedCharacterIds: [],
         addCharacterImages: true,
         selectedWorldIds: [],
+        selectedKnowledgeIds: [],
         afterword: '',
     });
-    
+
     useEffect(() => {
         if (isOpen) {
             const chars = settings.filter(s => s.type === 'character');
             const worlds = settings.filter(s => s.type === 'world');
+            const knowledgeSelectable = (knowledgeBase || []).filter(k => !k.isArchived);
             setLocalCharacters(chars);
             setLocalWorldSettings(worlds);
+            setLocalKnowledge(knowledgeSelectable);
 
             setOptions(prev => ({
                 ...prev,
@@ -132,11 +137,12 @@ export const HtmlExportModal = ({ isOpen, onClose, onExport, displaySettings, se
                 theme: displaySettings.theme,
                 selectedCharacterIds: chars.map(c => c.id),
                 selectedWorldIds: worlds.map(w => w.id),
+                selectedKnowledgeIds: knowledgeSelectable.map(k => k.id),
             }));
         } else {
             setEditingItem(null);
         }
-    }, [isOpen, displaySettings, settings]);
+    }, [isOpen, displaySettings, settings, knowledgeBase]);
 
     const handleChange = (key, value) => {
         setOptions(prev => ({ ...prev, [key]: value }));
@@ -160,6 +166,7 @@ export const HtmlExportModal = ({ isOpen, onClose, onExport, displaySettings, se
             ...options,
             charactersToExport: localCharacters.filter(c => options.selectedCharacterIds.includes(c.id)),
             worldSettingsToExport: localWorldSettings.filter(w => options.selectedWorldIds.includes(w.id)),
+            knowledgeToExport: localKnowledge.filter(k => options.selectedKnowledgeIds.includes(k.id)),
         });
         onClose();
     };
@@ -328,6 +335,26 @@ export const HtmlExportModal = ({ isOpen, onClose, onExport, displaySettings, se
                                             </div>
                                         </>
                                     ) : <p className="text-sm text-gray-500">追加できる世界観設定がありません。</p>}
+                                </div>
+
+                                {/* Knowledge Selection */}
+                                <div>
+                                    <h4 className="text-md font-semibold text-gray-300 mb-2">ナレッジ (用語説明に含めます)</h4>
+                                    {localKnowledge.length > 0 ? (
+                                        <>
+                                            <div className="flex gap-2 mb-2">
+                                                <button onClick={() => handleSelectAll('selectedKnowledgeIds', localKnowledge)} className="text-xs px-2 py-1 bg-gray-700 rounded hover:bg-gray-600 text-white">すべて選択</button>
+                                                <button onClick={() => handleDeselectAll('selectedKnowledgeIds')} className="text-xs px-2 py-1 bg-gray-700 rounded hover:bg-gray-600 text-white">すべて解除</button>
+                                            </div>
+                                            <div className="max-h-32 overflow-y-auto space-y-1 p-2 border border-gray-700 rounded-md">
+                                                {localKnowledge.map(item => (
+                                                    <div key={item.id} className="flex items-center justify-between">
+                                                        <Checkbox id={`knowledge-${item.id}`} label={item.name} checked={options.selectedKnowledgeIds.includes(item.id)} onChange={() => handleSelectionChange('selectedKnowledgeIds', item.id)} />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    ) : <p className="text-sm text-gray-500">追加できるナレッジがありません。</p>}
                                 </div>
                             </div>
                         </div>

@@ -5,7 +5,7 @@ vi.mock('../analysisApi', () => ({
 }));
 
 import { createDataSlice } from './dataSlice';
-import type { Project, SettingItem } from '../types';
+import type { KnowledgeItem, Project, SettingItem } from '../types';
 
 const baseProject = (overrides: Partial<Project> = {}): Project => ({
     id: 'p-1',
@@ -41,6 +41,13 @@ const worldFixture = (overrides: Partial<SettingItem> = {}): SettingItem => ({
     type: 'world',
     name: '魔法王国',
     longDescription: '魔法に満ちた世界',
+    ...overrides,
+});
+
+const knowledgeFixture = (overrides: Partial<KnowledgeItem> = {}): KnowledgeItem => ({
+    id: 'k-1',
+    name: '霊脈',
+    content: '大地に流れる魔力の通り道。',
     ...overrides,
 });
 
@@ -192,5 +199,60 @@ describe('dataSlice.exportHtml — integration: section ordering & wiring', () =
         const html = captureExportedHtml(project, { ...fullOptions, afterword: '' });
 
         expect(html).not.toContain('<h2>あとがき</h2>');
+    });
+
+    it('用語説明 section に world と knowledge が world → knowledge の順で並ぶ', () => {
+        const project = baseProject({
+            settings: [worldFixture({ id: 'w-1', name: '魔法王国', longDescription: '魔法の国' })],
+            knowledgeBase: [knowledgeFixture({ id: 'k-1', name: '霊脈', content: '魔力の通り道' })],
+            novelContent: [{ id: 'n-1', text: '本文', chapterId: null }],
+        });
+        const html = captureExportedHtml(project, { ...fullOptions, selectedKnowledgeIds: ['k-1'] });
+
+        expect(html).toContain('<h2>用語説明</h2>');
+        const worldIdx = html.indexOf('魔法王国');
+        const knowledgeIdx = html.indexOf('霊脈');
+        expect(worldIdx).toBeGreaterThan(-1);
+        expect(knowledgeIdx).toBeGreaterThan(-1);
+        expect(worldIdx).toBeLessThan(knowledgeIdx);
+        expect(html).toContain('魔力の通り道');
+    });
+
+    it('世界観なし + knowledge あり → 用語説明 section が knowledge だけで出る', () => {
+        const project = baseProject({
+            settings: [characterFixture()],
+            knowledgeBase: [knowledgeFixture({ id: 'k-2', name: '魔導士団', content: '王国に仕える組織' })],
+            novelContent: [{ id: 'n-1', text: '本文', chapterId: null }],
+        });
+        const html = captureExportedHtml(project, { ...fullOptions, selectedWorldIds: [], selectedKnowledgeIds: ['k-2'] });
+
+        expect(html).toContain('<h2>用語説明</h2>');
+        expect(html).toContain('魔導士団');
+        expect(html).toContain('王国に仕える組織');
+    });
+
+    it('selectedKnowledgeIds 未指定 (後方互換) でも従来どおり world のみ出力される', () => {
+        const project = baseProject({
+            settings: [worldFixture()],
+            knowledgeBase: [knowledgeFixture({ id: 'k-x', name: '出ないナレッジ', content: 'これは出ない' })],
+            novelContent: [{ id: 'n-1', text: '本文', chapterId: null }],
+        });
+        const html = captureExportedHtml(project, fullOptions);
+
+        expect(html).toContain('<h2>用語説明</h2>');
+        expect(html).toContain('魔法王国');
+        expect(html).not.toContain('出ないナレッジ');
+        expect(html).not.toContain('これは出ない');
+    });
+
+    it('全選択解除 (selectedWorldIds=[] + selectedKnowledgeIds=[]) → 用語説明 section が出ない', () => {
+        const project = baseProject({
+            settings: [worldFixture(), characterFixture()],
+            knowledgeBase: [knowledgeFixture()],
+            novelContent: [{ id: 'n-1', text: '本文', chapterId: null }],
+        });
+        const html = captureExportedHtml(project, { ...fullOptions, selectedWorldIds: [], selectedKnowledgeIds: [] });
+
+        expect(html).not.toContain('<h2>用語説明</h2>');
     });
 });
