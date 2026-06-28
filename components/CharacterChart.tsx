@@ -253,7 +253,7 @@ export const CharacterChartModal = ({ isOpen, onClose, characters, relations, no
                     </div>
                 </div>
 
-                <div className="flex-grow relative overflow-auto bg-gray-900/50" onClick={() => setFirstSelectionForAdd(null)}>
+                <div className="flex-grow relative overflow-hidden bg-gray-900/50" onClick={() => setFirstSelectionForAdd(null)}>
                     {mode === 'delete_relation' && (
                         <div className="absolute top-4 inset-x-0 mx-auto w-max z-30 bg-red-600 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-lg animate-bounce">
                             削除したい関係の線をクリックしてください
@@ -265,14 +265,20 @@ export const CharacterChartModal = ({ isOpen, onClose, characters, relations, no
                         </div>
                     )}
 
-                    <svg id="tutorial-chart-svg" ref={svgRef} width="800" height="600" viewBox="0 0 800 600" className={`mx-auto ${mode === 'add_relation' ? 'cursor-crosshair' : ''}`}
+                    <svg id="tutorial-chart-svg" ref={svgRef} viewBox="0 0 800 600" preserveAspectRatio="xMidYMid meet" className={`w-full h-full block ${mode === 'add_relation' ? 'cursor-crosshair' : ''}`}
                          onMouseMove={(e) => {
                              if (!activeDrag) return;
                              const p = getSVGPoint(e);
-                             setLocalNodes(prev => prev.map(n => n.id === activeDrag.nodeId ? { ...n, x: p.x - activeDrag.offsetX, y: p.y - activeDrag.offsetY } : n));
+                             const NODE_R = 32;
+                             const nextX = Math.max(NODE_R, Math.min(800 - NODE_R, p.x - activeDrag.offsetX));
+                             const nextY = Math.max(NODE_R, Math.min(600 - NODE_R, p.y - activeDrag.offsetY));
+                             setLocalNodes(prev => prev.map(n => n.id === activeDrag.nodeId ? { ...n, x: nextX, y: nextY } : n));
                          }}
                          onMouseUp={() => setActiveDrag(null)}>
-                        
+
+                        {/* ドラッグ可能領域の視覚化 */}
+                        <rect x="2" y="2" width="796" height="596" rx="10" fill="rgba(30,41,59,0.35)" stroke="rgba(148,163,184,0.45)" strokeWidth="1.5" strokeDasharray="8 6" pointerEvents="none" />
+
                         <g>
                             {relationsWithCurveData.map((rel, i) => {
                                 const s = nodesById[rel.source], t = nodesById[rel.target];
