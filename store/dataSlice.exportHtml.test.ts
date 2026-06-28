@@ -96,7 +96,7 @@ describe('dataSlice.exportHtml — integration: section ordering & wiring', () =
         vi.restoreAllMocks();
     });
 
-    it('regression: exported HTML must place 登場人物 and 世界観・用語集 sections BEFORE 本文', () => {
+    it('regression: exported HTML must place 登場人物 and 用語説明 sections BEFORE 本文', () => {
         const project = baseProject({
             settings: [characterFixture(), worldFixture()],
             novelContent: [{ id: 'n-1', text: '本文のテキストです。', chapterId: null }],
@@ -104,7 +104,7 @@ describe('dataSlice.exportHtml — integration: section ordering & wiring', () =
         const html = captureExportedHtml(project, fullOptions);
 
         const charsIdx = html.indexOf('<h2>登場人物</h2>');
-        const worldsIdx = html.indexOf('<h2>世界観・用語集</h2>');
+        const worldsIdx = html.indexOf('<h2>用語説明</h2>');
         const contentIdx = html.indexOf('<div class="content">');
 
         expect(charsIdx).toBeGreaterThan(-1);
@@ -114,7 +114,7 @@ describe('dataSlice.exportHtml — integration: section ordering & wiring', () =
         expect(worldsIdx).toBeLessThan(contentIdx);
     });
 
-    it('should emit sections in order: cover → 登場人物 → 世界観・用語集 → 目次 → 本文 → あとがき', () => {
+    it('should emit sections in order: cover → 登場人物 → 用語説明 → 目次 → 本文 → あとがき', () => {
         const project = baseProject({
             settings: [characterFixture(), worldFixture()],
             novelContent: [
@@ -127,7 +127,7 @@ describe('dataSlice.exportHtml — integration: section ordering & wiring', () =
         const positions = [
             { name: 'cover', idx: html.indexOf('<div class="cover">') },
             { name: 'characters', idx: html.indexOf('<h2>登場人物</h2>') },
-            { name: 'worlds', idx: html.indexOf('<h2>世界観・用語集</h2>') },
+            { name: 'worlds', idx: html.indexOf('<h2>用語説明</h2>') },
             { name: 'toc', idx: html.indexOf('<h2>目次</h2>') },
             { name: 'content', idx: html.indexOf('<div class="content">') },
             { name: 'afterword', idx: html.indexOf('<h2>あとがき</h2>') },
@@ -151,7 +151,7 @@ describe('dataSlice.exportHtml — integration: section ordering & wiring', () =
 
         const charsSection = html.substring(
             html.indexOf('<h2>登場人物</h2>'),
-            html.indexOf('<h2>世界観・用語集</h2>'),
+            html.indexOf('<h2>用語説明</h2>'),
         );
         expect(charsSection).toContain('キャラ名前');
         expect(charsSection).not.toContain('世界名前');
@@ -165,7 +165,7 @@ describe('dataSlice.exportHtml — integration: section ordering & wiring', () =
         const html = captureExportedHtml(project, { ...fullOptions, selectedCharacterIds: [] });
 
         expect(html).not.toContain('<h2>登場人物</h2>');
-        const worldsIdx = html.indexOf('<h2>世界観・用語集</h2>');
+        const worldsIdx = html.indexOf('<h2>用語説明</h2>');
         const contentIdx = html.indexOf('<div class="content">');
         expect(worldsIdx).toBeGreaterThan(-1);
         expect(worldsIdx).toBeLessThan(contentIdx);
@@ -178,7 +178,7 @@ describe('dataSlice.exportHtml — integration: section ordering & wiring', () =
         });
         const html = captureExportedHtml(project, { ...fullOptions, selectedWorldIds: [] });
 
-        expect(html).not.toContain('<h2>世界観・用語集</h2>');
+        expect(html).not.toContain('<h2>用語説明</h2>');
         const charsIdx = html.indexOf('<h2>登場人物</h2>');
         const contentIdx = html.indexOf('<div class="content">');
         expect(charsIdx).toBeGreaterThan(-1);
