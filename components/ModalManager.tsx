@@ -122,7 +122,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({ displayMenuButtonRef
                 modalContent = <CharacterChartModal isOpen={true} onClose={closeModal} characters={settings.filter(s => s.type === 'character')} relations={activeProjectData?.characterRelations || []} nodePositions={activeProjectData?.nodePositions || []} onSave={handleSaveChart} onHelpClick={(topic) => openModal('help', { topic })} isMobile={isMobile} />;
                 break;
             case 'htmlExport':
-                modalContent = <HtmlExportModal isOpen={true} onClose={closeModal} onExport={exportHtml} displaySettings={displaySettings} settings={settings} />;
+                modalContent = <HtmlExportModal isOpen={true} onClose={closeModal} onExport={exportHtml} displaySettings={displaySettings} settings={settings} knowledgeBase={knowledgeBase} />;
                 break;
             case 'timeline':
                 modalContent = <TimelineModal isOpen={true} onClose={closeModal} timeline={timeline} lanes={timelineLanes} allSettings={settings} plotBoard={plotBoard} isMobile={isMobile} />;
