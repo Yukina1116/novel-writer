@@ -53,7 +53,7 @@ export function ProjectSelectionScreen({ projects, onCreateProject, onDeleteProj
                 <div className="flex items-center justify-end mb-4">
                     <AuthButton />
                 </div>
-                <h1 className="mb-4 flex justify-center">
+                <h1 className="text-4xl font-bold text-center text-indigo-400 mb-4 flex justify-center">
                     <picture>
                         <source srcSet="/branding/logo-dark.svg" media="(prefers-color-scheme: dark)" />
                         <img src="/branding/logo-light.svg" alt="小説らいたー" className="h-16 w-auto" />
