@@ -123,7 +123,10 @@ export const Header: React.FC<HeaderProps> = ({ displayMenuButtonRef, isMobile =
             <div className={`flex-grow min-w-0 flex ${titleAlignmentClass} items-center`}>
                  {isEditingTitle ? (
                     <form onSubmit={(e) => { e.preventDefault(); handleTitleSave(); }} className={`flex items-center w-full justify-center`}>
-                        <Icons.BookIcon className="h-6 w-6 text-text-muted flex-shrink-0 mr-2" />
+                        <picture className="mr-2 flex-shrink-0">
+                            <source srcSet="/branding/icon-dark.svg" media="(prefers-color-scheme: dark)" />
+                            <img src="/branding/icon-light.svg" alt="" className="h-6 w-auto" />
+                        </picture>
                         <input type="text" value={projectTitle} onChange={(e) => setProjectTitle(e.target.value)} onBlur={handleTitleSave} onKeyDown={handleTitleKeyDown} className="text-lg font-bold bg-panel-bg border border-border rounded-md px-2 py-1 w-full max-w-[200px] text-text-main" autoFocus />
                     </form>
                 ) : (
@@ -131,7 +134,10 @@ export const Header: React.FC<HeaderProps> = ({ displayMenuButtonRef, isMobile =
                         className={`flex items-center min-w-0 max-w-full cursor-pointer group`} 
                         onClick={() => setIsEditingTitle(true)}
                     >
-                        <Icons.BookIcon className="h-6 w-6 text-text-muted flex-shrink-0 mr-2" />
+                        <picture className="mr-2 flex-shrink-0">
+                            <source srcSet="/branding/icon-dark.svg" media="(prefers-color-scheme: dark)" />
+                            <img src="/branding/icon-light.svg" alt="" className="h-6 w-auto" />
+                        </picture>
                         <h2 className="text-lg sm:text-2xl font-bold text-text-main truncate min-w-0">
                             {activeProjectData?.name || '生成された物語'}
                         </h2>
