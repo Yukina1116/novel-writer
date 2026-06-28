@@ -43,3 +43,23 @@ export function buildCharacterAppendixHtml(
                     </div>
                 `;
 }
+
+export interface ExportSections {
+    cover: string;
+    characters: string;
+    worlds: string;
+    toc: string;
+    content: string;
+    afterword: string;
+}
+
+export function composeExportSections(parts: ExportSections): string {
+    return [
+        parts.cover,
+        parts.characters,
+        parts.worlds,
+        parts.toc,
+        parts.content,
+        parts.afterword,
+    ].join('\n');
+}
