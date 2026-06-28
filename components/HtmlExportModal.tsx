@@ -304,7 +304,7 @@ export const HtmlExportModal = ({ isOpen, onClose, onExport, displaySettings, se
 
                                 {/* World Selection */}
                                 <div>
-                                    <h4 className="text-md font-semibold text-gray-300 mb-2">世界観・用語集</h4>
+                                    <h4 className="text-md font-semibold text-gray-300 mb-2">用語説明</h4>
                                     {localWorldSettings.length > 0 ? (
                                         <>
                                             <div className="flex gap-2 mb-2">

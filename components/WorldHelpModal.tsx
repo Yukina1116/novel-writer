@@ -13,7 +13,7 @@ const helpData = {
     ai_settings: [
         { icon: <Icons.BotIcon className="h-5 w-5 text-indigo-300"/>, title: '詳細設定 (AIが参照)', description: 'ここに書かれた内容は、AIが物語を生成する際に、世界の詳細設定として参照します。物語の歴史、文化、地理、物理法則など、AIに記憶させておきたい情報を入力してください。' },
         { icon: <Icons.PenSquareIcon className="h-5 w-5 text-gray-300"/>, title: 'メモ (AIは非参照)', description: 'このメモはあなた専用です。AIはこの内容を見ることができないため、プロットのアイデアや今後の展開など、ネタバレを含む情報も安心して書き込めます。' },
-        { icon: <Icons.BookIcon className="h-5 w-5 text-orange-300"/>, title: '書き出し用説明文', description: 'HTML書き出し時に「世界観・用語集」として表示される説明文です。空の場合は、「詳細設定」の内容が使用されます。' },
+        { icon: <Icons.BookIcon className="h-5 w-5 text-orange-300"/>, title: '書き出し用説明文', description: 'HTML書き出し時に「用語説明」として表示される説明文です。空の場合は、「詳細設定」の内容が使用されます。' },
     ]
 };
 

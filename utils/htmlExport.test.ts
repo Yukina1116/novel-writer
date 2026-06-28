@@ -163,7 +163,7 @@ describe('composeExportSections (section ordering)', () => {
         expect(order).toEqual(sorted);
     });
 
-    it('should place characters BEFORE worlds (登場人物 → 世界観・用語集)', () => {
+    it('should place characters BEFORE worlds (登場人物 → 用語説明)', () => {
         const html = composeExportSections(sections);
         expect(html.indexOf('CHARACTERS_MARKER')).toBeLessThan(html.indexOf('WORLDS_MARKER'));
     });

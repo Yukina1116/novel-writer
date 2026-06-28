@@ -962,7 +962,7 @@ export const createDataSlice = (set, get): DataSlice => ({
                 </div>`;
         const worldsSection = worldSettingsToExport.length > 0 ? `
                     <div class="appendix">
-                        <h2>世界観・用語集</h2>
+                        <h2>用語説明</h2>
                         ${worldSettingsToExport.map(world => `
                             <div>
                                 <h3>${escapeHtml(world.name)}</h3>
