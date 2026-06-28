@@ -15,6 +15,7 @@ import {
     warnOnceInDev,
 } from '../utils';
 import { renderMarkdown } from '../utils/sanitizeHtml';
+import { buildCharacterAppendixHtml } from '../utils/htmlExport';
 import { FONT_MAP } from '../constants';
 import * as analysisApi from '../analysisApi';
 
@@ -960,18 +961,7 @@ export const createDataSlice = (set, get): DataSlice => ({
                         return `<div id="${anchorId}">${renderMarkdown(chunk.text, settings.filter(s => s.type === 'character'), knowledgeBase, aiSettings)}</div>`;
                     }).join('')}
                 </div>
-                ${charactersToExport.length > 0 ? `
-                    <div class="appendix">
-                        <h2>登場人物</h2>
-                        ${charactersToExport.map(char => `
-                            <div class="char-card">
-                                ${options.addCharacterImages && char.appearance?.imageUrl ? `<img src="${escapeHtml(char.appearance.imageUrl)}" alt="${escapeHtml(char.name)}">` : ''}
-                                <h3>${escapeHtml(char.name)} ${char.furigana ? `(${escapeHtml(char.furigana)})` : ''}</h3>
-                                <p>${escapeHtml(char.exportDescription || char.personality || '')}</p>
-                            </div>
-                        `).join('')}
-                    </div>
-                ` : ''}
+                ${buildCharacterAppendixHtml(charactersToExport, { addCharacterImages: options.addCharacterImages })}
                 ${worldSettingsToExport.length > 0 ? `
                     <div class="appendix">
                         <h2>世界観・用語集</h2>
