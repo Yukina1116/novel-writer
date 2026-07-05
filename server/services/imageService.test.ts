@@ -150,4 +150,8 @@ describe('aiClient.ts - モデル名 / global エンドポイント (static pin)
     it('getAiClient は Vertex モードで location: global を使う（asia-northeast1 では両モデルとも404のため、2026-07-05実機検証で確定）', () => {
         expect(aiClientSource).toContain("location: 'global'");
     });
+
+    it('GCP_LOCATION env var の分岐に依存しない（region 分岐が復活すると global 固定の意図が壊れるため明示的に禁止する。コメントでの言及は許容）', () => {
+        expect(aiClientSource).not.toMatch(/process\.env\.GCP_LOCATION/);
+    });
 });
