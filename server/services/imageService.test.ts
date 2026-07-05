@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { logger } from '../utils/logger';
 
 // aiClient 全体 (@google/genai の GoogleGenAI インスタンス構築) はモック整備コストが高いため、
 // wrapper である getAiClient のみを差し替える。これにより generateImage() 内の
@@ -25,10 +26,82 @@ const fulfilledNoImageResponse = () => ({
     candidates: [{ content: { parts: [{ text: 'safety block' }] } }],
 });
 
+// Issue #243: 安全フィルタ拒否等で画像データが欠落したケースの finishReason 捕捉検証用。
+const fulfilledNoImageResponseWithFinishReason = () => ({
+    candidates: [{
+        content: { parts: [{ text: 'safety block' }] },
+        finishReason: 'SAFETY',
+        finishMessage: 'Blocked due to safety guidelines.',
+    }],
+    promptFeedback: { blockReason: 'SAFETY' },
+});
+
 describe('generateImage - Nano Banana 2 Lite (Gemini 3.1 Flash-Lite Image) 並列2回呼び出し（quota制約による段階生成方式）', () => {
+    let warnSpy: ReturnType<typeof vi.spyOn>;
+
     beforeEach(() => {
         generateContentMock.mockReset();
         vertexAiModeMock = true;
+        warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    });
+
+    function imageOmittedCalls(): unknown[][] {
+        return warnSpy.mock.calls.filter(
+            (c) => (c[0] as { imageGenerationEvent?: string }).imageGenerationEvent === 'no-image-data'
+        );
+    }
+
+    it('Issue #243: finishReason: SAFETY で画像データ無し → logger.warn に finishReason / finishMessage / blockReason を記録する', async () => {
+        generateContentMock
+            .mockResolvedValueOnce(fulfilledImageResponse())
+            .mockResolvedValueOnce(fulfilledNoImageResponseWithFinishReason());
+        const { generateImage } = await import('./imageService');
+        const { PartialSuccessError } = await import('./usageService');
+
+        try {
+            await generateImage('prompt');
+            expect.unreachable('should have thrown');
+        } catch (err) {
+            expect(err).toBeInstanceOf(PartialSuccessError);
+        }
+
+        const calls = imageOmittedCalls();
+        expect(calls).toHaveLength(1);
+        const payload = calls[0]![0] as Record<string, unknown>;
+        expect(payload.finishReason).toBe('SAFETY');
+        expect(payload.finishMessage).toBe('Blocked due to safety guidelines.');
+        expect(payload.blockReason).toBe('SAFETY');
+    });
+
+    it('Issue #243: 画像データありの成功時は no-image-data ログを発火しない（false positive ゼロ）', async () => {
+        generateContentMock.mockResolvedValue(fulfilledImageResponse());
+        const { generateImage } = await import('./imageService');
+
+        await generateImage('prompt');
+
+        expect(imageOmittedCalls()).toHaveLength(0);
+    });
+
+    it('Issue #243: finishReason が undefined の応答でも例外を投げず、null として記録する（防御的ケース）', async () => {
+        generateContentMock.mockResolvedValue(fulfilledNoImageResponse());
+        const { generateImage } = await import('./imageService');
+
+        try {
+            await generateImage('prompt');
+            expect.unreachable('should have thrown');
+        } catch {
+            // 全滅ケースなので Error が throw される (別テストで既に検証済み)。ここでは
+            // logger.warn 呼出の有無のみ検証する。
+        }
+
+        const calls = imageOmittedCalls();
+        expect(calls).toHaveLength(2);
+        for (const call of calls) {
+            const payload = call[0] as Record<string, unknown>;
+            expect(payload.finishReason).toBeNull();
+            expect(payload.finishMessage).toBeNull();
+            expect(payload.blockReason).toBeNull();
+        }
     });
 
     it('2件とも画像を返す場合、2枚の data URI 配列を返す', async () => {

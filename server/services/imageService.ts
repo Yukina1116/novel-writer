@@ -2,6 +2,7 @@ import { GenerateContentResponse, Modality } from '@google/genai';
 import { getAiClient, IMAGE_MODEL, isVertexAiMode } from '../aiClient';
 import { PartialSuccessError } from './usageService';
 import { IMAGE_GENERATION_BATCH_SIZE } from '../../shared/imageGenerationConfig';
+import { logger } from '../utils/logger';
 
 // 並列数は quota 上限 (shared/imageGenerationConfig.ts 参照) に合わせる。4枚欲しい場合は
 // 呼び出し元 (ImageGenerationModal) の「追加生成」ボタンで本関数を再度呼び出す段階生成方式とする。
@@ -15,6 +16,20 @@ const extractImageDataUri = (response: GenerateContentResponse): string | null =
     }
     const mimeType = imagePart.inlineData.mimeType || 'image/png';
     return `data:${mimeType};base64,${imagePart.inlineData.data}`;
+};
+
+// Issue #243: 「呼出は成功したが画像データが無い」現象 (GCP実測 n=14 中 13 件が関与) の原因を
+// 事後判別可能にするため、安全フィルタ拒否等で使われる finishReason 系フィールドのみを記録する
+// (プロンプト本文・生成テキストは含めない、PII/機密混入を避けるため promptSafety.ts と同じ方針)。
+const logImageOmittedNoData = (response: GenerateContentResponse): void => {
+    const candidate = response.candidates?.[0];
+    logger.warn({
+        message: 'imageService: generateContent は成功したが画像データが含まれていない（安全フィルタ拒否の可能性）',
+        imageGenerationEvent: 'no-image-data',
+        finishReason: candidate?.finishReason ?? null,
+        finishMessage: candidate?.finishMessage ?? null,
+        blockReason: response.promptFeedback?.blockReason ?? null,
+    });
 };
 
 export const generateImage = async (prompt: string): Promise<string[]> => {
@@ -53,7 +68,11 @@ export const generateImage = async (prompt: string): Promise<string[]> => {
             continue;
         }
         const uri = extractImageDataUri(result.value);
-        if (uri !== null) images.push(uri);
+        if (uri !== null) {
+            images.push(uri);
+        } else {
+            logImageOmittedNoData(result.value);
+        }
     }
 
     if (images.length === NUM_IMAGES) {
