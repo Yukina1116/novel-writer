@@ -39,21 +39,37 @@ export const generateImage = async (prompt: string): Promise<string[]> => {
         )
     );
 
-    const images = settled
-        .filter((result): result is PromiseFulfilledResult<GenerateContentResponse> => result.status === 'fulfilled')
-        .map(result => extractImageDataUri(result.value))
-        .filter((uri): uri is string => uri !== null);
-
-    if (images.length < NUM_IMAGES) {
-        const successRatio = images.length / NUM_IMAGES;
-        if (successRatio > 0) {
-            throw new PartialSuccessError(
-                `画像生成に失敗しました: ${NUM_IMAGES}枚中${images.length}枚のみ成功しました。`,
-                successRatio,
-            );
+    const images: string[] = [];
+    const rejections: unknown[] = [];
+    for (const result of settled) {
+        if (result.status === 'rejected') {
+            rejections.push(result.reason);
+            continue;
         }
-        throw new Error('画像生成に失敗しました: レスポンスに画像データが含まれていません。');
+        const uri = extractImageDataUri(result.value);
+        if (uri !== null) images.push(uri);
     }
 
-    return images;
+    if (images.length === NUM_IMAGES) {
+        return images;
+    }
+
+    // 呼び出し自体が全滅した場合は元の SDK エラーをそのまま伝播する。
+    // ラップして握りつぶすと quota (429) / 認証 (401) / timeout (504) を判定する
+    // handleApiError の message ベース分類が効かなくなり、実際は一時的なレート
+    // 制限でも常に汎用 500 になってしまう (code review 指摘)。
+    if (images.length === 0 && rejections.length === NUM_IMAGES) {
+        throw rejections[0];
+    }
+
+    const successRatio = images.length / NUM_IMAGES;
+    const failureDetail = rejections.length > 0
+        ? ` (${rejections[0] instanceof Error ? rejections[0].message : String(rejections[0])})`
+        : '';
+    const message = `画像生成に失敗しました: ${NUM_IMAGES}枚中${images.length}枚のみ成功しました。${failureDetail}`;
+
+    if (successRatio > 0) {
+        throw new PartialSuccessError(message, successRatio);
+    }
+    throw new Error(message);
 };

@@ -128,4 +128,20 @@ describe('withUsageQuota - PartialSuccessError 按分 commit', () => {
         expect(cancelMock).toHaveBeenCalledWith('u1', REQ_ID, handle);
         expect(commitMock).not.toHaveBeenCalled();
     });
+
+    it('PartialSuccessError の commit 自体が失敗した場合、best-effort で cancel にフォールバックする（code review 指摘: reservation 残存防止）', async () => {
+        generateImageMock.mockRejectedValueOnce(
+            new PartialSuccessError('画像生成に失敗しました: 4枚中3枚のみ成功しました。', 0.75),
+        );
+        commitMock.mockRejectedValueOnce(new Error('firestore transient error'));
+
+        const res = await request(buildApp())
+            .post('/api/ai/image/generate')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ requestId: REQ_ID, prompt: 'test' });
+
+        expect(res.status).toBe(500);
+        expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 750, handle);
+        expect(cancelMock).toHaveBeenCalledWith('u1', REQ_ID, handle);
+    });
 });
