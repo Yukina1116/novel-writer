@@ -141,7 +141,7 @@ export const COLLECTION_OVERFLOW_MARKER =
  * `processed element` = recurse 通過後の値 (image / non-image marker 化後の短文を含む) を想定。
  * 「leaf-level marker 化済の element は cumulative 圧迫しない」を保証する。
  */
-function estimateElementBytes(value: unknown, onStringifyFailure?: () => void): number {
+export function estimateElementBytes(value: unknown, onStringifyFailure?: () => void): number {
   try {
     return Buffer.byteLength(JSON.stringify(value) ?? 'null', 'utf8');
   } catch {
