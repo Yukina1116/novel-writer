@@ -58,8 +58,8 @@ flowchart LR
     end
 
     subgraph GCP["🔵 GCP"]
-        Vertex["Vertex AI<br/>gemini-2.5-flash"]
-        Imagen["Vertex AI<br/>Imagen"]
+        Vertex["Vertex AI<br/>gemini-3.1-flash-lite"]
+        Imagen["Vertex AI (global)<br/>Nano Banana 2 Lite"]
         FS[("Firestore<br/>projects / 大規模配列 subcollection")]
     end
 
@@ -126,8 +126,8 @@ flowchart LR
     end
 
     subgraph AI["Vertex AI"]
-        g["gemini-2.5-flash"]
-        ig["Imagen"]
+        g["gemini-3.1-flash-lite"]
+        ig["Nano Banana 2 Lite"]
     end
 
     novelApi --> e1 --> nv

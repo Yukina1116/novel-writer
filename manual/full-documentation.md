@@ -160,7 +160,7 @@
      - **プロット要約:** `memoryScope`設定が`summary`または`full_context`の場合、プロットボードの「章のまとめ」を結合。
      - **小説本文:** `formatNovelContent`で整形。`memoryScope`設定に応じて、参照する本文の範囲（直近2ブロック、章全体、全文など）を決定。
   2. **システムプロンプト構築:** `generationMode`（執筆/相談）に応じて、AIの役割を定義するシステムプロンプトを構築します。これには、ペルソナ設定、出力形式（JSON）、各種フォーマットルール（セリフ、ナレッジリンクなど）が含まれます。
-  3. **APIリクエスト:** 構築したコンテキストとユーザーのプロンプトを結合し、システムプロンプトと共にGemini API (`gemini-2.5-flash`) に送信します。`responseMimeType: 'application/json'`と`responseSchema`を指定し、確実なJSON出力を要求します。
+  3. **APIリクエスト:** 構築したコンテキストとユーザーのプロンプトを結合し、システムプロンプトと共にGemini API (`gemini-3.1-flash-lite`) に送信します。`responseMimeType: 'application/json'`と`responseSchema`を指定し、確実なJSON出力を要求します。
   4. **レスポンス処理:** 返却されたJSONをパースし、`replyText`（AIの返答）、`newChunk`（生成された本文）、`suggestions`（提案）などを`aiSlice`に渡して状態を更新します。
 
 ### 相談モードと生成モードの違い

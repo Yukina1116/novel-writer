@@ -49,6 +49,21 @@ export class ReservationNotFoundError extends Error {
     }
 }
 
+// handler が「一部の並列サブタスクだけ成功したまま失敗扱いにする」ケース
+// (例: image/generate の 4 並列呼び出しで 3 件成功・1 件失敗) 向けの汎用エラー。
+// withUsageQuota はこれを検知すると、成功比率分だけ actualCost を commit し、
+// 実際には発生していないコストまで cancel で握りつぶさないようにする。
+// successRatio は (0, 1) の半開区間（0 なら通常の cancel で十分、1 なら本来 throw しない）。
+export class PartialSuccessError extends Error {
+    constructor(
+        message: string,
+        public readonly successRatio: number,
+    ) {
+        super(message);
+        this.name = 'PartialSuccessError';
+    }
+}
+
 // uid_yyyymm 形式の docId（UTC で月境界を判定。タイムゾーン依存を排除）。
 export function getUsageDocId(uid: string, date: Date = new Date()): string {
     const yyyy = date.getUTCFullYear();

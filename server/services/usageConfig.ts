@@ -11,8 +11,10 @@
 export type Tier = 'free';
 
 // 月間上限（sen 単位）。Tier 1 = 100 円。
-// gemini-2.5-flash テキスト生成 30 回相当（実コスト数十 sen）に十分なマージンを確保。
-// Imagen は 1 回 = 1000 sen (10 円) 相当に設定し、上限 100 円なら自動で最大 10 回に制限される。
+// gemini-3.1-flash-lite テキスト生成 30 回相当（実コスト数十 sen）に十分なマージンを確保。
+// 画像生成（Nano Banana 2 Lite、1 回 = 4 枚並列生成）は 1000 sen (10 円) 相当に設定し、
+// 上限 100 円なら自動で最大 10 回に制限される。旧 Imagen からのコスト実測は未完了
+// (2026-07 移行時点、docs/spec/model-migration/tasks.md タスク G 参照)。
 export const MONTHLY_LIMIT_SEN: Record<Tier, number> = {
     free: 10000,
 };

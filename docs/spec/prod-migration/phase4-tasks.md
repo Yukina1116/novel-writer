@@ -153,16 +153,17 @@ Phase 3 (PR #200, 2026-06-20) で dev → prod 運用フロー (ADR-0002 + runbo
 **Vertex AI Quota Increase Request (英文):**
 
 ```
-Subject: Quota Increase Request for Vertex AI (gemini-2.5-flash, Imagen) — novel-writer-prod
+Subject: Quota Increase Request for Vertex AI (gemini-3.1-flash-lite, Nano Banana 2 Lite) — novel-writer-prod
 
 Project ID: novel-writer-prod
-Region: asia-northeast1
+Region: asia-northeast1 (text) / global (image)
 Current default quota: <現状値、Google Cloud Console で確認>
 Requested quota: <希望値>
 Use case: AI-assisted novel writing SaaS. Each end user invokes
-gemini-2.5-flash for prose generation (~200-2000 input tokens, ~300-1000
-output tokens per call, average ~3 calls/session). Imagen invoked
-opt-in for character portrait generation (~1 call per session).
+gemini-3.1-flash-lite for prose generation (~200-2000 input tokens, ~300-1000
+output tokens per call, average ~3 calls/session). Nano Banana 2 Lite
+(gemini-3.1-flash-lite-image) invoked opt-in for character portrait
+generation (~4 parallel calls per session, 1 image per call).
 Expected DAU at public launch: <本田様見積もり>
 Expected concurrent peak: <本田様見積もり>
 Project status: Pre-launch, private testing complete (Phase 2 smoke

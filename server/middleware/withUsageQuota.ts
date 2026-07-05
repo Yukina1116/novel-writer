@@ -14,6 +14,7 @@ import {
     cancel,
     commit,
     DuplicateRequestError,
+    PartialSuccessError,
     QuotaExceededError,
     reserve,
     type ReservationHandle,
@@ -128,7 +129,14 @@ export const withUsageQuota = <TData>(
             res.json({ success: true, data });
         } catch (handlerErr) {
             try {
-                await cancel(uid, requestId, handle);
+                if (handlerErr instanceof PartialSuccessError) {
+                    // 一部の並列サブタスクだけ成功していた場合、実際に発生した分だけ
+                    // usedCost に計上する（cancel で全額なかったことにしない）。
+                    const actualCost = Math.round(estimatedCost * handlerErr.successRatio);
+                    await commit(uid, requestId, actualCost, handle);
+                } else {
+                    await cancel(uid, requestId, handle);
+                }
             } catch (cancelErr) {
                 logger.error({
                     message: 'usage:cancel failed',

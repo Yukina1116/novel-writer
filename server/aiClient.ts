@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 
 let client: GoogleGenAI | null = null;
+let imageClient: GoogleGenAI | null = null;
 
 export const getAiClient = (): GoogleGenAI => {
     if (client) return client;
@@ -32,5 +33,31 @@ export const getAiClient = (): GoogleGenAI => {
     return client;
 };
 
-export const TEXT_MODEL = 'gemini-2.5-flash';
-export const IMAGE_MODEL = 'imagen-4.0-generate-001';
+// Nano Banana 2 Lite (gemini-3.1-flash-lite-image) は Global エンドポイントのみ対応
+// (2026-07-05 移行時点の実測知見)。Vertex モードでは region 固定の getAiClient() とは
+// 別インスタンスが必要。API キーモードには region の概念がないため getAiClient() を共用する。
+export const getImageAiClient = (): GoogleGenAI => {
+    if (process.env.USE_VERTEX_AI !== 'true') {
+        return getAiClient();
+    }
+
+    if (imageClient) return imageClient;
+
+    const project = process.env.GCP_PROJECT;
+    if (!project) {
+        throw new Error(
+            'Vertex AI image client initialization failed: GCP_PROJECT env var must be set when USE_VERTEX_AI=true. ' +
+            'Check Cloud Run / GitHub Actions deploy workflow env-vars (.github/workflows/deploy*.yml).'
+        );
+    }
+    imageClient = new GoogleGenAI({
+        vertexai: true,
+        project,
+        location: 'global',
+    });
+
+    return imageClient;
+};
+
+export const TEXT_MODEL = 'gemini-3.1-flash-lite';
+export const IMAGE_MODEL = 'gemini-3.1-flash-lite-image';

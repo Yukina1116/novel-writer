@@ -301,9 +301,9 @@ gcloud billing budgets create \
 ### T13: Vertex AI quota / region 確認
 
 - `aiplatform.googleapis.com` 有効化済 (T2)
-- region: asia-northeast1 (dev と同 region で稼働実績あり)
-- default quota: gemini-2.5-flash / Imagen の通常利用範囲では十分
-- ¥1,000/月 cap の範囲内では default quota が制約にならない (Imagen 10 回 = ¥100 でも quota は余裕)
+- region: テキスト生成 (`gemini-3.1-flash-lite`) は asia-northeast1 (dev と同 region で稼働実績あり)、画像生成 (`gemini-3.1-flash-lite-image`, Nano Banana 2 Lite) は global エンドポイント限定 (2026-07 移行、docs/spec/model-migration/tasks.md 参照)
+- default quota: gemini-3.1-flash-lite / Nano Banana 2 Lite の通常利用範囲では十分
+- ¥1,000/月 cap の範囲内では default quota が制約にならない (画像生成 1 回 = 4 並列呼出、10 回 = ¥100 でも quota は余裕)
 
 実 quota 数値の正確な確認は Phase 2 の smoke test に持ち越し:
 - https://console.cloud.google.com/iam-admin/quotas?project=novel-writer-prod&service=aiplatform.googleapis.com

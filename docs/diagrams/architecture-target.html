@@ -67,7 +67,7 @@ flowchart LR
     subgraph FB["🔵 Firebase / GCP"]
         FAuth["Firebase Auth<br/>Google のみ"]
         FS[("Firestore<br/>=== メタのみ ===<br/>users/{uid}<br/>  email, plan,<br/>  usage.{yyyymm},<br/>  preferences")]
-        Vertex["Vertex AI<br/>gemini-2.5-flash<br/>Imagen"]
+        Vertex["Vertex AI<br/>gemini-3.1-flash-lite<br/>Nano Banana 2 Lite (global)"]
         GCS[("☁️ Cloud Storage<br/>backups/{uid}/*.enc<br/>(暗号化済み)")]
     end
 

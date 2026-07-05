@@ -35,7 +35,7 @@
 | W4 | line chart | Vertex AI 429 / 503 / 504 rate | server log filter `severity=ERROR AND jsonPayload.statusCode IN (429,503,504)` | 5 分 |
 | W5 | scorecard | Cloud Run instance count (current) | Cloud Run metric `instance_count` | 1 分 |
 | W6 | scorecard | Firestore ERROR レベル log 件数 (直近 5 分) | Firestore log filter `severity=ERROR` | 5 分 |
-| W7 | line chart | Vertex AI quota 利用率 (gemini-2.5-flash) | Vertex AI quota metric | 5 分 |
+| W7 | line chart | Vertex AI quota 利用率 (gemini-3.1-flash-lite) | Vertex AI quota metric | 5 分 |
 | W8 | line chart | usage `reserve` / `commit` / `cancel` 比率 | server log filter `withUsageQuota` | 5 分 |
 
 ### dashboard URL の保管

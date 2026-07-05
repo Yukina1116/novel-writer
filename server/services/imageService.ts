@@ -1,17 +1,59 @@
-import { GenerateImagesResponse } from '@google/genai';
-import { getAiClient, IMAGE_MODEL } from '../aiClient';
+import { GenerateContentResponse, Modality } from '@google/genai';
+import { getImageAiClient, IMAGE_MODEL } from '../aiClient';
+import { PartialSuccessError } from './usageService';
+
+const NUM_IMAGES = 4;
+
+const extractImageDataUri = (response: GenerateContentResponse): string | null => {
+    const parts = response.candidates?.[0]?.content?.parts ?? [];
+    const imagePart = parts.find(part => part.inlineData?.data);
+    if (!imagePart?.inlineData?.data) {
+        return null;
+    }
+    const mimeType = imagePart.inlineData.mimeType || 'image/png';
+    return `data:${mimeType};base64,${imagePart.inlineData.data}`;
+};
 
 export const generateImage = async (prompt: string): Promise<string[]> => {
-    const client = getAiClient();
-    const response: GenerateImagesResponse = await client.models.generateImages({
-        model: IMAGE_MODEL,
-        prompt,
-        config: {
-            numberOfImages: 4,
-            outputMimeType: 'image/png',
-            aspectRatio: '3:4',
-        },
-    });
+    const client = getImageAiClient();
 
-    return response.generatedImages.map(img => `data:image/png;base64,${img.image.imageBytes}`);
+    // Nano Banana 系 (Gemini image-generation family) は 1 呼び出し 1 枚のみ対応
+    // (candidateCount > 1 は非サポート)。4 枚グリッド選択の UX を維持するため並列 4 回呼び出す。
+    // allSettled で各呼び出しの成否を個別に把握し、Google 側に実際に課金が発生した
+    // 成功件数分だけ withUsageQuota で usedCost に計上する (PartialSuccessError 経由)。
+    // 4 枚揃わない場合は UX 上これまで通り全体を失敗として扱う (部分画像は返さない)。
+    const settled = await Promise.allSettled(
+        Array.from({ length: NUM_IMAGES }, () =>
+            client.models.generateContent({
+                model: IMAGE_MODEL,
+                contents: prompt,
+                config: {
+                    responseModalities: [Modality.TEXT, Modality.IMAGE],
+                    imageConfig: {
+                        aspectRatio: '3:4',
+                        imageSize: '1K',
+                        personGeneration: 'ALLOW_ADULT',
+                    },
+                },
+            })
+        )
+    );
+
+    const images = settled
+        .filter((result): result is PromiseFulfilledResult<GenerateContentResponse> => result.status === 'fulfilled')
+        .map(result => extractImageDataUri(result.value))
+        .filter((uri): uri is string => uri !== null);
+
+    if (images.length < NUM_IMAGES) {
+        const successRatio = images.length / NUM_IMAGES;
+        if (successRatio > 0) {
+            throw new PartialSuccessError(
+                `画像生成に失敗しました: ${NUM_IMAGES}枚中${images.length}枚のみ成功しました。`,
+                successRatio,
+            );
+        }
+        throw new Error('画像生成に失敗しました: レスポンスに画像データが含まれていません。');
+    }
+
+    return images;
 };
