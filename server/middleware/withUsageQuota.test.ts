@@ -80,13 +80,13 @@ describe('withUsageQuota - PartialSuccessError 按分 commit', () => {
             .send({ requestId: REQ_ID, prompt: 'test' });
 
         expect(res.status).toBe(200);
-        expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 1000, handle);
+        expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 1200, handle);
         expect(cancelMock).not.toHaveBeenCalled();
     });
 
-    it('PartialSuccessError(successRatio=0.75, 4枚中3枚成功) は成功比率分だけ commit し、cancel は呼ばれない', async () => {
+    it('PartialSuccessError(successRatio=0.5, 2枚中1枚成功) は成功比率分だけ commit し、cancel は呼ばれない（境界値: N=2唯一の部分成功比率）', async () => {
         generateImageMock.mockRejectedValueOnce(
-            new PartialSuccessError('画像生成に失敗しました: 4枚中3枚のみ成功しました。', 0.75),
+            new PartialSuccessError('画像生成に失敗しました: 2枚中1枚のみ成功しました。', 0.5),
         );
 
         const res = await request(buildApp())
@@ -95,22 +95,7 @@ describe('withUsageQuota - PartialSuccessError 按分 commit', () => {
             .send({ requestId: REQ_ID, prompt: 'test' });
 
         expect(res.status).toBe(500);
-        expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 750, handle);
-        expect(cancelMock).not.toHaveBeenCalled();
-    });
-
-    it('PartialSuccessError(successRatio=0.25, 4枚中1枚成功) も比率どおりに commit される（境界値: 最小成功数）', async () => {
-        generateImageMock.mockRejectedValueOnce(
-            new PartialSuccessError('画像生成に失敗しました: 4枚中1枚のみ成功しました。', 0.25),
-        );
-
-        const res = await request(buildApp())
-            .post('/api/ai/image/generate')
-            .set('Authorization', 'Bearer valid-token')
-            .send({ requestId: REQ_ID, prompt: 'test' });
-
-        expect(res.status).toBe(500);
-        expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 250, handle);
+        expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 600, handle);
         expect(cancelMock).not.toHaveBeenCalled();
     });
 
@@ -131,7 +116,7 @@ describe('withUsageQuota - PartialSuccessError 按分 commit', () => {
 
     it('PartialSuccessError の commit 自体が失敗した場合、best-effort で cancel にフォールバックする（code review 指摘: reservation 残存防止）', async () => {
         generateImageMock.mockRejectedValueOnce(
-            new PartialSuccessError('画像生成に失敗しました: 4枚中3枚のみ成功しました。', 0.75),
+            new PartialSuccessError('画像生成に失敗しました: 2枚中1枚のみ成功しました。', 0.5),
         );
         commitMock.mockRejectedValueOnce(new Error('firestore transient error'));
 
@@ -141,7 +126,7 @@ describe('withUsageQuota - PartialSuccessError 按分 commit', () => {
             .send({ requestId: REQ_ID, prompt: 'test' });
 
         expect(res.status).toBe(500);
-        expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 750, handle);
+        expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 600, handle);
         expect(cancelMock).toHaveBeenCalledWith('u1', REQ_ID, handle);
     });
 });
