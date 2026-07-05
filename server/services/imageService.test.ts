@@ -3,12 +3,12 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 // aiClient 全体 (@google/genai の GoogleGenAI インスタンス構築) はモック整備コストが高いため、
-// wrapper である getImageAiClient のみを差し替える。これにより generateImage() 内の
+// wrapper である getAiClient のみを差し替える。これにより generateImage() 内の
 // allSettled 集計・PartialSuccessError の成功比率計算を実際に実行して検証できる
 // (SDK 自体の mock 整備は不要)。
 const generateContentMock = vi.fn();
 vi.mock('../aiClient', () => ({
-    getImageAiClient: () => ({ models: { generateContent: generateContentMock } }),
+    getAiClient: () => ({ models: { generateContent: generateContentMock } }),
     IMAGE_MODEL: 'gemini-3.1-flash-lite-image',
 }));
 
@@ -147,7 +147,7 @@ describe('aiClient.ts - モデル名 / global エンドポイント (static pin)
         expect(aiClientSource).toContain("IMAGE_MODEL = 'gemini-3.1-flash-lite-image'");
     });
 
-    it('getImageAiClient は Vertex モードで location: global を使う', () => {
+    it('getAiClient は Vertex モードで location: global を使う（asia-northeast1 では両モデルとも404のため、2026-07-05実機検証で確定）', () => {
         expect(aiClientSource).toContain("location: 'global'");
     });
 });
