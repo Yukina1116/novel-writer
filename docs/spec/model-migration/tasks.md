@@ -89,7 +89,7 @@
 
 ### L. prod 実機再検証（Task L、2026-07-05）— 完了
 - [x] prod URL（`novel-writer-df263ic6wa-an.a.run.app`）に Playwright MCP でアクセス（既存ログイン済みセッション `hy.unimail.11@gmail.com` を再利用）
-- [x] 事前に `gcloud run revisions list` で PR #233（quota修正）の commit (`806dd40`) が現在の prod デプロイ済みリビジョン（`novel-writer-00013-mtb`, headSha `9483fad`）の祖先であることを確認（`git merge-base --is-ancestor`）。CI/CD が main push で自動デプロイする構成のため、追加デプロイ操作は不要だった
+- [x] 事前に `gcloud run revisions list` で PR #233（quota修正）の commit (`806dd40`) が現在の prod デプロイ済みリビジョン（`novel-writer-00013-mtb`, headSha `9483fad`）の祖先であることを確認（`git merge-base --is-ancestor`）。**訂正（2026-07-05、事後検証）**: 当初「CI/CDがmain pushで自動デプロイする構成のため追加デプロイ操作は不要」と記載したが誤り。`deploy-prod.yml` は `workflow_dispatch` 専用（push trigger なし、main自動デプロイは dev のみ）であり、`gh api` で当該デプロイ実行の `event` を確認したところ `workflow_dispatch`（本田様が手動実行、2026-07-05T09:50:32Z）だった。実態は「本田様が既に手動デプロイ済みだったため、Task L時点で追加デプロイが不要だった」であり、自動デプロイではない
 - [x] 事前に `gcloud logging read` で直近6時間の prod 上の image/generate 関連ログが皆無であることを確認し、quota が汚染されていないクリーンな状態であることを確認してから実行
 - [x] テスト用キャラクター「prodテスト商店主」（性別: 男性、年齢: 40代、容姿特徴: 丸眼鏡・優しい笑顔・エプロン姿）を新規作成
 - [x] Trial 1（初回2枚生成）: 「画像を生成」クリック → **1回目の試行で即成功**（429無し）。プロンプト通りの人物画像2枚が生成された
