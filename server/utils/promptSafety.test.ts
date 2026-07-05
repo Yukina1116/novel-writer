@@ -11,6 +11,7 @@ import {
   truncateOversizedStrings,
   sanitizeForPrompt,
   createWarnAggregator,
+  estimateElementBytes,
 } from './promptSafety';
 import type { SafetyEventName } from './promptSafetyEvents';
 
@@ -1569,5 +1570,14 @@ describe('bytes-estimation-failed paired signal (Issue #149 残-B)', () => {
     const input = { items: Array.from({ length: 10 }, (_, i) => ({ id: i })) };
     stripPromptHeavyFields(input);
     expect(bytesEstimationCalls().length).toBe(0);
+  });
+
+  it('AC-3 backward compat (Issue #155): estimateElementBytes(value) を callback 未指定で直接呼んでも stringify failure 時に silent 4 byte fallback を返し、warn を emit しない', () => {
+    // Issue #155: 従来は stripPromptHeavyFields 経由の間接 pin のみで、callback 未指定
+    // 経路 (estimateElementBytes 単独呼出) を直接検証する test が存在しなかった。
+    const result = estimateElementBytes(BigInt(1));
+    expect(result).toBe(4);
+    expect(bytesEstimationCalls().length).toBe(0);
+    expect(bytesEstimationBatchCalls().length).toBe(0);
   });
 });
