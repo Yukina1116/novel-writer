@@ -44,7 +44,7 @@ AI駆動の小説執筆支援アプリ（小説らいたーver16）。React + Ty
 ### API層（サーバーサイド）
 
 ```
-Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI (gemini-2.5-flash) / Firestore
+Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI (gemini-3.1-flash-lite) / Firestore
 ```
 
 全 `/api/ai/*` route は `mountAiRoutes` で `verifyIdToken` middleware (M3 PR-E) を一括 mount し、各 endpoint は `withUsageQuota` 高階関数 (M3 PR-F) で reserve→handler→commit/cancel の 3 phase ラップ。FE `apiClient.ts` (M3 PR-G) が Bearer 自動付与 + `requestId` 自動生成 + 401/429/503/409 共通分類器を担当。

@@ -14,6 +14,7 @@ import {
     cancel,
     commit,
     DuplicateRequestError,
+    PartialSuccessError,
     QuotaExceededError,
     reserve,
     type ReservationHandle,
@@ -127,17 +128,49 @@ export const withUsageQuota = <TData>(
             }
             res.json({ success: true, data });
         } catch (handlerErr) {
-            try {
-                await cancel(uid, requestId, handle);
-            } catch (cancelErr) {
-                logger.error({
-                    message: 'usage:cancel failed',
-                    route: routeKey,
-                    uid,
-                    requestId,
-                    estimatedCost,
-                    error: serializeError(cancelErr),
-                });
+            if (handlerErr instanceof PartialSuccessError) {
+                // 一部の並列サブタスクだけ成功していた場合、実際に発生した分だけ
+                // usedCost に計上する（cancel で全額なかったことにしない）。
+                const actualCost = Math.round(estimatedCost * handlerErr.successRatio);
+                try {
+                    await commit(uid, requestId, actualCost, handle);
+                } catch (commitErr) {
+                    // commit 自体が失敗した場合、reservation を残すと次回以降の上限判定に
+                    // 加算され続ける (成功パスの commit 失敗時と同じ理由)。best-effort で
+                    // cancel にフォールバックする。
+                    logger.error({
+                        message: 'usage:partial-success-commit failed',
+                        route: routeKey,
+                        uid,
+                        requestId,
+                        actualCost,
+                        error: serializeError(commitErr),
+                    });
+                    try {
+                        await cancel(uid, requestId, handle);
+                    } catch (cancelErr) {
+                        logger.error({
+                            message: 'usage:cancel-after-partial-success-commit-failure also failed',
+                            route: routeKey,
+                            uid,
+                            requestId,
+                            error: serializeError(cancelErr),
+                        });
+                    }
+                }
+            } else {
+                try {
+                    await cancel(uid, requestId, handle);
+                } catch (cancelErr) {
+                    logger.error({
+                        message: 'usage:cancel failed',
+                        route: routeKey,
+                        uid,
+                        requestId,
+                        estimatedCost,
+                        error: serializeError(cancelErr),
+                    });
+                }
             }
             const { status, message } = handleApiError(handlerErr, routeKey, 'ai');
             res.status(status).json({ success: false, error: message });
