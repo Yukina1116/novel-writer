@@ -1,6 +1,6 @@
 # AI モデル置き換え計画: Gemini 3.1 Flash-Lite / Nano Banana 2 Lite 移行
 
-- **Status**: PR #230 実装 + PR #231 リージョン修正は **完了・実機検証済み**。PR #233（画像生成の段階呼び出し化・quotaバグ修正）は **実装・単体テスト・dev実機検証完了**（初回2枚生成・既存画像保持・selectedImageクリアを確認、「追加生成」成功時の追記はquota回復遅延のためdev実機で直接未確認）。**prod デプロイ・実機再検証はこれから実施**（本田様承認済み、2026-07-05）
+- **Status**: PR #230 実装 + PR #231 リージョン修正 + PR #233（画像生成の段階呼び出し化・quotaバグ修正）とも **完了・prod実機検証済み**（2026-07-05、Task L）。prod で初回2枚生成・「追加生成」による2枚追記（計4枚表示）とも**いずれも1回目の試行で成功**（429無し）。Cloud Run 実ログ（HTTPステータス・アプリケーションログとも）で2回とも成功を確認済み。本アップデートは prod 含め完全に完了。
 - **計画策定**: 2026-07-05（Fable 5 で計画・評価、実装は Sonnet 5 が担当）
 - **経緯**: Gemini 2.5 Flash が 2026-10-16 以降 discontinue 予定（公式 deprecations ページ、"earliest possible date" = 暫定）であることを受け、本田様指示によりテキスト・画像両モデルを完全置き換える。
 - **実装後の重要な訂正 (2026-07-05, PR #231)**: 計画時点では「テキスト生成は `asia-northeast1` のまま」としていたが、prod 実機検証（Playwright MCP でのUI操作 → Cloud Run 実ログ確認）で `gemini-3.1-flash-lite` が `asia-northeast1` では **404 NOT_FOUND**（Publisher model not found）であることが判明。事前のWeb調査では公式ドキュメントページがJSレンダリングのため地域可用性を確認しきれなかった。対応として `getAiClient()` 自体を `location: 'global'` に変更し、画像専用に用意していた `getImageAiClient()` は区別する理由がなくなったため削除・`getAiClient()` に統合した。以降のタスク本文中の `getImageAiClient()` への言及は歴史的経緯として残すが、**最終実装は単一の `getAiClient()`（global固定）** である。
@@ -79,13 +79,23 @@
 - [x] `components/ImageGenerationModal.tsx`: `handleGenerate` に `append` パラメータを追加。「追加生成」ボタンを新設し、既存画像・選択状態を保持したまま新規2枚を末尾に追記
 - [x] コンバージョン最適化（無料枠の専用サブ上限、有料版導線CTA等）は Codex `plan` mode セカンドオピニオンで検討したが、本田様判断でスコープ外とし [novel-writer#232](https://github.com/Yukina1116/novel-writer/issues/232) に切り出し
 
-### I. dev/prod 実機再検証（段階呼び出し方式、H 完了後）— dev 完全達成、prod 未実施
+### I. dev/prod 実機再検証（段階呼び出し方式、H 完了後）— dev・prod とも完全達成
 - [x] feature ブランチ → PR #233 作成 → 番号認可マージ → dev 自動デプロイ成功（`novel-writer-ramnh3ulya-an.a.run.app`）
 - [x] Playwright MCP で「AI 立ち絵生成」を実行し、初回2枚の data URI が返ることを確認（1回目は `PartialSuccessError`（2枚中1枚成功）で500、2回目のリトライで2枚とも成功）
 - [x] 選択状態のまま「追加生成」を押しても `selectedImage` が正しくクリアされ、左パネルがチャットUIに戻ることを確認（code-review CONFIRMED 修正が実機でも機能）
 - [x] **quota 超過（429）・コンテンツ関連失敗（両方成功だが画像データ無し）のいずれでも、既存の生成済み画像がグリッドから消えないことを複数回確認**（UI破綻なし）
 - [x] **「追加生成」ボタンが成功し、既存2枚を残したまま新規2枚が追記されることを確認** → **2026-07-05 追記で達成確認**。初回6回試行は quota 超過（429）が15分以上継続し失敗が続いたが、約2時間以上のquota回復待ち後に別プロンプト（「40代の商店主の男性、丸眼鏡、優しい笑顔、エプロン姿」）でdev実機再試行したところ、Trial 1（初回2枚生成）・Trial 2（「追加で2枚生成する」クリック）とも**いずれも1回目の試行で成功**（429無し）。`browser_snapshot` で既存2枚（Generated character 1, 2）を保持したまま新規2枚（3, 4）が追記され計4枚表示されることを直接確認。Trial 1 はさらに `gcloud logging read` でエラー無しも確認済み（Trial 2 は network 200×2 + DOM 確認のみで、Cloud Runログの明示確認は未実施、下記参照）
-- [ ] Trial 2（追記成功）に対応する Cloud Run ログの明示確認 → 未実施のまま prod 検証（次回セッション）に持ち越し。Trial 1 分の成功ログは確認済みのため大きなリスクではないが、AC#9 の完全クローズには含める
+- [x] Trial 2（追記成功）に対応する Cloud Run ログの明示確認 → dev分は当時未実施のままだったが、下記 prod 検証（タスク L）で Trial 1/Trial 2 とも `gcloud logging read` で 200 応答 + WARNING 以上のログ無しを確認し、AC#9 を完全クローズ
+
+### L. prod 実機再検証（Task L、2026-07-05）— 完了
+- [x] prod URL（`novel-writer-df263ic6wa-an.a.run.app`）に Playwright MCP でアクセス（既存ログイン済みセッション `hy.unimail.11@gmail.com` を再利用）
+- [x] 事前に `gcloud run revisions list` で PR #233（quota修正）の commit (`806dd40`) が現在の prod デプロイ済みリビジョン（`novel-writer-00013-mtb`, headSha `9483fad`）の祖先であることを確認（`git merge-base --is-ancestor`）。CI/CD が main push で自動デプロイする構成のため、追加デプロイ操作は不要だった
+- [x] 事前に `gcloud logging read` で直近6時間の prod 上の image/generate 関連ログが皆無であることを確認し、quota が汚染されていないクリーンな状態であることを確認してから実行
+- [x] テスト用キャラクター「prodテスト商店主」（性別: 男性、年齢: 40代、容姿特徴: 丸眼鏡・優しい笑顔・エプロン姿）を新規作成
+- [x] Trial 1（初回2枚生成）: 「画像を生成」クリック → **1回目の試行で即成功**（429無し）。プロンプト通りの人物画像2枚が生成された
+- [x] Trial 2（追加生成）: 「追加で2枚生成する」クリック → **1回目の試行で即成功**（429無し）。既存2枚を保持したまま新規2枚が追記され、計4枚表示を確認
+- [x] `browser_network_requests` で両トライアルとも `POST /api/ai/image/generate` が `200` であることを確認
+- [x] `gcloud logging read` で両トライアルの Cloud Run リクエストログが両方とも `200`（13:25:14 / 13:28:29 UTC）であること、および該当時間帯に `severity>=WARNING` のログが一件も無いことを確認
 
 **新たな重要な発見（quota 回復時間、2026-07-05 dev実機検証）**: `generate_content_image_gen_per_project_per_base_model_global` quota (2 req/分) は、バースト消費後の回復に**想定していた「同一1分ウィンドウ」よりも大幅に長い時間**（実測で15分以上）を要することが判明。当初のリスク評価「同一1分ウィンドウ内の連続操作でのみ429が起こり得る」は、実際にはより保守的（長時間ブロックされ得る）と修正する必要がある。詳細はリスク欄参照。
 
@@ -93,13 +103,13 @@
 
 1. `TEXT_MODEL === 'gemini-3.1-flash-lite'` かつ `IMAGE_MODEL === 'gemini-3.1-flash-lite-image'`（検証: テスト）— ✅ 達成
 2. 小説続き生成 API → 200 + 生成テキスト（検証: 実機）— ✅ 達成（PR #231 修正後、prod実機で再確認済み）
-3. 画像生成 API（人物プロンプト）→ 200 + **2 枚**の data URI 配列、または一部失敗時は成功比率に応じた `PartialSuccessError`（検証: 実機・Playwright MCP、タスク I）— ✅ **dev 達成**（初回2枚生成を実機確認）。prod は未実施
+3. 画像生成 API（人物プロンプト）→ 200 + **2 枚**の data URI 配列、または一部失敗時は成功比率に応じた `PartialSuccessError`（検証: 実機・Playwright MCP、タスク I・L）— ✅ **dev・prod とも達成**（prod は 2026-07-05 Task L で初回2枚生成を実機確認）
 4. 画像レスポンスに画像 part が無い場合 → 明示エラーで throw し、route 層で分類される（検証: コード + テスト pin）— ✅ 達成
 5. ~~`imageApi.ts` / `ImageGenerationModal.tsx` / `server/routes/image.ts` に diff が無い~~ → **2026-07-05 訂正**: quota バグ修正のため `ImageGenerationModal.tsx` に「追加生成」ボタンの diff が発生（`imageApi.ts`/`server/routes/image.ts` は無変更のまま）— ✅ 達成（訂正後の基準として）
 6. `npm run lint` / `npm run test` 全 PASS（検証: CI）— ✅ 達成
 7. リポジトリ内に `gemini-2.5-flash` / `imagen-4.0` の実効参照が残っていない（検証: grep。履歴系ドキュメント docs/handoff/ 等は除外）— ✅ 達成
 8. テキスト・画像とも `asia-northeast1` ではなく `global` エンドポイントで疎通すること — ✅ 達成
-9. **（本PR で追加）** 画像生成1回あたりの並列呼び出し数が Vertex AI quota（2 req/分）以下に収まる設計であること（quota超過を「常に起こる」構造的バグから「一定期間内の連続操作でのみ起こり得る」例外的事象に縮小する）。初回生成2枚 + 追加生成ボタンで2枚ずつ追記できること（検証: 実機・Playwright MCP）— ✅ **dev 完全達成**（初回2枚生成・「追加生成」による2枚追記（計4枚表示）とも dev 実機で確認済み。quota 回復に想定より長時間かかったため即座には確認できなかったが、約2時間以上の回復待ち後の再試行で成功。static pin テスト + 4種のコードレビューでのロジック検証と合わせて二重に裏付け済み。既存画像がquota超過時も失われないことも確認済み ✅）。**prod は未実施**（次回タスク L）
+9. **（本PR で追加）** 画像生成1回あたりの並列呼び出し数が Vertex AI quota（2 req/分）以下に収まる設計であること（quota超過を「常に起こる」構造的バグから「一定期間内の連続操作でのみ起こり得る」例外的事象に縮小する）。初回生成2枚 + 追加生成ボタンで2枚ずつ追記できること（検証: 実機・Playwright MCP）— ✅ **dev・prod とも完全達成**（初回2枚生成・「追加生成」による2枚追記（計4枚表示）とも dev・prod 実機で確認済み。dev は quota 回復に想定より長時間かかったため即座には確認できなかったが、約2時間以上の回復待ち後の再試行で成功。**prod は 2026-07-05 Task L で Trial 1・Trial 2 とも1回目の試行で即成功**（429無し、Cloud Run 実ログで200応答・エラーログ無しを確認）。static pin テスト + 4種のコードレビューでのロジック検証と合わせて三重に裏付け済み）
 
 ## 品質ゲート
 
