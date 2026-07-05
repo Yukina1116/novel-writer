@@ -37,3 +37,7 @@ export const getAiClient = (): GoogleGenAI => {
 
 export const TEXT_MODEL = 'gemini-3.1-flash-lite';
 export const IMAGE_MODEL = 'gemini-3.1-flash-lite-image';
+
+// Vertex AI 専用パラメータ (例: imageConfig.personGeneration) は Gemini Developer API
+// (APIキーモード) では SDK 側で reject されるため、呼び出し側で分岐する必要がある。
+export const isVertexAiMode = (): boolean => process.env.USE_VERTEX_AI === 'true';

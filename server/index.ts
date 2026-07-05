@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import { errorHandlerMiddleware, CorsRejectError } from './middleware/errorHandler';
 import { probeFirebaseAuth } from './startupProbe';
 import { mountAiRoutes } from './aiRoutes';
+import { isVertexAiMode } from './aiClient';
 import { logger, serializeError } from './utils/logger';
 
 import usersRoutes from './routes/users';
@@ -153,7 +154,7 @@ async function startServer() {
     app.use(errorHandlerMiddleware);
 
     app.listen(PORT, '0.0.0.0', () => {
-        const mode = process.env.USE_VERTEX_AI === 'true' ? 'Vertex AI' : 'API Key';
+        const mode = isVertexAiMode() ? 'Vertex AI' : 'API Key';
         logger.info({
             message: `Server running on http://localhost:${PORT}`,
             port: PORT,
