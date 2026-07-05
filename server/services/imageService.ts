@@ -1,5 +1,5 @@
 import { GenerateContentResponse, Modality } from '@google/genai';
-import { getAiClient, IMAGE_MODEL } from '../aiClient';
+import { getAiClient, IMAGE_MODEL, isVertexAiMode } from '../aiClient';
 import { PartialSuccessError } from './usageService';
 import { IMAGE_GENERATION_BATCH_SIZE } from '../../shared/imageGenerationConfig';
 
@@ -35,7 +35,10 @@ export const generateImage = async (prompt: string): Promise<string[]> => {
                     imageConfig: {
                         aspectRatio: '3:4',
                         imageSize: '1K',
-                        personGeneration: 'ALLOW_ADULT',
+                        // personGeneration は Vertex AI 専用パラメータ。Gemini Developer API
+                        // (APIキーモード) では SDK が client-side で reject するため、
+                        // Vertex AI モード時のみ含める (Codex review 2026-07-05 P1 指摘)。
+                        ...(isVertexAiMode() ? { personGeneration: 'ALLOW_ADULT' as const } : {}),
                     },
                 },
             })
