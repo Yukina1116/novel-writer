@@ -301,9 +301,9 @@ gcloud billing budgets create \
 ### T13: Vertex AI quota / region 確認
 
 - `aiplatform.googleapis.com` 有効化済 (T2)
-- region: テキスト生成 (`gemini-3.1-flash-lite`) は asia-northeast1 (dev と同 region で稼働実績あり)、画像生成 (`gemini-3.1-flash-lite-image`, Nano Banana 2 Lite) は global エンドポイント限定 (2026-07 移行、docs/spec/model-migration/tasks.md 参照)
-- default quota: gemini-3.1-flash-lite / Nano Banana 2 Lite の通常利用範囲では十分
-- ¥1,000/月 cap の範囲内では default quota が制約にならない (画像生成 1 回 = 4 並列呼出、10 回 = ¥100 でも quota は余裕)
+- region: テキスト生成 (`gemini-3.1-flash-lite`)・画像生成 (`gemini-3.1-flash-lite-image`, Nano Banana 2 Lite) とも **global エンドポイント限定**（2026-07-05 prod 実機検証で asia-northeast1 は両モデルとも 404 NOT_FOUND と判明、docs/spec/model-migration/tasks.md PR #231 参照。regional 据え置きの選択肢自体が無い）
+- default quota: `generate_content_image_gen_per_project_per_base_model_global` が **2 req/分/プロジェクト/モデル**（`gcloud alpha services quota list` で実測）。当初の「1回=4並列呼出」設計はこの quota を常に超過する構造的バグだったため、1回=2並列呼出+「追加生成」ボタンでの段階呼出方式に修正済み（docs/spec/model-migration/tasks.md タスク H 参照）
+- ¥1,000/月 cap の範囲内では default quota が制約にならない (画像生成 1 回 = 2 並列呼出・1200 sen、8 回で ¥96 でも quota は余裕)
 
 実 quota 数値の正確な確認は Phase 2 の smoke test に持ち越し:
 - https://console.cloud.google.com/iam-admin/quotas?project=novel-writer-prod&service=aiplatform.googleapis.com

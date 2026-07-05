@@ -54,7 +54,7 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 | `/api/ai/novel/generate` | novelService + `withUsageQuota('novel/generate', 200 sen)` | 小説続き生成 |
 | `/api/ai/character/{update,reply,image-prompt}` | characterService + `withUsageQuota('character/*', 100 sen)` | キャラクター作成・更新 |
 | `/api/ai/world/{update,reply}` | worldService + `withUsageQuota('world/*', 100 sen)` | 世界観設定 |
-| `/api/ai/image/generate` | imageService + `withUsageQuota('image/generate', 1000 sen)` | Imagen画像生成 |
+| `/api/ai/image/generate` | imageService + `withUsageQuota('image/generate', 1200 sen)` | AI立ち絵生成（Nano Banana 2 Lite、quota制約により1回2枚の段階生成） |
 | `/api/ai/utility/{names,knowledge-name,extract-character}` | utilityService + `withUsageQuota('utility/*', 50-100 sen)` | 名前生成、キャラ抽出等 |
 | `/api/ai/analysis/import` | analysisService + `withUsageQuota('analysis/import', 200 sen)` | テキストインポート分析 |
 | `/api/users/init` | verifyIdToken middleware → Firestore `users/{uid}` を transaction で冪等初期化（M2 PR-C） | ログイン直後のユーザーメタ初期化、M7-α で `termsAcceptedAt` / `termsVersion` / `currentTermsVersion` をレスポンスに追加 |

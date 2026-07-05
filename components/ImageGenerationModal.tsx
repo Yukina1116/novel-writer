@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import * as Icons from '../icons';
 import { ChatMessage } from '../types';
 import { useRequiresAuth } from '../hooks/useRequiresAuth';
+import { IMAGE_GENERATION_BATCH_SIZE } from '../shared/imageGenerationConfig';
 
 // --- Image Generation Modal ---
 export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePrompt, onApplyImage, characterDescription, isGenerating: isGeneratingProp }) => {
@@ -54,14 +55,16 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
     
     const isBusy = isLoadingChat || isGeneratingImages;
 
-    const handleGenerate = async (promptToUse: string) => {
+    const handleGenerate = async (promptToUse: string, append: boolean = false) => {
         setIsGeneratingImages(true);
-        setGeneratedImages([]);
         setSelectedImage(null);
+        if (!append) {
+            setGeneratedImages([]);
+        }
         setBasePrompt(promptToUse);
         const result = await onGenerate(promptToUse);
         if (result) {
-            setGeneratedImages(result);
+            setGeneratedImages(prev => append ? [...prev, ...result] : result);
         } else {
             // Handle error case, maybe show a message
         }
@@ -261,21 +264,31 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
                     <div className="w-full md:w-1/2 flex flex-col p-4 border-b md:border-b-0 md:border-r border-gray-700 min-h-0">{renderLeftPanel()}</div>
                     <div className="w-full md:w-1/2 p-4 flex flex-col overflow-y-auto min-h-0">
                         <div className="w-full grid grid-cols-2 gap-4">
-                            {isGeneratingImages ? (
-                                Array(2).fill(0).map((_, i) => <div key={i} className="bg-gray-900/50 rounded-lg flex items-center justify-center aspect-w-3 aspect-h-4"><Icons.LoaderIcon className="h-10 w-10 text-cyan-400" /></div>)
-                            ) : generatedImages.length > 0 ? (
-                                generatedImages.map((image, index) => (
-                                    <div key={index} onClick={() => setSelectedImage(image)} className={`relative rounded-lg overflow-hidden cursor-pointer group transition-all duration-300 ${selectedImage === image ? 'ring-4 ring-blue-500' : 'ring-2 ring-transparent hover:ring-blue-500'}`}>
-                                        <div className="aspect-w-3 aspect-h-4">
-                                            <img src={image} alt={`Generated character ${index + 1}`} className="w-full h-full object-cover" />
-                                        </div>
-                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><p className="text-white font-bold">選択</p></div>
+                            {generatedImages.map((image, index) => (
+                                <div key={index} onClick={() => setSelectedImage(image)} className={`relative rounded-lg overflow-hidden cursor-pointer group transition-all duration-300 ${selectedImage === image ? 'ring-4 ring-blue-500' : 'ring-2 ring-transparent hover:ring-blue-500'}`}>
+                                    <div className="aspect-w-3 aspect-h-4">
+                                        <img src={image} alt={`Generated character ${index + 1}`} className="w-full h-full object-cover" />
                                     </div>
-                                ))
-                            ) : (
+                                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><p className="text-white font-bold">選択</p></div>
+                                </div>
+                            ))}
+                            {isGeneratingImages && (
+                                Array(IMAGE_GENERATION_BATCH_SIZE).fill(0).map((_, i) => <div key={`loading-${i}`} className="bg-gray-900/50 rounded-lg flex items-center justify-center aspect-w-3 aspect-h-4"><Icons.LoaderIcon className="h-10 w-10 text-cyan-400" /></div>)
+                            )}
+                            {!isGeneratingImages && generatedImages.length === 0 && (
                                 <div className="col-span-2 min-h-[300px] bg-gray-900/50 rounded-lg flex items-center justify-center"><p className="text-gray-500">ここに画像が生成されます</p></div>
                             )}
                         </div>
+                        {!isGeneratingImages && generatedImages.length > 0 && (
+                            <button
+                                onClick={() => handleGenerate(basePrompt, true)}
+                                disabled={!canUseAi || isBusy}
+                                title={!canUseAi ? aiBlockedReason : undefined}
+                                className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-700 text-sm rounded-md hover:bg-gray-600 transition text-white disabled:bg-gray-600 disabled:cursor-not-allowed"
+                            >
+                                <Icons.PlusCircleIcon className="h-5 w-5" /> 追加で{IMAGE_GENERATION_BATCH_SIZE}枚生成する
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>

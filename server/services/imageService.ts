@@ -1,8 +1,11 @@
 import { GenerateContentResponse, Modality } from '@google/genai';
 import { getAiClient, IMAGE_MODEL } from '../aiClient';
 import { PartialSuccessError } from './usageService';
+import { IMAGE_GENERATION_BATCH_SIZE } from '../../shared/imageGenerationConfig';
 
-const NUM_IMAGES = 4;
+// 並列数は quota 上限 (shared/imageGenerationConfig.ts 参照) に合わせる。4枚欲しい場合は
+// 呼び出し元 (ImageGenerationModal) の「追加生成」ボタンで本関数を再度呼び出す段階生成方式とする。
+const NUM_IMAGES = IMAGE_GENERATION_BATCH_SIZE;
 
 const extractImageDataUri = (response: GenerateContentResponse): string | null => {
     const parts = response.candidates?.[0]?.content?.parts ?? [];
@@ -18,10 +21,10 @@ export const generateImage = async (prompt: string): Promise<string[]> => {
     const client = getAiClient();
 
     // Nano Banana 系 (Gemini image-generation family) は 1 呼び出し 1 枚のみ対応
-    // (candidateCount > 1 は非サポート)。4 枚グリッド選択の UX を維持するため並列 4 回呼び出す。
+    // (candidateCount > 1 は非サポート)。NUM_IMAGES 分だけ並列呼び出す。
     // allSettled で各呼び出しの成否を個別に把握し、Google 側に実際に課金が発生した
     // 成功件数分だけ withUsageQuota で usedCost に計上する (PartialSuccessError 経由)。
-    // 4 枚揃わない場合は UX 上これまで通り全体を失敗として扱う (部分画像は返さない)。
+    // NUM_IMAGES 枚揃わない場合は UX 上これまで通り全体を失敗として扱う (部分画像は返さない)。
     const settled = await Promise.allSettled(
         Array.from({ length: NUM_IMAGES }, () =>
             client.models.generateContent({

@@ -12,9 +12,10 @@ export type Tier = 'free';
 
 // 月間上限（sen 単位）。Tier 1 = 100 円。
 // gemini-3.1-flash-lite テキスト生成 30 回相当（実コスト数十 sen）に十分なマージンを確保。
-// 画像生成（Nano Banana 2 Lite、1 回 = 4 枚並列生成）は 1000 sen (10 円) 相当に設定し、
-// 上限 100 円なら自動で最大 10 回に制限される。旧 Imagen からのコスト実測は未完了
-// (2026-07 移行時点、docs/spec/model-migration/tasks.md タスク G 参照)。
+// 画像生成（Nano Banana 2 Lite、1 回 = 2 枚並列生成、quota 制約により段階生成方式）は
+// 1200 sen (12 円) 相当に設定。Google Cloud 公式料金 ($0.034/枚、1K 解像度、2026-07-05
+// cloud.google.com/vertex-ai/generative-ai/pricing で確認) から実コスト ≈11円 (161円/USD)
+// に約9%マージンを載せた値。上限100円なら実質最大8回 (16枚) 程度に制限される。
 export const MONTHLY_LIMIT_SEN: Record<Tier, number> = {
     free: 10000,
 };
@@ -28,7 +29,7 @@ export const ROUTE_COST_SEN = {
     'character/image-prompt': 100,
     'world/update': 100,
     'world/reply': 100,
-    'image/generate': 1000,
+    'image/generate': 1200,
     'utility/names': 50,
     'utility/knowledge-name': 50,
     'utility/extract-character': 100,
