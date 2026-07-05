@@ -128,7 +128,7 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 - **開発**: `novel-writer-dev`（課金有効、asia-northeast1）
 - **本番**: `novel-writer-prod`（課金クォータ引き上げ待ち）
 - **ランタイム**: Cloud Run + Vertex AI（Workload Identity認証）
-- **CI/CD**: GitHub Actions → WIF → Cloud Run自動デプロイ（mainブランチ）
+- **CI/CD**: GitHub Actions → WIF → Cloud Run デプロイ。**dev のみ** `deploy.yml` が main push で自動デプロイ、**prod は** `deploy-prod.yml` が `workflow_dispatch` 専用（手動実行のみ、push trigger なし）。prod への反映確認は `gcloud run services describe --format="value(spec.template.spec.containers[0].image)"` で実際のデプロイ済みイメージのcommit shaを確認すること（自動反映を前提にしない）
 - **Docker**: マルチステージビルド（`Dockerfile`）。Vite の build-time 静的置換のため、`VITE_FIREBASE_*` 6 変数は `docker build --build-arg` で注入する必要があり、GitHub Secrets → workflow の `env:` ブロック → shell 変数の順で受け渡す（直接 `${{ secrets.* }}` を `run:` に展開しない、command injection 回避）
 - **direnv**: `.envrc` で `CLOUDSDK_ACTIVE_CONFIG_NAME=novel-writer-dev` 自動設定 + `gh auth switch --user yasushi-honda` 自動実行（direnv は shell の interactive hook (`eval "$(direnv hook bash)"`) に依存し、Claude Code Bash ツールが起動する非対話 subshell では発火しないため、補助として下記 §5 の `.claude/hooks/` で吸収）
 
