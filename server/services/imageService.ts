@@ -1,5 +1,5 @@
 import { GenerateContentResponse, Modality } from '@google/genai';
-import { getImageAiClient, IMAGE_MODEL } from '../aiClient';
+import { getAiClient, IMAGE_MODEL } from '../aiClient';
 import { PartialSuccessError } from './usageService';
 
 const NUM_IMAGES = 4;
@@ -15,7 +15,7 @@ const extractImageDataUri = (response: GenerateContentResponse): string | null =
 };
 
 export const generateImage = async (prompt: string): Promise<string[]> => {
-    const client = getImageAiClient();
+    const client = getAiClient();
 
     // Nano Banana 系 (Gemini image-generation family) は 1 呼び出し 1 枚のみ対応
     // (candidateCount > 1 は非サポート)。4 枚グリッド選択の UX を維持するため並列 4 回呼び出す。
