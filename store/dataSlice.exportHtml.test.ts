@@ -201,6 +201,18 @@ describe('dataSlice.exportHtml — integration: section ordering & wiring', () =
         expect(html).not.toContain('<h2>あとがき</h2>');
     });
 
+    it('regression: 目次なし(addToc: false) → 用語説明の直後に本文が続く区切り線CSSが出力される', () => {
+        const project = baseProject({
+            settings: [worldFixture()],
+            novelContent: [{ id: 'n-1', text: '本文', chapterId: null }],
+        });
+        const html = captureExportedHtml(project, { ...fullOptions, addToc: false, selectedCharacterIds: [] });
+
+        expect(html).not.toContain('<h2>目次</h2>');
+        expect(html).toContain('<h2>用語説明</h2>');
+        expect(html).toContain('.appendix + .content');
+    });
+
     it('用語説明 section に world と knowledge が world → knowledge の順で並ぶ', () => {
         const project = baseProject({
             settings: [worldFixture({ id: 'w-1', name: '魔法王国', longDescription: '魔法の国' })],
