@@ -154,26 +154,6 @@ h2.h-section::after{ content: ""; flex: 1; height: 1px; background: var(--rule);
   color: var(--ink-soft);
   opacity: 0.75;
 }
-.feature-card.no-shot .body{
-  padding: var(--space-lg) var(--space-md);
-}
-.feature-card.no-shot{
-  display: flex;
-  align-items: center;
-  background: rgba(232,221,194,0.35);
-}
-.pending-tag{
-  display: inline-block;
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--accent);
-  border: 1px dashed var(--accent);
-  padding: 0.15rem 0.5rem;
-  margin-top: 0.6rem;
-}
-
 .mobile-shot{
   max-width: 20rem;
   margin: var(--space-md) auto 0;
@@ -234,7 +214,7 @@ footer a:hover{ color: var(--ink); border-bottom-color: var(--ink); }
   </div>
 
   <h2 class="h-section">主な機能</h2>
-  <p class="lead">SNS投稿で見せたい3つの画面と、スクリーンショット未撮影の機能を1つ添えています。</p>
+  <p class="lead">SNS投稿で見せたい4つの画面です。</p>
 
   <div class="feature-grid">
     <div class="feature-card">
@@ -259,11 +239,14 @@ footer a:hover{ color: var(--ink); border-bottom-color: var(--ink); }
       </div>
     </div>
 
-    <div class="feature-card no-shot">
+    <div class="feature-card">
+      <figure>
+        <img src="sns-assets/character-image-generation-1440x900.png" alt="AI立ち絵生成モーダルで、キャラクター設定の概要から生成された立ち絵2枚が表示されている画面" width="1440" height="900" loading="lazy" />
+      </figure>
       <div class="body">
         <h3>AIキャラクター立ち絵生成</h3>
         <p>キャラクター設定の概要からAIが立ち絵を生成。1回の呼び出しで2枚生成し、必要に応じて追加生成も可能です。</p>
-        <span class="pending-tag">スクリーンショット準備中</span>
+        <p class="shot-meta">1440×900 · dev環境 · 2026-07-06</p>
       </div>
     </div>
   </div>
