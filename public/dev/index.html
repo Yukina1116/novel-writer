@@ -1145,7 +1145,7 @@ gantt
     <div class="card">
       <p class="kicker">画像生成</p>
       <h4>立ち絵・場面絵</h4>
-      <p>キャラクターパネルから「画像生成」を押すと、設定文から Nano Banana 2 Lite でビジュアルを作る。1 回 1000 sen 消費。</p>
+      <p>キャラクターパネルから「画像生成」を押すと、設定文から Nano Banana 2 Lite でビジュアルを作る。1 回 2 枚生成・1200 sen 消費（クォータ制約により段階生成方式、「追加で2枚生成する」ボタンでさらに2枚ずつ追加可能）。</p>
     </div>
   </div>
 
@@ -1186,7 +1186,7 @@ gantt
     <details>
       <summary>「クォータが足りません」と出る</summary>
       <div>
-        <p>Tier 1 は月あたり 100 円相当（sen 単位）の割当です。route ごとの単価は概ね：小説生成 200 sen、キャラ・世界観 100 sen、画像生成 1000 sen、ユーティリティ 50–100 sen。</p>
+        <p>Tier 1 は月あたり 100 円相当（sen 単位）の割当です。route ごとの単価は概ね：小説生成 200 sen、キャラ・世界観 100 sen、画像生成 1200 sen（2枚分）、ユーティリティ 50–100 sen。</p>
       </div>
     </details>
     <details>
@@ -1411,7 +1411,7 @@ flowchart LR
         { id: 'a2', label: 'クォータ消費がレスポンスヘッダで返る', expect: 'X-Usage-Remaining 等、残量が確認できる。', how: 'Network タブの Response Headers。' },
         { id: 'a3', label: 'キャラクターを生成・更新できる', expect: '/api/ai/character/* が 200 OK。設定欄に反映。', how: 'キャラパネルから「自動生成」。' },
         { id: 'a4', label: '世界観を生成・更新できる', expect: '/api/ai/world/* が 200 OK。', how: '世界観パネルから「AI に相談」。' },
-        { id: 'a5', label: '画像生成（Nano Banana 2 Lite）が動く', expect: '/api/ai/image/generate が 200 OK で base64 画像を4枚返す。', how: 'キャラクターから「画像生成」。1000 sen 消費。' },
+        { id: 'a5', label: '画像生成（Nano Banana 2 Lite）が動く', expect: '/api/ai/image/generate が 200 OK で base64 画像を2枚返す（段階生成、追加ボタンでさらに2枚ずつ）。', how: 'キャラクターから「画像生成」。1200 sen 消費。' },
         { id: 'a6', label: 'テキストインポート分析ができる', expect: '/api/ai/analysis/import が 200 OK。analysisHistory に記録。', how: '「他作品から取り込む」モーダルで貼付。' },
         { id: 'a7', label: 'rate-limit 超過で 429 が出る', expect: '本番 20 req/min 超で「リクエストが多すぎます」表示。', how: '連打して確認（dev は 1000/min なので難しい）。' },
         { id: 'a8', label: 'クォータ枯渇で 429 quota_exceeded', expect: 'Tier 1 月割当を超えたらユーザー向けメッセージ表示。', how: 'Firestore で usage を上限近くに調整。' }
