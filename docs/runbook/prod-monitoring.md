@@ -1,7 +1,7 @@
 # Runbook: Cloud Logging dashboard + alerting policy (Phase 4)
 
-- Status: ✅ Phase 4 段階 2 実機構築完了 (2026-06-21、本田様番号単位認可下で AI executor が dashboard + 5 alerting policies + email channel を構築。後述「監視 dashboard 履歴」「監視構築履歴」参照)
-- Last Updated: 2026-06-21
+- Status: ✅ Phase 4 段階 2 実機構築完了 (2026-06-21、本田様番号単位認可下で AI executor が dashboard + 5 alerting policies + email channel を構築。後述「監視 dashboard 履歴」「監視構築履歴」参照) / ✅ GO-4 通知到達確認クローズ (2026-07-06、A2 実発火 + email 到達確認、A1/A3-A5 は config read-only 確認、詳細は「GO-4 判断根拠」参照)
+- Last Updated: 2026-07-06
 - Owner: yasushi-honda
 - Related ADR: [ADR-0003](../adr/0003-public-launch-operations.md) §Decision 2 (本書の判断基準を裏付ける規範)
 - Related: [Phase 4 spec](../spec/prod-migration/phase4-tasks.md), [runbook prod-slo.md](./prod-slo.md) (本書 alerting 閾値と SLO 指標を整合)
@@ -129,9 +129,18 @@ email 通知先 (本田様 Gmail address) の確定は **decision-maker = 本田
 
 | 日時 | policy name | 通知到達確認 | 備考 |
 |---|---|---|---|
-| 2026-06-21T00:25Z | prod-5xx-rate-high (A1) | ⏳ 未確認 (段階 3 で実 traffic 観測時に検証) | COMPARISON_GT 0.5/sec, 300s |
-| 2026-06-21T00:25Z | prod-auth-fail-rate-high (A2) | ⏳ 未確認 (段階 3 で実 traffic 観測時に検証) | COMPARISON_GT 1.0/sec, 300s |
-| 2026-06-21T00:25Z | prod-vertex-ai-quota-error (A3) | ⏳ 未確認 (段階 3 で実 traffic 観測時に検証) | COMPARISON_GT 0.3/sec, 300s, regex 429\|503\|504 |
-| 2026-06-21T00:25Z | prod-instance-saturation (A4) | ⏳ 未確認 (段階 3 で実 traffic 観測時に検証) | COMPARISON_GT 1, 300s (instance_count>1 ≡ ≥2、max-instances=2 張付き検知) |
-| 2026-06-21T00:25Z | prod-firestore-error (A5) | ⏳ 未確認 (段階 3 で実 traffic 観測時に検証) | COMPARISON_GT 0, 300s, severity=ERROR |
-| 2026-06-21T00:25Z | notification channel prod-email-channel (email hy.unimail.11@gmail.com) | ⏳ 未確認 (実 alert 発火時に到達確認) | type=email |
+| 2026-06-21T00:25Z | prod-5xx-rate-high (A1) | ⏳ config のみ確認 (`gcloud alpha monitoring policies list` で enabled=true・閾値本書通りを read-only 確認、2026-07-06) | ライブ発火は見送り。無料版限定公開のため Phase 5 実トラフィックで自然検証する方針 (根拠: 本田様判断 2026-07-06) |
+| 2026-06-21T00:25Z | prod-auth-fail-rate-high (A2) | ✅ **実発火確認済み** (2026-07-06T12:2x JST) | 本田様端末から `/api/users/init` へ無認証 POST を 6 分間・約 686 回送信 (全件 401)、`prod-auth-fail-rate-high` アラートが 12:28 に email 到達したことを Gmail 画面で確認 |
+| 2026-06-21T00:25Z | prod-vertex-ai-quota-error (A3) | ⏳ config のみ確認 (read-only、2026-07-06) | ライブ発火 (実際の Vertex AI 429/503/504 誘発) はリスク相応でないため見送り。Phase 5 実トラフィックで自然検証 |
+| 2026-06-21T00:25Z | prod-instance-saturation (A4) | ⏳ config のみ確認 (read-only、2026-07-06) | ライブ発火には max-instances=2 到達までの実負荷が必要でリスク相応でないため見送り。Phase 5 実トラフィックで自然検証 |
+| 2026-06-21T00:25Z | prod-firestore-error (A5) | ⏳ config のみ確認 (read-only、2026-07-06) | ライブ発火には実際の Firestore エラー誘発が必要でリスク相応でないため見送り。Phase 5 実トラフィックで自然検証 |
+| 2026-06-21T00:25Z | notification channel prod-email-channel (email hy.unimail.11@gmail.com) | ✅ **到達確認済み** (2026-07-06T12:28 JST、A2 発火時) | type=email、labels.email_address が hy.unimail.11@gmail.com であることも `gcloud alpha monitoring channels describe` で read-only 確認済み |
+
+### GO-4 判断根拠 (2026-07-06)
+
+A1〜A5 全 5 policy をライブ発火させることも技術的には可能だが、A3 (Vertex AI エラー誘発)・A4 (インスタンス飽和までの実負荷)・A5 (Firestore エラー誘発) は本番相応のリスクを伴う一方、本アプリは無料版限定の低リスク公開であるため、費用対効果に見合わないと判断 (本田様承認 2026-07-06)。かわりに以下の 2 点でパイプライン全体の健全性を実証した:
+
+1. **A2 の実発火 + email 到達確認** (上表) — アラートポリシー評価エンジン → notification channel → 実際の email 配送、という経路全体が機能することを実証
+2. **A1/A3/A4/A5 の config read-only 確認** — `gcloud alpha monitoring policies list` で 5 policy 全て `enabled=true` かつ閾値が本書の設計通りであることを確認
+
+A1/A3/A4/A5 の実発火確認は、Phase 5 公開後に実際に発生する 5xx / quota エラー / インスタンス飽和 / Firestore エラーで自然に検証される前提とする。
