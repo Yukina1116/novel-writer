@@ -1,6 +1,6 @@
 # Phase 4: 一般公開準備 タスク表
 
-- Status: 🚧 **進行中** (2026-06-20 着手、本 PR α = 枠組み先行)
+- Status: ✅ **完了** (2026-06-20 着手 → 2026-07-06 GO-1〜GO-5 全完了。GO-6 は本田様確認済み、Phase 5 着手)
 - Owner: yasushi-honda
 - Related: [docs/adr/0003-public-launch-operations.md](../../adr/0003-public-launch-operations.md) (PR β で起票、本 PR では未存在)
 - Related runbook: [docs/runbook/prod-pitr.md](../../runbook/prod-pitr.md) / [prod-monitoring.md](../../runbook/prod-monitoring.md) / [prod-slo.md](../../runbook/prod-slo.md) (いずれも PR β で起票)
@@ -22,8 +22,8 @@ Phase 3 (PR #200, 2026-06-20) で dev → prod 運用フロー (ADR-0002 + runbo
 | Phase 1 | prod インフラ整備 | ✅ 完了 (PR #192/#193/#194) |
 | Phase 2 | CI/CD 二環境化 + 初回 prod デプロイ | ✅ 完了 (PR #195/#197/#199) |
 | Phase 3 | dev → prod 運用フロー確立 | ✅ 完了 (PR #200) |
-| **Phase 4** (本ドキュメント) | 一般公開準備 (GO-3 PITR / GO-4 Logging / GO-5 SLO 文書化 + 法務/課金 tracker) | 🚧 進行中 |
-| Phase 5 | 公開実行 (GO-6 本田様公開告知 + KPI 追跡開始) | ⏳ |
+| Phase 4 | 一般公開準備 (GO-3 PITR / GO-4 Logging / GO-5 SLO 文書化 + 法務/課金 tracker) | ✅ 完了 (2026-07-06、GO-1〜GO-5 全完了) |
+| **Phase 5** (本ドキュメント末尾「Phase 5 GO チェック」参照) | 公開実行 (GO-6 本田様公開告知 + KPI 追跡開始) | 🚧 **着手** (2026-07-06、本田様 GO-6 確認済み) |
 
 ## Codex セカンドオピニオン反映済の修正点 (Phase 4 計画段階)
 
@@ -190,7 +190,9 @@ GO-2 は 2026-07-06 に ✅ 完了 (上記「2026-07-06 時点の再調査」参
 
 ## Phase 5 GO チェック
 
-> **重要**: Phase 4 完了は **Phase 5 (公開実行 = 公開告知 + KPI 追跡開始) の GO ではない**。Phase 4 で文書化 + 起草 + (段階 2 で) PITR/Logging 実機構築が完了しても、それは「公開できる準備が整った」状態であって「公開する」ことではない。一般公開 (Phase 5) には下記すべてが充足され、かつ **decision-maker (本田様) からの明示 GO** が必要である。
+> **2026-07-06 更新**: GO-1〜GO-6 全て充足、本田様の明示 GO を受けて **Phase 5 (公開実行) 着手済み**。以下は着手までの経緯の記録として保持する。
+
+> **重要 (Phase 4 進行中当時の原則、参考として保持)**: Phase 4 完了は **Phase 5 (公開実行 = 公開告知 + KPI 追跡開始) の GO ではない**。Phase 4 で文書化 + 起草 + (段階 2 で) PITR/Logging 実機構築が完了しても、それは「公開できる準備が整った」状態であって「公開する」ことではない。一般公開 (Phase 5) には下記すべてが充足され、かつ **decision-maker (本田様) からの明示 GO** が必要である。
 
 ### Phase 5 (公開実行) 前に充足すべき項目
 
@@ -201,15 +203,15 @@ GO-2 は 2026-07-06 に ✅ 完了 (上記「2026-07-06 時点の再調査」参
 | GO-3 | Firestore PITR 有効化 (dev / prod 両方 ✅ 完了 2026-06-20) + 復旧演習 (段階 3 で手動 Console 演習に方針変更) | AI 実行 (本田様番号単位認可後) | 段階 2 PR merge + `prod-pitr.md` に証跡追記 ✅ |
 | GO-4 | Cloud Logging dashboard + alerting 構築 (✅ 2026-06-21) + 通知到達確認 (✅ 2026-07-06、A2 実発火 + email 到達確認、A1/A3-A5 は config read-only 確認・Phase 5 実トラフィックで自然検証) | AI 実行 (本田様番号単位認可後) | 段階 2 PR merge + `prod-monitoring.md` に証跡追記 ✅ |
 | GO-5 | SLO Accepted (✅ 2026-07-06、initial draft target をそのまま採用、`prod-slo.md` Status を `Accepted` に変更) | 本田様レビュー → AI 更新 PR | 段階 3 PR merge ✅ |
-| GO-6 | 本田様からの公開告知 GO + Phase 5 spec 着手指示 | 本田様 | 上記 GO-1〜GO-5 すべて ✅ + 明示指示 (2026-07-06 時点、GO-1〜GO-5 全完了。GO-6 のみ未充足) |
+| GO-6 | 本田様からの公開告知 GO + Phase 5 spec 着手指示 | 本田様 | ✅ 完了 (2026-07-06、本田様「本番(無料範囲だけ)公開OK」明示確認。技術面 (Cloud Run IAM は既に `allUsers` に `roles/run.invoker` 付与済み、待機リスト等のゲートなし、Tier 2 有料機能はコード未実装) も併せて確認済み) |
 
 ### Phase 5 着手の trigger 条件
 
-- 上記 GO-1〜GO-6 **すべて** が ✅ になる
-- かつ **本田様から「Phase 5 着手 GO」の明示指示** (Phase 4 着手指示と同じパターン)
-- AI は自発的に Phase 5 着手を提案しない (AI 駆動開発 4 原則 §1 越権防止)
+- 上記 GO-1〜GO-6 **すべて** が ✅ になる → ✅ **2026-07-06 充足**
+- かつ **本田様から「Phase 5 着手 GO」の明示指示** (Phase 4 着手指示と同じパターン) → ✅ 本田様確認済み
+- AI は自発的に Phase 5 着手を提案しない (AI 駆動開発 4 原則 §1 越権防止) — 本判断は本田様からの確認依頼に応答する形で実施
 
-### Phase 4 完了 ≠ Phase 5 GO
+### Phase 4 完了 ≠ Phase 5 GO (Phase 4 進行中当時の原則、参考として保持)
 
 Phase 4 完了 (本 phase4-tasks.md 全 chk + ADR-0003 + 3 runbook merge + 段階 2 実機構築 + GO-5 SLO Accepted) の意味:
 - ✅ 公開する準備が整った
@@ -219,6 +221,12 @@ Phase 4 完了の意味**ではない**もの:
 - ❌ 公開告知してよい
 - ❌ Phase 5 を自動的に開始してよい
 - ❌ 法務 / 課金 / 公開告知判断を AI が代行してよい
+
+### Phase 5 着手後の運用 (2026-07-06〜)
+
+- インフラ (Cloud Run 公開アクセス・監視・PITR・課金アラート) は本田様 GO-6 確認時点で稼働中。追加のデプロイ作業は不要
+- **実際のユーザーへの公開告知 (SNS 投稿等) は本田様ご自身のアクション**。AI が代行する領域ではない (AI 駆動開発 4 原則 §1)
+- KPI 追跡 (DAU / エラー率等) は `prod-monitoring.md` dashboard + `prod-slo.md` incident response に従う。Phase 5 実トラフィックが蓄積し次第、GO-4 (A1/A3-A5 のライブ発火確認) と SLO 数値の再校正 (`prod-slo.md` §再校正条件) を状況に応じて実施
 
 ## 参考
 
