@@ -216,7 +216,7 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
                     <div className="mt-auto pt-4">
                         <button
                             onClick={() => {
-                                const prompt = `masterpiece, best quality, anime style, full body, solo, adult, simple white background, no text, no letters, ${characterDescription.replace(/[\n\r:]+/g, ', ')}`;
+                                const prompt = `masterpiece, best quality, full body, solo, adult, simple white background, no text, no letters, ${characterDescription.replace(/[\n\r:]+/g, ', ')}`;
                                 handleGenerate(prompt);
                             }}
                             disabled={!canUseAi || isBusy || !characterDescription.trim()}

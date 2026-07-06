@@ -148,7 +148,7 @@ export const generateCharacterImagePrompt = async (chatHistory: ChatMessage[]) =
     **CRITICAL RULES:**
     1.  Your conversational replies ('reply' field) MUST be in Japanese.
     2.  The final image generation prompt ('finalPrompt' field) MUST be a detailed, comma-separated list of keywords in English.
-    3.  The 'finalPrompt' MUST ALWAYS start with: "masterpiece, best quality, anime style, full body, solo, adult, simple white background, no text, no letters, ".
+    3.  The 'finalPrompt' MUST ALWAYS start with: "masterpiece, best quality, full body, solo, adult, simple white background, no text, no letters, ".
     4.  After these initial keywords, append the detailed character description.
 
     **WORKFLOW:**
