@@ -160,6 +160,42 @@ h2.h-section::after{ content: ""; flex: 1; height: 1px; background: var(--rule);
 }
 .mobile-shot img{ width: 100%; height: auto; border: 1px solid var(--rule); }
 
+.mini-feature-grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+.mini-feature{
+  border: 1px solid var(--rule);
+  background: rgba(255,250,238,0.55);
+  padding: var(--space-md);
+  position: relative;
+}
+.mini-feature::before{
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px solid var(--rule-soft);
+  pointer-events: none;
+}
+.mini-feature h3{
+  margin: 0 0 0.5rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.15rem;
+  color: var(--accent2);
+}
+.mini-feature p{ margin: 0 0 0.6rem; color: var(--ink-soft); }
+.mini-feature .tagline{
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--accent);
+  border-top: 1px dashed var(--rule-soft);
+  padding-top: 0.5rem;
+}
+
 .callout{
   border: 1px dashed var(--accent);
   padding: var(--space-md);
@@ -251,6 +287,83 @@ footer a:hover{ color: var(--ink); border-bottom-color: var(--ink); }
     </div>
   </div>
 
+  <h2 class="h-section">まだまだある機能</h2>
+  <p class="lead">スクリーンショット未撮影ですが、SNSのネタとして使えそうな機能を集めました。一言コピー案つきです。</p>
+
+  <div class="mini-feature-grid">
+    <div class="mini-feature">
+      <h3>キャラクター相関図</h3>
+      <p>ノードをドラッグして配置し、関係線をクリックすると「友好」「敵対」「恋愛」などのプリセットで色分け。呼び方まで設定できます。</p>
+      <p class="tagline">"複雑な人間関係、線でつなげば一目瞭然。"</p>
+    </div>
+
+    <div class="mini-feature">
+      <h3>プロットボード</h3>
+      <p>付箋のようにプロットカードを自由配置し、「原因→結果」「伏線→回収」を線でつないで管理。そのままタイムラインへも送れます。</p>
+      <p class="tagline">"伏線、貼りっぱなしにしない仕組み。"</p>
+    </div>
+
+    <div class="mini-feature">
+      <h3>タイムライン（年表）</h3>
+      <p>キャラ別・場所別のレーンにイベントをドラッグ&amp;ドロップで配置。マルチキャラの時系列のズレを可視化できます。</p>
+      <p class="tagline">"「この日この子どこにいたっけ」を無くす年表。"</p>
+    </div>
+
+    <div class="mini-feature">
+      <h3>コマンドパレット</h3>
+      <p>Cmd/Ctrl+Kで検索窓を呼び出し、新規作成やモード切替をキーボードだけで実行できます。</p>
+      <p class="tagline">"マウスに触れずに執筆が完結する。"</p>
+    </div>
+
+    <div class="mini-feature">
+      <h3>全文検索</h3>
+      <p>キャラクター・世界観・ナレッジ・プロット・本文まで横断検索し、ヒット箇所をハイライト表示します。</p>
+      <p class="tagline">"「あのセリフ、どこで書いたっけ」を一発検索。"</p>
+    </div>
+
+    <div class="mini-feature">
+      <h3>名前ジェネレーター</h3>
+      <p>カテゴリとキーワードを指定すると、AIがそれっぽい名前の候補をまとめて生成します。</p>
+      <p class="tagline">"命名に詰まったら、AIにサイコロを振ってもらう。"</p>
+    </div>
+
+    <div class="mini-feature">
+      <h3>E2EE暗号化バックアップ</h3>
+      <p>パスフレーズでAES-GCM暗号化してからエクスポート。パスフレーズはアプリ側に一切保存せず、強度もリアルタイム表示されます。</p>
+      <p class="tagline">"サーバーに預けない、ガチのE2EEバックアップ。"</p>
+    </div>
+
+    <div class="mini-feature">
+      <h3>HTML書き出し</h3>
+      <p>表紙（画像・著者名）・フォント・カラーテーマ・目次を自動生成し、キャラ紹介や用語集も選んで1本のHTMLにまとめられます。</p>
+      <p class="tagline">"ワンクリックで、表紙付きの「作品集」が完成。"</p>
+    </div>
+
+    <div class="mini-feature">
+      <h3>AI世界観構築チャット</h3>
+      <p>AIと壁打ちしながら「相談する」「設定に反映」を切り替え、右側にリアルタイムで世界観設定が組み上がっていきます。</p>
+      <p class="tagline">"雑談してたら、世界観が勝手に育っていた。"</p>
+    </div>
+
+    <div class="mini-feature">
+      <h3>タイムトラベル履歴</h3>
+      <p>編集履歴をGitのコミットグラフのように分岐したブランチで可視化。ノードをクリックすれば過去の状態にジャンプできます。</p>
+      <p class="tagline">"執筆版git log。過去の一文へワープできる。"</p>
+    </div>
+
+    <div class="mini-feature">
+      <h3>機能別チュートリアル</h3>
+      <p>相関図・ナレッジ・プロット・タイムラインなど、機能ごとに専属のガイドツアーがハイライト表示付きで案内してくれます。</p>
+      <p class="tagline">"初見でも迷わない、機能ごとの専属ガイド。"</p>
+    </div>
+
+    <div class="mini-feature">
+      <h3>選択テキストAIツールバー</h3>
+      <p>本文を選択すると浮かぶミニツールバーから「校正して」「要約して」「より詩的に」「会話文に」をワンクリックで実行できます。</p>
+      <p class="tagline">"選ぶだけで、その場でAIが推敲してくれる。"</p>
+    </div>
+  </div>
+
   <h2 class="h-section">モバイル版</h2>
   <p class="lead">外出先でもスマホから執筆・確認ができます。レスポンシブ対応で原稿執筆画面もそのまま使えます。</p>
   <div class="mobile-shot">
@@ -278,6 +391,31 @@ footer a:hover{ color: var(--ink); border-bottom-color: var(--ink); }
     <p class="kicker">ドラフト 3 — モバイル対応</p>
     <p>スマホからでも執筆できます。
 思いついた瞬間に書き留められる、AI伴走型の小説エディター。</p>
+  </div>
+
+  <div class="copy-box">
+    <p class="kicker">ドラフト 4 — キャラクター相関図</p>
+    <p>キャラが増えてきたら相関図の出番。
+ノードをドラッグして並べ、関係線に「友好」「敵対」「恋愛」を付けるだけ。
+複雑な人間関係も一目でわかる形になります。</p>
+  </div>
+
+  <div class="copy-box">
+    <p class="kicker">ドラフト 5 — プロットボード</p>
+    <p>伏線、貼りっぱなしにしていませんか。
+プロットカードを並べて「伏線→回収」を線でつなげば、あとで一目で確認できます。</p>
+  </div>
+
+  <div class="copy-box">
+    <p class="kicker">ドラフト 6 — E2EE暗号化バックアップ</p>
+    <p>大事な原稿、パスフレーズで守れます。
+サーバーに預けない、パスフレーズも保存しない。ローカル完結のE2EEバックアップ。</p>
+  </div>
+
+  <div class="copy-box">
+    <p class="kicker">ドラフト 7 — AI世界観構築チャット</p>
+    <p>世界観、雑談から作れます。
+AIと壁打ちしながら「相談する」「設定に反映」を切り替えるだけで、右側にどんどん設定が組み上がっていきます。</p>
   </div>
 
   <div class="callout">
