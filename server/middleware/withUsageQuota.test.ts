@@ -29,6 +29,8 @@ vi.mock('../services/analysisService', () => ({ analyzeTextForImport: vi.fn() })
 const reserveMock = vi.fn();
 const commitMock = vi.fn();
 const cancelMock = vi.fn();
+const recordQuotaExceededMock = vi.fn();
+const recordImageGenerationKindMock = vi.fn();
 vi.mock('../services/usageService', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../services/usageService')>();
     return {
@@ -36,6 +38,8 @@ vi.mock('../services/usageService', async (importOriginal) => {
         reserve: (...args: unknown[]) => reserveMock(...args),
         commit: (...args: unknown[]) => commitMock(...args),
         cancel: (...args: unknown[]) => cancelMock(...args),
+        recordQuotaExceeded: (...args: unknown[]) => recordQuotaExceededMock(...args),
+        recordImageGenerationKind: (...args: unknown[]) => recordImageGenerationKindMock(...args),
     };
 });
 
@@ -48,7 +52,7 @@ vi.mock('../firebaseAdmin', () => ({
 }));
 
 const { mountAiRoutes } = await import('../aiRoutes');
-const { PartialSuccessError } = await import('../services/usageService');
+const { PartialSuccessError, QuotaExceededError } = await import('../services/usageService');
 
 const buildApp = () => {
     const app = express();
@@ -66,9 +70,13 @@ describe('withUsageQuota - PartialSuccessError 按分 commit', () => {
         reserveMock.mockReset();
         commitMock.mockReset();
         cancelMock.mockReset();
+        recordQuotaExceededMock.mockReset();
+        recordImageGenerationKindMock.mockReset();
         generateImageMock.mockReset();
         verifyIdTokenSdkMock.mockResolvedValue({ uid: 'u1', email: 'a@example.com' });
         reserveMock.mockResolvedValue(handle);
+        recordQuotaExceededMock.mockResolvedValue(undefined);
+        recordImageGenerationKindMock.mockResolvedValue(undefined);
     });
 
     it('全件成功時は estimatedCost で commit される（回帰確認）', async () => {
@@ -80,7 +88,7 @@ describe('withUsageQuota - PartialSuccessError 按分 commit', () => {
             .send({ requestId: REQ_ID, prompt: 'test' });
 
         expect(res.status).toBe(200);
-        expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 1200, handle);
+        expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 1200, handle, 'image/generate');
         expect(cancelMock).not.toHaveBeenCalled();
     });
 
@@ -95,7 +103,7 @@ describe('withUsageQuota - PartialSuccessError 按分 commit', () => {
             .send({ requestId: REQ_ID, prompt: 'test' });
 
         expect(res.status).toBe(500);
-        expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 600, handle);
+        expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 600, handle, 'image/generate');
         expect(cancelMock).not.toHaveBeenCalled();
     });
 
@@ -126,7 +134,133 @@ describe('withUsageQuota - PartialSuccessError 按分 commit', () => {
             .send({ requestId: REQ_ID, prompt: 'test' });
 
         expect(res.status).toBe(500);
-        expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 600, handle);
+        expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 600, handle, 'image/generate');
         expect(cancelMock).toHaveBeenCalledWith('u1', REQ_ID, handle);
+    });
+});
+
+describe('withUsageQuota - QuotaExceededError 計測 (Issue #232)', () => {
+    beforeEach(() => {
+        verifyIdTokenSdkMock.mockReset();
+        reserveMock.mockReset();
+        commitMock.mockReset();
+        cancelMock.mockReset();
+        recordQuotaExceededMock.mockReset();
+        generateImageMock.mockReset();
+        verifyIdTokenSdkMock.mockResolvedValue({ uid: 'u1', email: 'a@example.com' });
+        recordQuotaExceededMock.mockResolvedValue(undefined);
+    });
+
+    it('quota 超過時に recordQuotaExceeded(uid, routeKey) が呼ばれ、429 を返す', async () => {
+        reserveMock.mockRejectedValueOnce(new QuotaExceededError(9500, 500, 10000));
+
+        const res = await request(buildApp())
+            .post('/api/ai/image/generate')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ requestId: REQ_ID, prompt: 'test' });
+
+        expect(res.status).toBe(429);
+        expect(res.body.code).toBe('QUOTA_EXCEEDED');
+        expect(recordQuotaExceededMock).toHaveBeenCalledWith('u1', 'image/generate');
+    });
+
+    it('recordQuotaExceeded が失敗しても 429 レスポンス自体は正常に返る（best-effort）', async () => {
+        reserveMock.mockRejectedValueOnce(new QuotaExceededError(9500, 500, 10000));
+        recordQuotaExceededMock.mockRejectedValueOnce(new Error('firestore transient error'));
+
+        const res = await request(buildApp())
+            .post('/api/ai/image/generate')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ requestId: REQ_ID, prompt: 'test' });
+
+        expect(res.status).toBe(429);
+        expect(res.body.code).toBe('QUOTA_EXCEEDED');
+    });
+});
+
+describe('image/generate - isAdditionalGeneration 計測 (Issue #232)', () => {
+    beforeEach(() => {
+        verifyIdTokenSdkMock.mockReset();
+        reserveMock.mockReset();
+        commitMock.mockReset();
+        cancelMock.mockReset();
+        recordImageGenerationKindMock.mockReset();
+        generateImageMock.mockReset();
+        verifyIdTokenSdkMock.mockResolvedValue({ uid: 'u1', email: 'a@example.com' });
+        reserveMock.mockResolvedValue(handle);
+        recordImageGenerationKindMock.mockResolvedValue(undefined);
+        generateImageMock.mockResolvedValue(['data:image/png;base64,aaa']);
+    });
+
+    it('isAdditionalGeneration 省略時は false として記録される（初回生成）', async () => {
+        const res = await request(buildApp())
+            .post('/api/ai/image/generate')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ requestId: REQ_ID, prompt: 'test' });
+
+        expect(res.status).toBe(200);
+        expect(recordImageGenerationKindMock).toHaveBeenCalledWith('u1', false, handle);
+    });
+
+    it('isAdditionalGeneration: true を送ると true として記録される（追加生成）', async () => {
+        const res = await request(buildApp())
+            .post('/api/ai/image/generate')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ requestId: REQ_ID, prompt: 'test', isAdditionalGeneration: true });
+
+        expect(res.status).toBe(200);
+        expect(recordImageGenerationKindMock).toHaveBeenCalledWith('u1', true, handle);
+    });
+
+    it('isAdditionalGeneration が truthy な非 boolean 値（文字列 "true" 等）の場合は false 扱いにする', async () => {
+        const res = await request(buildApp())
+            .post('/api/ai/image/generate')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ requestId: REQ_ID, prompt: 'test', isAdditionalGeneration: 'true' });
+
+        expect(res.status).toBe(200);
+        expect(recordImageGenerationKindMock).toHaveBeenCalledWith('u1', false, handle);
+    });
+
+    it('recordImageGenerationKind が失敗しても画像生成レスポンス自体は成功として返る（best-effort）', async () => {
+        recordImageGenerationKindMock.mockRejectedValueOnce(new Error('firestore transient error'));
+
+        const res = await request(buildApp())
+            .post('/api/ai/image/generate')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ requestId: REQ_ID, prompt: 'test' });
+
+        expect(res.status).toBe(200);
+        expect(res.body.data).toEqual(['data:image/png;base64,aaa']);
+    });
+
+    it('PartialSuccessError（一部枚数のみ成功）でも生成は実行されたため imageGenerationCounts に計上する', async () => {
+        generateImageMock.mockReset();
+        generateImageMock.mockRejectedValueOnce(
+            new PartialSuccessError('画像生成に失敗しました: 2枚中1枚のみ成功しました。', 0.5),
+        );
+
+        const res = await request(buildApp())
+            .post('/api/ai/image/generate')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ requestId: REQ_ID, prompt: 'test' });
+
+        expect(res.status).toBe(500);
+        expect(recordImageGenerationKindMock).toHaveBeenCalledWith('u1', false, handle);
+    });
+
+    it('完全失敗（0 枚成功、通常の Error）では imageGenerationCounts に計上しない', async () => {
+        generateImageMock.mockReset();
+        generateImageMock.mockRejectedValueOnce(
+            new Error('画像生成に失敗しました: レスポンスに画像データが含まれていません。'),
+        );
+
+        const res = await request(buildApp())
+            .post('/api/ai/image/generate')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ requestId: REQ_ID, prompt: 'test' });
+
+        expect(res.status).toBe(500);
+        expect(recordImageGenerationKindMock).not.toHaveBeenCalled();
     });
 });

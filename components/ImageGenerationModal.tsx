@@ -62,7 +62,7 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
             setGeneratedImages([]);
         }
         setBasePrompt(promptToUse);
-        const result = await onGenerate(promptToUse);
+        const result = await onGenerate(promptToUse, append);
         if (result) {
             setGeneratedImages(prev => append ? [...prev, ...result] : result);
         } else {
