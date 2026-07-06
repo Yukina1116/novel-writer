@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex,nofollow" />
+<title>小説らいたー — SNS投稿キット</title>
+<meta name="description" content="novel-writer の SNS 投稿準備素材。アプリ概要・主要機能スクリーンショット・投稿文言ドラフトを1ページにまとめたもの。" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+<style>
+:root{
+  --paper: #f3ecdb;
+  --paper-2: #ece3cd;
+  --ink: #1b2535;
+  --ink-soft: #3a455a;
+  --rule: #b8a780;
+  --rule-soft: #d6c9ab;
+  --accent: #9a3520;
+  --accent-soft: #c2614a;
+  --accent2: #2a5762;
+  --shade: rgba(27,37,53,0.06);
+
+  --font-display: "Cormorant Garamond", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --font-body: "EB Garamond", "Hiragino Mincho ProN", "Yu Mincho", "Hiragino Kaku Gothic ProN", serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  --space-xs: clamp(0.25rem, 0.6vw, 0.5rem);
+  --space-sm: clamp(0.5rem, 1vw, 0.85rem);
+  --space-md: clamp(1rem, 2vw, 1.6rem);
+  --space-lg: clamp(1.6rem, 4vw, 3rem);
+  --space-xl: clamp(2.4rem, 6vw, 5rem);
+  --content-max: 68rem;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body{
+  font-family: var(--font-body);
+  font-size: clamp(1rem, 0.4vw + 0.95rem, 1.125rem);
+  line-height: 1.65;
+  color: var(--ink);
+  background:
+    repeating-linear-gradient(0deg, transparent, transparent 31px, rgba(27,37,53,0.035) 31px, rgba(27,37,53,0.035) 32px),
+    radial-gradient(ellipse at top left, #f5eedd 0%, #efe6cf 60%, #ece2c8 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+.shell{ max-width: var(--content-max); margin: 0 auto; padding: 0 clamp(1rem, 4vw, 3rem); }
+
+.masthead{ border-bottom: 2px double var(--rule); padding: var(--space-lg) 0 var(--space-md); }
+.eyebrow{
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 var(--space-xs);
+}
+h1{
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(2rem, 5vw + 0.5rem, 3.6rem);
+  line-height: 1.05;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+h1 em{ font-style: italic; color: var(--accent); font-weight: 500; }
+.subtitle{
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--ink-soft);
+  font-size: clamp(1.05rem, 1.2vw + 0.6rem, 1.35rem);
+  margin: var(--space-xs) 0 0;
+  max-width: 56ch;
+}
+
+main.shell{ padding-top: var(--space-lg); padding-bottom: var(--space-xl); }
+
+h2.h-section{
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.5rem, 2vw + 0.8rem, 2.1rem);
+  margin: var(--space-xl) 0 var(--space-sm);
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+}
+h2.h-section:first-of-type{ margin-top: 0; }
+h2.h-section::after{ content: ""; flex: 1; height: 1px; background: var(--rule); }
+
+.lead{ max-width: 68ch; color: var(--ink-soft); }
+
+.copy-box{
+  border: 1px solid var(--rule);
+  background: rgba(255,250,238,0.6);
+  padding: var(--space-md);
+  margin: var(--space-sm) 0 var(--space-md);
+  position: relative;
+}
+.copy-box .kicker{
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 0.5rem;
+}
+.copy-box p{ margin: 0; white-space: pre-wrap; }
+
+.feature-grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: var(--space-lg);
+  margin-top: var(--space-md);
+}
+.feature-card{
+  border: 1px solid var(--rule);
+  background: rgba(255,250,238,0.55);
+  position: relative;
+}
+.feature-card::before{
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px solid var(--rule-soft);
+  pointer-events: none;
+}
+.feature-card figure{ margin: 0; }
+.feature-card img{
+  display: block;
+  width: 100%;
+  height: auto;
+  border-bottom: 1px solid var(--rule);
+}
+.feature-card .body{ padding: var(--space-md); }
+.feature-card h3{
+  margin: 0 0 0.4rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.25rem;
+}
+.feature-card p{ margin: 0; color: var(--ink-soft); }
+.feature-card .shot-meta{
+  margin-top: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--ink-soft);
+  opacity: 0.75;
+}
+.feature-card.no-shot .body{
+  padding: var(--space-lg) var(--space-md);
+}
+.feature-card.no-shot{
+  display: flex;
+  align-items: center;
+  background: rgba(232,221,194,0.35);
+}
+.pending-tag{
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px dashed var(--accent);
+  padding: 0.15rem 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.mobile-shot{
+  max-width: 20rem;
+  margin: var(--space-md) auto 0;
+}
+.mobile-shot img{ width: 100%; height: auto; border: 1px solid var(--rule); }
+
+.callout{
+  border: 1px dashed var(--accent);
+  padding: var(--space-md);
+  margin: var(--space-md) 0;
+  background: rgba(154,53,32,0.05);
+}
+.callout > p{ margin: 0.2rem 0; }
+.callout strong{ font-family: var(--font-display); color: var(--accent); }
+
+footer{
+  margin-top: var(--space-xl);
+  padding: var(--space-md) 0 var(--space-lg);
+  border-top: 2px double var(--rule);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+footer a{ color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
+footer a:hover{ color: var(--ink); border-bottom-color: var(--ink); }
+
+@media (max-width: 540px){
+  footer{ flex-direction: column; }
+}
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <header class="masthead">
+    <p class="eyebrow">SNS Launch Kit / 投稿準備素材</p>
+    <h1>小説<em>らいたー</em></h1>
+    <p class="subtitle">アプリ概要・主要機能のスクリーンショット・投稿文言ドラフトを1ページにまとめたもの。SNS告知の下書き用に自由にコピー・加工してください。</p>
+  </header>
+</div>
+
+<main class="shell">
+
+  <h2 class="h-section">アプリ概要</h2>
+  <p class="lead">
+    「小説らいたー」は AI を補助とした小説執筆支援アプリです。執筆者が主役、AI は「後輩・パートナー」的な立ち位置で、
+    続きの提案・キャラクター作成・世界観構築・立ち絵生成を担当します。プロジェクトデータはブラウザ内（local-first）に保存され、
+    ログインすると AI 機能が使えるようになります。
+  </p>
+
+  <div class="copy-box">
+    <p class="kicker">コピー用ワンライナー</p>
+    <p>書くのはあなた、AIは頼れる後輩。― 3パネルエディターで本文とAIの続き提案を並べて執筆できる小説執筆アプリ「小説らいたー」。</p>
+  </div>
+
+  <h2 class="h-section">主な機能</h2>
+  <p class="lead">SNS投稿で見せたい3つの画面と、スクリーンショット未撮影の機能を1つ添えています。</p>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <figure>
+        <img src="sns-assets/editor-ai-continuation-1440x900.png" alt="3パネルエディターで本文を執筆しつつ、右パネルのAIアシスタントが「続きを書く」で生成した本文とナレッジ提案を表示している画面" width="1440" height="900" loading="lazy" />
+      </figure>
+      <div class="body">
+        <h3>3パネルエディター + AI続き生成</h3>
+        <p>中央の原稿用紙に書きながら、右パネルの「アシスタント」に「続きを書く」を頼むと、AIが物語の続きを提案。ナレッジ提案も自動で拾い上げます。</p>
+        <p class="shot-meta">1440×900 · dev環境 · 2026-07-06</p>
+      </div>
+    </div>
+
+    <div class="feature-card">
+      <figure>
+        <img src="sns-assets/left-panel-character-library-1440x900.png" alt="左パネルの「資料の棚」でキャラクターパネルを開き、登録済みキャラクターカードが表示されている画面" width="1440" height="900" loading="lazy" />
+      </figure>
+      <div class="body">
+        <h3>資料の棚（左パネル）</h3>
+        <p>キャラクター・世界観・ナレッジ・プロット・年表をタブで管理。書き込むほどAIがあなたの作品世界に詳しくなります。</p>
+        <p class="shot-meta">1440×900 · dev環境 · 2026-07-06</p>
+      </div>
+    </div>
+
+    <div class="feature-card no-shot">
+      <div class="body">
+        <h3>AIキャラクター立ち絵生成</h3>
+        <p>キャラクター設定の概要からAIが立ち絵を生成。1回の呼び出しで2枚生成し、必要に応じて追加生成も可能です。</p>
+        <span class="pending-tag">スクリーンショット準備中</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="h-section">モバイル版</h2>
+  <p class="lead">外出先でもスマホから執筆・確認ができます。レスポンシブ対応で原稿執筆画面もそのまま使えます。</p>
+  <div class="mobile-shot">
+    <img src="sns-assets/mobile-editor-390x844.png" alt="スマートフォン版の原稿執筆画面。本文が表示され、画面下部に本文直接入力欄がある" width="390" height="844" loading="lazy" />
+    <p class="shot-meta" style="text-align:center; margin-top:0.4rem;">390×844 (iPhone 14/15 相当) · dev環境 · 2026-07-06</p>
+  </div>
+
+  <h2 class="h-section">投稿文言ドラフト</h2>
+  <p class="lead">そのまま使うか、トーンに合わせて調整してください。</p>
+
+  <div class="copy-box">
+    <p class="kicker">ドラフト 1 — アプリ紹介</p>
+    <p>小説らいたー、はじめました。
+書くのはあなた、AIは頼れる後輩。
+3パネルエディターで本文とAIの続き提案を並べて執筆できます。</p>
+  </div>
+
+  <div class="copy-box">
+    <p class="kicker">ドラフト 2 — 資料の棚</p>
+    <p>キャラクターも世界観もナレッジも、ぜんぶ「資料の棚」で一元管理。
+書けば書くほどAIがあなたの作品に詳しくなっていきます。</p>
+  </div>
+
+  <div class="copy-box">
+    <p class="kicker">ドラフト 3 — モバイル対応</p>
+    <p>スマホからでも執筆できます。
+思いついた瞬間に書き留められる、AI伴走型の小説エディター。</p>
+  </div>
+
+  <div class="callout">
+    <p><strong>投稿前チェック:</strong> 現時点は無料範囲での公開です。料金・課金プランに関する言及は避けてください。テスト用プロジェクト（「星屑のバラード」等）はスクリーンショット用ダミーデータで、実在の作品ではありません。</p>
+  </div>
+
+</main>
+
+<footer class="shell">
+  <div>小説らいたー SNS投稿キット</div>
+  <div><a href="/dev/">Developer Atlas へ</a> · <a href="/">アプリへ戻る</a></div>
+</footer>
+
+</body>
+</html>
