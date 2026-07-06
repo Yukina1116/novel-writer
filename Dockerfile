@@ -6,6 +6,9 @@ ARG VITE_FIREBASE_PROJECT_ID
 ARG VITE_FIREBASE_STORAGE_BUCKET
 ARG VITE_FIREBASE_MESSAGING_SENDER_ID
 ARG VITE_FIREBASE_APP_ID
+# dev 環境のみ true を渡す。/dev/ 開発者ポータルはクォータ単価・アーキテクチャ等の
+# 内部情報を含むため、無料版公開開始 (2026-07-06) を機に prod ビルドからは除外する。
+ARG ENABLE_DEV_PORTAL=""
 
 ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY \
     VITE_FIREBASE_AUTH_DOMAIN=$VITE_FIREBASE_AUTH_DOMAIN \
@@ -19,6 +22,7 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
+RUN if [ "$ENABLE_DEV_PORTAL" != "true" ]; then rm -rf public/dev; fi
 RUN npx vite build
 
 FROM node:22-slim AS runner
