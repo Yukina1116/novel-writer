@@ -1,7 +1,7 @@
-# Runbook: SLO + incident response (Phase 4 initial draft)
+# Runbook: SLO + incident response (Phase 4 initial draft → Accepted)
 
-- Status: 🚧 **Initial draft**. SLO targets defined here are to be **recalibrated after Phase 5 (public launch) yields real traffic data**. Single-tenant private testing data is insufficient to set authoritative targets.
-- Last Updated: 2026-06-20
+- Status: ✅ **Accepted** (2026-07-06、本田様判断で initial draft target をそのまま採用。詳細は「SLO 採用 (Accepted 化) の手順」§実際の判断根拠 参照)。数値の再校正は本書「再校正 (recalibration) 条件」表の trigger (公開後 1 ヶ月の real traffic 取得完了 等) に従い、Accepted 化の前提条件としては扱わない
+- Last Updated: 2026-07-06
 - Owner: yasushi-honda
 - Related ADR: [ADR-0003](../adr/0003-public-launch-operations.md) §Decision 3 (本書の判断基準を裏付ける規範)
 - Related: [Phase 4 spec](../spec/prod-migration/phase4-tasks.md), [runbook prod-monitoring.md](./prod-monitoring.md) (alerting 閾値と本書 SLO 指標を整合)
@@ -117,18 +117,29 @@ gcloud run services update novel-writer \
 
 ## SLO 採用 (Accepted 化) の手順
 
-### Phase 4 段階 3 (SLO Accepted 化 PR)
+### 実際の判断根拠 (2026-07-06、GO-5 クローズ)
 
-1. **公開後 1 ヶ月** の real traffic データを Cloud Logging から集計
+本手順の当初案 (下記「Phase 4 段階 3」) は「公開後 1 ヶ月の real traffic データ」を Accepted 化の前提としていたが、これは `phase4-tasks.md` が GO-5 を **Phase 5 (公開) 着手前の必須項目**と位置付けていることと矛盾する (公開してからでないと満たせない条件を、公開前の必須条件にしていた)。
+
+本田様レビューの結果、この矛盾を次の通り解消する:
+
+- **Accepted 化 (今回)**: Phase 2 smoke test の実測 (5xx 0%) + モデル移行後の実機検証結果を根拠に、initial draft target (可用性 99.5% / 5xx < 1% / AI 応答失敗率 < 5%) を **そのまま採用**する。「公開後 1 ヶ月の real traffic 集計」はこの判断の前提条件ではない
+- **再校正 (別トラック)**: 公開後の実データに基づく数値の見直しは、本書「再校正 (recalibration) 条件」表の trigger (1 ヶ月経過 / 3 ヶ月連続違反 / 3 ヶ月ゼロ違反 等) に従って引き続き実施する。Accepted 化 と 再校正 は別の手続きとして分離する
+
+無料版限定の低リスク公開であることも、real traffic 取得を待たずに初期採用する判断の根拠とする。
+
+### Phase 4 段階 3 (SLO Accepted 化 PR、当初案・参考として保持)
+
+1. ~~公開後 1 ヶ月の real traffic データを Cloud Logging から集計~~ → 上記「実際の判断根拠」により、Accepted 化の前提条件からは除外
 2. 本書の initial draft target と実値を比較、本田様レビュー
 3. 本田様の判断で:
-   - **そのまま採用** → 本書 Status を `Accepted` に更新 + alerting policy 閾値を本書と整合
-   - **再校正** → 数値を上下調整、本書 + `prod-monitoring.md` alerting policy 両方を整合修正
+   - **そのまま採用** → 本書 Status を `Accepted` に更新 + alerting policy 閾値を本書と整合 (2026-07-06 実施)
+   - **再校正** → 数値を上下調整、本書 + `prod-monitoring.md` alerting policy 両方を整合修正 (今後、再校正条件 trigger 発生時に実施)
 4. SLO Accepted 化 PR を起票 → 本田様番号単位認可 → merge
 
 ### Phase 5 GO への影響
 
-GO-5 (SLO Accepted) が Phase 5 公開後の運用 phase 移行 (= Phase 4 完全終了) の前提条件。本書が `Draft` のままだと Phase 4 完了とみなさない。
+GO-5 (SLO Accepted) は 2026-07-06 に ✅ 完了 (上記「実際の判断根拠」参照)。alerting policy 閾値 (`prod-monitoring.md`) は本書の initial draft target と整合済み (5xx > 5%/5分・auth fail > 50%/5分・Vertex AI 429/503/504 > 10%/5分 は P1 の即時検知閾値、本書 24h rolling target とは測定窓が異なる意図的設計、ADR-0003 Decision 2/3 参照)。
 
 ## 関連 ADR / runbook link
 
