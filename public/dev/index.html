@@ -191,6 +191,8 @@ body{
   opacity: 0.65;
 }
 .tab-btn[aria-current="page"] .num{ opacity: 1; }
+a.tab-btn{ text-decoration: none; display: inline-flex; align-items: center; }
+a.tab-btn .ext-mark{ margin-left: 0.35em; opacity: 0.6; font-size: 0.9em; }
 
 section.panel{
   display: none;
@@ -676,10 +678,10 @@ footer a:hover{ color: var(--ink); border-bottom-color: var(--ink); }
         <p class="subtitle">アーキテクチャ、目視チェックリスト、簡易マニュアル — 公開動作確認のための単一ページ。</p>
       </div>
       <div class="meta-stack">
-        <b>v0.0.0 (M7-α)</b>
-        Last updated · 2026-05-17<br />
+        <b>v0.0.0 (Phase 5 / 公開中)</b>
+        Last updated · 2026-07-06<br />
         Branch · main / clean<br />
-        Tests · 445 / 445 PASS
+        Tests · 894 / 894 PASS
       </div>
     </div>
   </header>
@@ -694,6 +696,7 @@ footer a:hover{ color: var(--ink); border-bottom-color: var(--ink); }
     <button class="tab-btn" data-target="p-checklist"><span class="num">v.</span>目視チェック</button>
     <button class="tab-btn" data-target="p-manual"><span class="num">vi.</span>マニュアル</button>
     <button class="tab-btn" data-target="p-dev"><span class="num">vii.</span>開発者情報</button>
+    <a class="tab-btn tab-link" href="/dev/sns.html"><span class="num">viii.</span>SNS素材<span class="ext-mark" aria-hidden="true">↗</span></a>
   </div>
 </nav>
 
@@ -731,31 +734,31 @@ footer a:hover{ color: var(--ink); border-bottom-color: var(--ink); }
       <tr><td>認証</td><td class="v">Firebase Auth</td><td>verifyIdToken middleware で全 /api/ai/* を保護</td></tr>
       <tr><td>クォータ</td><td class="v">withUsageQuota (3-phase)</td><td>reserve → handler → commit/cancel、requestId 冪等</td></tr>
       <tr><td>暗号化</td><td class="v">AES-GCM-256 + PBKDF2 600k</td><td>M6 完成、export-key 禁止 (静的検査)</td></tr>
-      <tr><td>デプロイ</td><td class="v">Cloud Run (asia-northeast1)</td><td>main push → GitHub Actions WIF → 自動 deploy</td></tr>
+      <tr><td>デプロイ</td><td class="v">Cloud Run (asia-northeast1)</td><td>dev は main push で自動 deploy。prod は workflow_dispatch 専用（手動実行のみ）</td></tr>
     </tbody>
   </table>
 
   <h3 class="h-rule">マイルストーン進捗 <span class="small">/ Snapshot</span></h3>
   <div class="grid-auto">
     <div class="card">
-      <p class="kicker">完了範囲</p>
-      <h4>無料機能フルセット</h4>
-      <p>M0 → M4 / M6 / M7-α が完成。本番 Cloud Run で動作確認済（Firebase 初期化・Tailwind・UI 重なりすべて解消）。</p>
+      <p class="kicker">公開状況</p>
+      <h4>無料範囲で一般公開中</h4>
+      <p>M0 → M4 / M6 / M7-α + Phase 4（一般公開準備 GO-1〜GO-5）が完成。2026-07-06 に本田様 GO-6 確認のうえ Phase 5（公開実行）着手済み。</p>
     </div>
     <div class="card">
       <p class="kicker">テスト</p>
-      <h4>445 / 445 PASS</h4>
-      <p>vitest 全グリーン。tsc --noEmit 0 errors。CI は Deploy to Cloud Run 成功 (3m00s)。</p>
+      <h4>894 / 894 PASS</h4>
+      <p>vitest 全グリーン。tsc --noEmit 0 errors。CI は Deploy to Cloud Run 成功。</p>
     </div>
     <div class="card">
       <p class="kicker">保留</p>
-      <h4>法務本文確定待ち</h4>
-      <p>M5 (Stripe) / M7-β (公開最終チェック) は法務同期作業の完了が前提。AI セッション外。</p>
+      <h4>Tier 2（有料化）は法務本文確定待ち</h4>
+      <p>M5 (Stripe) / M7-β (公開最終チェック) は法務確認の完了が前提。無料範囲 (Tier 0/1) の一般公開はこの完了を待たずに実施済み（2026-06-21 方針変更）。AI セッション外。</p>
     </div>
     <div class="card">
       <p class="kicker">監視中</p>
-      <h4>Issue #49 monitor</h4>
-      <p>rating ≥ 7 全消化済。本番障害として再現した時点で再開。</p>
+      <h4>Phase 5 KPI 追跡</h4>
+      <p>prod-monitoring.md dashboard + prod-slo.md incident response で観測中。実トラフィック蓄積後に SLO 数値を再校正予定。</p>
     </div>
   </div>
 </section>
@@ -1046,7 +1049,7 @@ sequenceDiagram
   <header class="section-header">
     <div class="section-num">IV.</div>
     <h2 id="h-ms">マイルストーン進捗</h2>
-    <p>local-first → 認証 → 課金前提整備 → バックアップ E2EE → 規約同意の順でレイヤーを積み上げてきた。</p>
+    <p>local-first → 認証 → 課金前提整備 → バックアップ E2EE → 規約同意 → 一般公開準備・公開実行の順でレイヤーを積み上げてきた。M5 / M7-β（Tier 2 有料化）は無料範囲の公開実行と並行する保留ブランチ。</p>
   </header>
 
   <div class="diagram" data-fig="Fig. IV-1 / Timeline">
@@ -1068,7 +1071,10 @@ gantt
   M6 PR-A〜D E2EE (AES-GCM + PBKDF2 600k) :done, m6, after m4, 14d
   section M7-α
   M7-α PR-D-1〜2 規約同意 + 共有 termsCodes :done, m7a, after m6, 7d
-  section 保留
+  section Phase 4〜5（無料範囲公開）
+  Phase 4 一般公開準備 (GO-1〜GO-5) :done, p4, after m7a, 16d
+  Phase 5 公開実行 (GO-6 本田様確認・KPI追跡) :active, p5, after p4, 1d
+  section 保留（Tier 2 有料化）
   M5 Stripe Tier 2 :crit, m5, after m7a, 14d
   M7-β 公開最終チェック :crit, m7b, after m5, 7d
     </div>
@@ -1082,6 +1088,8 @@ gantt
     <div class="milestone-row"><span class="ms-tag">M4</span><div><span class="ms-name">バックアップ層（平文 BackupV1 + Import Conflict UI）</span></div><span class="ms-state done">完了</span></div>
     <div class="milestone-row"><span class="ms-tag">M6</span><div><span class="ms-name">E2EE 暗号化バックアップ — PR-A schema / PR-B state / PR-C UI / PR-D 統合</span></div><span class="ms-state done">完了</span></div>
     <div class="milestone-row"><span class="ms-tag">M7-α</span><div><span class="ms-name">利用規約同意フロー — TermsConsentModal + TERMS_VERSION_MISMATCH</span></div><span class="ms-state done">完了</span></div>
+    <div class="milestone-row"><span class="ms-tag">Phase 4</span><div><span class="ms-name">一般公開準備 — GO-1〜GO-5（PITR / Logging / SLO / 法務・課金クォータ判断）</span></div><span class="ms-state done">完了</span></div>
+    <div class="milestone-row"><span class="ms-tag">Phase 5</span><div><span class="ms-name">公開実行 — GO-6 本田様確認、無料範囲 (Tier 0/1) で一般公開中</span></div><span class="ms-state done">公開中</span></div>
     <div class="milestone-row"><span class="ms-tag">M5</span><div><span class="ms-name">Stripe Subscription Tier 2 — 法務本文確定が前提</span></div><span class="ms-state hold">保留</span></div>
     <div class="milestone-row"><span class="ms-tag">M7-β</span><div><span class="ms-name">公開最終チェック（規約 Tier 2 節 + 特商法本文）</span></div><span class="ms-state hold">保留</span></div>
   </div>
@@ -1236,18 +1244,22 @@ gantt
     <div class="card"><p class="kicker">Modals</p><h4><code>components/ModalManager.tsx</code></h4><p>規約 → 復号 → 通常モーダル の優先順。M6 PR-D / M7-α PR-D-2 で先頭分岐。</p></div>
   </div>
 
-  <h3 class="h-rule">デプロイ <span class="small">/ CI/CD</span></h3>
+  <h3 class="h-rule">デプロイ <span class="small">/ CI/CD（dev / prod 二系統）</span></h3>
   <div class="diagram" data-fig="Fig. VII-1">
     <div class="mermaid">
 flowchart LR
-  PR[PR merge to main] --> GHA[GitHub Actions]
-  GHA -->|Workload Identity Federation| GCP[Google Cloud]
-  GHA --> DCK["docker build<br/>--build-arg VITE_FIREBASE_*"]
-  DCK --> AR[("Artifact Registry<br/>asia-northeast1")]
-  AR --> CR["Cloud Run<br/>novel-writer-446321146441"]
-  CR --> URL["public URL<br/>https://...run.app"]
+  PR[PR merge to main] --> DEVWF["deploy.yml<br/>push to main で自動起動"]
+  PR -.手動起動のみ.-> PRODWF["deploy-prod.yml<br/>workflow_dispatch 専用"]
+  DEVWF -->|WIF| DEVBUILD["docker build<br/>--build-arg ENABLE_DEV_PORTAL=true"]
+  PRODWF -->|WIF| PRODBUILD["docker build<br/>/dev 除外（build-arg 未指定）"]
+  DEVBUILD --> AR1[("Artifact Registry<br/>novel-writer-dev")]
+  PRODBUILD --> AR2[("Artifact Registry<br/>novel-writer-prod")]
+  AR1 --> CRDEV["Cloud Run (dev)<br/>/dev/ ポータルあり"]
+  AR2 --> CRPROD["Cloud Run (prod)<br/>/dev/ 除外・無料範囲公開中"]
   classDef ok fill:#e8e0c8,stroke:#2a5762
-  class GHA,DCK,AR,CR,URL ok
+  classDef manual fill:#f3ecdb,stroke:#9a3520,stroke-dasharray:4 3
+  class DEVWF,DEVBUILD,AR1,CRDEV ok
+  class PRODWF,PRODBUILD,AR2,CRPROD manual
     </div>
   </div>
 
@@ -1341,7 +1353,7 @@ flowchart LR
 
 <script>
 (function(){
-  var tabs = document.querySelectorAll('.tab-btn');
+  var tabs = document.querySelectorAll('button.tab-btn');
   var panels = document.querySelectorAll('section.panel');
 
   function activate(id, push){
@@ -1480,9 +1492,9 @@ flowchart LR
       items: [
         { id: 'd1', label: '/health が 200 OK を返す', expect: 'Cloud Run health check が緑。', how: 'curl https://...run.app/health' },
         { id: 'd2', label: '不明な /api/* が 404 JSON を返す', expect: '{ success:false, error: Not Found }', how: 'curl /api/xxx' },
-        { id: 'd3', label: 'main push で auto deploy が完走する', expect: 'GitHub Actions 緑、Cloud Run 新 revision。', how: 'main にマージ後 Actions タブ。' },
+        { id: 'd3', label: 'main push で dev の auto deploy が完走する（prod は workflow_dispatch 手動のみ）', expect: 'GitHub Actions 緑、dev Cloud Run 新 revision。prod は手動実行するまで更新されない。', how: 'main にマージ後 Actions タブ（deploy.yml）。' },
         { id: 'd4', label: 'CSP が production で有効', expect: 'helmet の contentSecurityPolicy が effective。', how: 'DevTools Network → Response Headers の Content-Security-Policy。' },
-        { id: 'd5', label: '/dev/ ページが認証なしで開く', expect: '本ポータルがログイン不要で見られる（noindex,nofollow 付き）。', how: '匿名ウィンドウで /dev/ にアクセス。' }
+        { id: 'd5', label: '/dev/ ページが dev では認証なしで開き、prod では除外されている', expect: 'dev URL では本ポータルがログイン不要で見られる（noindex,nofollow 付き）。prod URL では SPA fallback で本体アプリの index.html が返る。', how: '匿名ウィンドウで dev/prod 両方の /dev/ にアクセスして比較。' }
       ]
     }
   ];
