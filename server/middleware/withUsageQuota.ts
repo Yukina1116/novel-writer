@@ -92,6 +92,7 @@ export const withUsageQuota = <TData>(
                         message: 'usage:recordQuotaExceeded failed',
                         route: routeKey,
                         uid,
+                        requestId,
                         error: serializeError(recordErr),
                     });
                 }

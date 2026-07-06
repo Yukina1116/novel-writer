@@ -19,6 +19,7 @@ router.post('/generate', withUsageQuota('image/generate', async (req, handle) =>
             logger.error({
                 message: 'usage:recordImageGenerationKind failed',
                 uid: req.user.uid,
+                requestId: req.body?.requestId,
                 isAdditionalGeneration,
                 error: serializeError(err),
             });

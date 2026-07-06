@@ -277,8 +277,8 @@ export async function getUsage(
 
 // Issue #232（コンバージョン最適化検討）向けの計測専用 best-effort 記録。
 // quota 超過（429）はレスポンスに直結する重要フローのため、記録自体が失敗しても
-// 呼出元 (withUsageQuota) は catch して 429 レスポンスに影響させない設計とする
-// （rules/error-handling.md の「状態復旧 > ログ記録」原則、ここでは応答確定が最優先）。
+// 呼出元 (withUsageQuota) は catch して 429 レスポンス確定を優先し、計測失敗は
+// ログのみに留める（応答確定 > 計測記録の優先順位）。
 export async function recordQuotaExceeded(
     uid: string,
     routeKey: string,
@@ -299,8 +299,9 @@ export async function recordQuotaExceeded(
 }
 
 // Issue #232 向け。画像生成の「初回」と「追加生成ボタン」呼び出しの内訳を計測する
-// best-effort 記録。呼出元 (image route) は成功後に fire し、失敗しても画像生成の
-// レスポンス自体には影響させない。
+// best-effort 記録。呼出元 (image route) は生成成功時、および PartialSuccessError
+// （一部枚数のみ成功）時に fire し、完全失敗（0 枚成功）時は fire しない。失敗しても
+// 画像生成のレスポンス自体には影響させない。
 //
 // handle: generateImage（AI 呼出、数秒〜十数秒かかりうる）の完了後に呼ばれるため、
 // commit と同じく reserve 時の docId を引き継がないと UTC 月境界を跨いだケースで
