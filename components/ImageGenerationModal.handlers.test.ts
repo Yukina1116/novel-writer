@@ -34,4 +34,11 @@ describe('ImageGenerationModal.handleGenerate (PR #233 static pin)', () => {
         const handler = handlerMatch![0];
         expect(handler).toMatch(/setGeneratedImages\(prev => append \? \[\.\.\.prev, \.\.\.result\] : result\);/);
     });
+
+    it('Issue #232 計測: onGenerate に append (isAdditionalGeneration) を伝搬する', () => {
+        // append を渡し忘れると、BE 側の recordImageGenerationKind が常に
+        // isAdditionalGeneration=false として記録され、追加生成利用率が計測できなくなる。
+        const handler = handlerMatch![0];
+        expect(handler).toMatch(/onGenerate\(promptToUse, append\)/);
+    });
 });

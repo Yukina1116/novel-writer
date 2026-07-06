@@ -39,10 +39,10 @@ export const SettingItemModal = ({ isOpen, onClose, onSave, itemToEdit, itemType
 
     const isImageGenerating = useStore(state => state.isImageGenerating);
 
-    const handleGenerateImage = async (prompt: string): Promise<string[] | null> => {
+    const handleGenerateImage = async (prompt: string, isAdditionalGeneration: boolean = false): Promise<string[] | null> => {
         const { setIsImageGenerating, showToast } = useStore.getState();
         setIsImageGenerating(true);
-        const result = await imageApi.generateImage({ prompt });
+        const result = await imageApi.generateImage({ prompt, isAdditionalGeneration });
         setIsImageGenerating(false);
         if (result.success === false) {
             if (result.error.message.includes('permission') || result.error.message.includes('PERMISSION_DENIED')) {

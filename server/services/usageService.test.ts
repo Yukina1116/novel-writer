@@ -5,6 +5,8 @@ import {
     cancel,
     getUsage,
     getUsageDocId,
+    recordQuotaExceeded,
+    recordImageGenerationKind,
     QuotaExceededError,
     DuplicateRequestError,
     ReservationNotFoundError,
@@ -137,6 +139,9 @@ describe('reserve', () => {
                 reservedCost: 0,
                 reservations: {},
                 processedIds: ['req-1'],
+            routeCounts: {},
+            quotaExceededCounts: {},
+            imageGenerationCounts: { initial: 0, additional: 0 },
             } satisfies UsageDoc,
         });
         await expect(reserve('alice', 'req-1', 100, 10000, db)).rejects.toBeInstanceOf(DuplicateRequestError);
@@ -149,6 +154,9 @@ describe('reserve', () => {
                 reservedCost: 500,
                 reservations: { 'r-old': 500 },
                 processedIds: [],
+            routeCounts: {},
+            quotaExceededCounts: {},
+            imageGenerationCounts: { initial: 0, additional: 0 },
             } satisfies UsageDoc,
         });
         await expect(reserve('alice', 'req-1', 600, 10000, db)).rejects.toBeInstanceOf(QuotaExceededError);
@@ -161,6 +169,9 @@ describe('reserve', () => {
                 reservedCost: 500,
                 reservations: { 'r-old': 500 },
                 processedIds: [],
+            routeCounts: {},
+            quotaExceededCounts: {},
+            imageGenerationCounts: { initial: 0, additional: 0 },
             } satisfies UsageDoc,
         });
         await reserve('alice', 'req-1', 500, 10000, db);
@@ -185,7 +196,7 @@ describe('commit', () => {
     it('moves reservedCost to usedCost and removes reservation', async () => {
         const { db, getDoc } = createMockFirestore();
         const handle = await reserve('alice', 'req-1', 200, 10000, db);
-        await commit('alice', 'req-1', 200, handle, db);
+        await commit('alice', 'req-1', 200, handle, undefined, db);
         expect(getDoc('usage/alice_202604')).toMatchObject({
             usedCost: 200,
             reservedCost: 0,
@@ -197,7 +208,7 @@ describe('commit', () => {
     it('actualCost can be less than reservedCost (refund)', async () => {
         const { db, getDoc } = createMockFirestore();
         const handle = await reserve('alice', 'req-1', 300, 10000, db);
-        await commit('alice', 'req-1', 100, handle, db);
+        await commit('alice', 'req-1', 100, handle, undefined, db);
         expect(getDoc('usage/alice_202604')).toMatchObject({
             usedCost: 100,
             reservedCost: 0,
@@ -206,7 +217,34 @@ describe('commit', () => {
 
     it('throws ReservationNotFoundError when commit without reserve', async () => {
         const { db } = createMockFirestore();
-        await expect(commit('alice', 'unknown', 100, undefined, db)).rejects.toBeInstanceOf(ReservationNotFoundError);
+        await expect(commit('alice', 'unknown', 100, undefined, undefined, db)).rejects.toBeInstanceOf(ReservationNotFoundError);
+    });
+
+    it('increments routeCounts[routeKey] when routeKey is provided (Issue #232 計測)', async () => {
+        const { db, getDoc } = createMockFirestore();
+        const handle = await reserve('alice', 'req-1', 1200, 10000, db);
+        await commit('alice', 'req-1', 1200, handle, 'image/generate', db);
+        expect(getDoc('usage/alice_202604')).toMatchObject({
+            routeCounts: { 'image/generate': 1 },
+        });
+    });
+
+    it('accumulates routeCounts across multiple commits of the same routeKey', async () => {
+        const { db, getDoc } = createMockFirestore();
+        const h1 = await reserve('alice', 'req-1', 1200, 10000, db);
+        await commit('alice', 'req-1', 1200, h1, 'image/generate', db);
+        const h2 = await reserve('alice', 'req-2', 1200, 10000, db);
+        await commit('alice', 'req-2', 1200, h2, 'image/generate', db);
+        expect(getDoc('usage/alice_202604')).toMatchObject({
+            routeCounts: { 'image/generate': 2 },
+        });
+    });
+
+    it('does not touch routeCounts when routeKey is omitted (backward compat)', async () => {
+        const { db, getDoc } = createMockFirestore();
+        const handle = await reserve('alice', 'req-1', 200, 10000, db);
+        await commit('alice', 'req-1', 200, handle, undefined, db);
+        expect(getDoc('usage/alice_202604')).toMatchObject({ routeCounts: {} });
     });
 
     it('caps processedIds at MAX_PROCESSED_IDS (drops oldest)', async () => {
@@ -217,9 +255,12 @@ describe('commit', () => {
                 reservedCost: 50,
                 reservations: { 'req-new': 50 },
                 processedIds: initialIds,
+            routeCounts: {},
+            quotaExceededCounts: {},
+            imageGenerationCounts: { initial: 0, additional: 0 },
             } satisfies UsageDoc,
         });
-        await commit('alice', 'req-new', 50, undefined, db);
+        await commit('alice', 'req-new', 50, undefined, undefined, db);
         const doc = getDoc('usage/alice_202604') as Record<string, unknown>;
         const ids = doc.processedIds as string[];
         expect(ids).toHaveLength(200);
@@ -253,6 +294,9 @@ describe('cancel', () => {
                 reservedCost: 0,
                 reservations: {},
                 processedIds: ['req-1'],
+            routeCounts: {},
+            quotaExceededCounts: {},
+            imageGenerationCounts: { initial: 0, additional: 0 },
             } satisfies UsageDoc,
         });
         await cancel('alice', 'req-1', undefined, db);
@@ -267,9 +311,9 @@ describe('reserve → AI succeeds → commit (happy path, no double charge)', ()
     it('full lifecycle leaves only usedCost increment', async () => {
         const { db, getDoc } = createMockFirestore();
         const h1 = await reserve('alice', 'req-1', 200, 10000, db);
-        await commit('alice', 'req-1', 200, h1, db);
+        await commit('alice', 'req-1', 200, h1, undefined, db);
         const h2 = await reserve('alice', 'req-2', 100, 10000, db);
-        await commit('alice', 'req-2', 100, h2, db);
+        await commit('alice', 'req-2', 100, h2, undefined, db);
         expect(getDoc('usage/alice_202604')).toMatchObject({
             usedCost: 300,
             reservedCost: 0,
@@ -301,7 +345,7 @@ describe('UTC month boundary (reserve→AI→commit/cancel cross-month resilienc
         const handle = await reserve('alice', 'req-1', 200, 10000, db);
         // AI 処理中に 5 月に突入
         vi.setSystemTime(new Date('2026-05-01T00:00:01Z'));
-        await commit('alice', 'req-1', 200, handle, db);
+        await commit('alice', 'req-1', 200, handle, undefined, db);
 
         // 5 月 doc は作成されない、4 月 doc が確定済みになる
         expect(getDoc('usage/alice_202605')).toBeUndefined();
@@ -334,7 +378,7 @@ describe('UTC month boundary (reserve→AI→commit/cancel cross-month resilienc
         const { db, getDoc } = createMockFirestore();
         vi.setSystemTime(new Date('2026-04-15T10:00:00Z'));
         await reserve('alice', 'req-1', 200, 10000, db);
-        await commit('alice', 'req-1', 200, undefined, db);
+        await commit('alice', 'req-1', 200, undefined, undefined, db);
         expect(getDoc('usage/alice_202604')).toMatchObject({ usedCost: 200, reservedCost: 0 });
     });
 });
@@ -343,7 +387,15 @@ describe('getUsage', () => {
     it('returns empty doc when not initialized', async () => {
         const { db } = createMockFirestore();
         const usage = await getUsage('alice', db);
-        expect(usage).toEqual({ usedCost: 0, reservedCost: 0, reservations: {}, processedIds: [] });
+        expect(usage).toEqual({
+            usedCost: 0,
+            reservedCost: 0,
+            reservations: {},
+            processedIds: [],
+            routeCounts: {},
+            quotaExceededCounts: {},
+            imageGenerationCounts: { initial: 0, additional: 0 },
+        });
     });
 
     it('returns current state from Firestore', async () => {
@@ -353,6 +405,9 @@ describe('getUsage', () => {
                 reservedCost: 100,
                 reservations: { 'r1': 100 },
                 processedIds: ['done-1'],
+                routeCounts: { 'image/generate': 3 },
+                quotaExceededCounts: { 'image/generate': 1 },
+                imageGenerationCounts: { initial: 2, additional: 1 },
             } satisfies UsageDoc,
         });
         const usage = await getUsage('alice', db);
@@ -361,6 +416,9 @@ describe('getUsage', () => {
             reservedCost: 100,
             reservations: { 'r1': 100 },
             processedIds: ['done-1'],
+            routeCounts: { 'image/generate': 3 },
+            quotaExceededCounts: { 'image/generate': 1 },
+            imageGenerationCounts: { initial: 2, additional: 1 },
         });
     });
 
@@ -401,5 +459,98 @@ describe('getUsage', () => {
         const usage = await getUsage('alice', db);
         expect(usage.usedCost).toBe(0);
         expect(usage.reservedCost).toBe(0);
+    });
+});
+
+describe('recordQuotaExceeded (Issue #232 計測)', () => {
+    it('creates doc and increments quotaExceededCounts[routeKey] on first call', async () => {
+        const { db, getDoc } = createMockFirestore();
+        await recordQuotaExceeded('alice', 'image/generate', db);
+        expect(getDoc('usage/alice_202604')).toMatchObject({
+            quotaExceededCounts: { 'image/generate': 1 },
+        });
+    });
+
+    it('accumulates across multiple calls for the same routeKey', async () => {
+        const { db, getDoc } = createMockFirestore();
+        await recordQuotaExceeded('alice', 'image/generate', db);
+        await recordQuotaExceeded('alice', 'image/generate', db);
+        expect(getDoc('usage/alice_202604')).toMatchObject({
+            quotaExceededCounts: { 'image/generate': 2 },
+        });
+    });
+
+    it('does not affect usedCost/reservedCost of an existing doc', async () => {
+        const { db, getDoc } = createMockFirestore();
+        await reserve('alice', 'req-1', 200, 10000, db);
+        await recordQuotaExceeded('alice', 'image/generate', db);
+        expect(getDoc('usage/alice_202604')).toMatchObject({
+            reservedCost: 200,
+            reservations: { 'req-1': 200 },
+            quotaExceededCounts: { 'image/generate': 1 },
+        });
+    });
+
+    it('tracks separate routeKeys independently', async () => {
+        const { db, getDoc } = createMockFirestore();
+        await recordQuotaExceeded('alice', 'image/generate', db);
+        await recordQuotaExceeded('alice', 'novel/generate', db);
+        expect(getDoc('usage/alice_202604')).toMatchObject({
+            quotaExceededCounts: { 'image/generate': 1, 'novel/generate': 1 },
+        });
+    });
+});
+
+describe('recordImageGenerationKind (Issue #232 計測)', () => {
+    it('increments imageGenerationCounts.initial when isAdditional is false', async () => {
+        const { db, getDoc } = createMockFirestore();
+        await recordImageGenerationKind('alice', false, undefined, db);
+        expect(getDoc('usage/alice_202604')).toMatchObject({
+            imageGenerationCounts: { initial: 1, additional: 0 },
+        });
+    });
+
+    it('increments imageGenerationCounts.additional when isAdditional is true', async () => {
+        const { db, getDoc } = createMockFirestore();
+        await recordImageGenerationKind('alice', true, undefined, db);
+        expect(getDoc('usage/alice_202604')).toMatchObject({
+            imageGenerationCounts: { initial: 0, additional: 1 },
+        });
+    });
+
+    it('accumulates initial and additional independently', async () => {
+        const { db, getDoc } = createMockFirestore();
+        await recordImageGenerationKind('alice', false, undefined, db);
+        await recordImageGenerationKind('alice', true, undefined, db);
+        await recordImageGenerationKind('alice', true, undefined, db);
+        expect(getDoc('usage/alice_202604')).toMatchObject({
+            imageGenerationCounts: { initial: 1, additional: 2 },
+        });
+    });
+
+    it('uses handle.reservedAt as the docId anchor across UTC month boundary (commit と同じ月境界耐性契約)', async () => {
+        // generateImage（AI 呼出）が数秒〜十数秒かかる間に UTC 月が変わっても、
+        // reserve 時点の月 doc に imageGenerationCounts を書き込む。handle を
+        // 使わないと「今」の月 doc に書いてしまい、commit の routeCounts とは
+        // 別の月に計測が分裂する。
+        const { db, getDoc } = createMockFirestore();
+        vi.setSystemTime(new Date('2026-04-30T23:59:59Z'));
+        const handle = await reserve('alice', 'req-1', 1200, 10000, db);
+        vi.setSystemTime(new Date('2026-05-01T00:00:01Z'));
+        await recordImageGenerationKind('alice', false, handle, db);
+
+        expect(getDoc('usage/alice_202605')).toBeUndefined();
+        expect(getDoc('usage/alice_202604')).toMatchObject({
+            imageGenerationCounts: { initial: 1, additional: 0 },
+        });
+    });
+
+    it('falls back to current month when handle is omitted (legacy behavior)', async () => {
+        const { db, getDoc } = createMockFirestore();
+        vi.setSystemTime(new Date('2026-04-15T10:00:00Z'));
+        await recordImageGenerationKind('alice', false, undefined, db);
+        expect(getDoc('usage/alice_202604')).toMatchObject({
+            imageGenerationCounts: { initial: 1, additional: 0 },
+        });
     });
 });

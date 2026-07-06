@@ -52,6 +52,8 @@ vi.mock('../services/analysisService', () => ({
 const reserveMock = vi.fn();
 const commitMock = vi.fn();
 const cancelMock = vi.fn();
+const recordQuotaExceededMock = vi.fn();
+const recordImageGenerationKindMock = vi.fn();
 vi.mock('../services/usageService', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../services/usageService')>();
     return {
@@ -59,6 +61,8 @@ vi.mock('../services/usageService', async (importOriginal) => {
         reserve: (...args: unknown[]) => reserveMock(...args),
         commit: (...args: unknown[]) => commitMock(...args),
         cancel: (...args: unknown[]) => cancelMock(...args),
+        recordQuotaExceeded: (...args: unknown[]) => recordQuotaExceededMock(...args),
+        recordImageGenerationKind: (...args: unknown[]) => recordImageGenerationKindMock(...args),
     };
 });
 
@@ -118,6 +122,10 @@ describe('/api/ai/* requires Authorization Bearer ID Token', () => {
         reserveMock.mockReset();
         commitMock.mockReset();
         cancelMock.mockReset();
+        recordQuotaExceededMock.mockReset();
+        recordImageGenerationKindMock.mockReset();
+        recordQuotaExceededMock.mockResolvedValue(undefined);
+        recordImageGenerationKindMock.mockResolvedValue(undefined);
         for (const m of allServiceMocks) m.mockReset();
     });
 
@@ -177,7 +185,7 @@ describe('/api/ai/* requires Authorization Bearer ID Token', () => {
             expect(reserveMock).toHaveBeenCalledWith('u1', REQ_ID, 50, 10000);
             expect(generateNamesMock).toHaveBeenCalledTimes(1);
             // commit/cancel は reserve の返した handle を必ず渡す（月境界耐性の契約）
-            expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 50, handle);
+            expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 50, handle, 'utility/names');
             expect(cancelMock).not.toHaveBeenCalled();
         });
 
@@ -267,7 +275,7 @@ describe('/api/ai/* requires Authorization Bearer ID Token', () => {
 
             expect(res.status).toBe(200);
             expect(res.body).toEqual({ success: true, data: ['name-1'] });
-            expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 50, handle);
+            expect(commitMock).toHaveBeenCalledWith('u1', REQ_ID, 50, handle, 'utility/names');
             // best-effort cancel が試行される
             expect(cancelMock).toHaveBeenCalledWith('u1', REQ_ID, handle);
             consoleErrorSpy.mockRestore();

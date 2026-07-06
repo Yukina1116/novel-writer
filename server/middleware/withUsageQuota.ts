@@ -16,6 +16,7 @@ import {
     DuplicateRequestError,
     PartialSuccessError,
     QuotaExceededError,
+    recordQuotaExceeded,
     reserve,
     type ReservationHandle,
 } from '../services/usageService';
@@ -32,7 +33,11 @@ const DEFAULT_TIER: Tier = 'free';
 const isValidRequestId = (value: unknown): value is string =>
     typeof value === 'string' && value.length >= 8 && value.length <= 128;
 
-export type AiHandler<TData> = (req: AuthedRequest) => Promise<TData>;
+// handle: reserve が返した ReservationHandle。AI 呼出後に計測系の best-effort 記録
+// （例: recordImageGenerationKind）を行う handler が、月境界耐性のために commit と
+// 同じ docId アンカーを使えるようにする。使わない handler は第2引数を無視してよい
+// （JS/TS の構造的部分型上、少ない仮引数の関数もこの型に代入できる）。
+export type AiHandler<TData> = (req: AuthedRequest, handle: ReservationHandle) => Promise<TData>;
 
 export const withUsageQuota = <TData>(
     routeKey: AiRouteKey,
@@ -78,6 +83,19 @@ export const withUsageQuota = <TData>(
                 return;
             }
             if (err instanceof QuotaExceededError) {
+                // Issue #232（コンバージョン最適化検討）向けの計測。best-effort のため
+                // 失敗してもログのみに留め、429 レスポンス自体は確実に返す。
+                try {
+                    await recordQuotaExceeded(uid, routeKey);
+                } catch (recordErr) {
+                    logger.error({
+                        message: 'usage:recordQuotaExceeded failed',
+                        route: routeKey,
+                        uid,
+                        requestId,
+                        error: serializeError(recordErr),
+                    });
+                }
                 res.status(429).json({
                     success: false,
                     error: '今月の AI 利用枠の上限に達しました。来月の更新をお待ちください。',
@@ -96,9 +114,9 @@ export const withUsageQuota = <TData>(
         }
 
         try {
-            const data = await handler(authed);
+            const data = await handler(authed, handle);
             try {
-                await commit(uid, requestId, estimatedCost, handle);
+                await commit(uid, requestId, estimatedCost, handle, routeKey);
             } catch (commitErr) {
                 // commit 失敗時も AI 結果は返す（ユーザーに損なし）。reservation が
                 // 残ると次回以降の上限判定に加算され続け、false positive 429 の経路に
@@ -133,7 +151,7 @@ export const withUsageQuota = <TData>(
                 // usedCost に計上する（cancel で全額なかったことにしない）。
                 const actualCost = Math.round(estimatedCost * handlerErr.successRatio);
                 try {
-                    await commit(uid, requestId, actualCost, handle);
+                    await commit(uid, requestId, actualCost, handle, routeKey);
                 } catch (commitErr) {
                     // commit 自体が失敗した場合、reservation を残すと次回以降の上限判定に
                     // 加算され続ける (成功パスの commit 失敗時と同じ理由)。best-effort で
