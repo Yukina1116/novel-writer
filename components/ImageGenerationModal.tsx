@@ -4,7 +4,18 @@ import { createPortal } from 'react-dom';
 import * as Icons from '../icons';
 import { ChatMessage } from '../types';
 import { useRequiresAuth } from '../hooks/useRequiresAuth';
-import { IMAGE_GENERATION_BATCH_SIZE } from '../shared/imageGenerationConfig';
+import { IMAGE_GENERATION_BATCH_SIZE, IMAGE_GENERATION_COOLDOWN_MS } from '../shared/imageGenerationConfig';
+
+// SettingModals.tsx は {isImageGenModalOpen && <ImageGenerationModal .../>} という
+// 条件付きレンダリングでこのコンポーネントを毎回アンマウント/リマウントする。クールダウンを
+// コンポーネント内 useState だけで管理すると「閉じてすぐ開き直す」操作で容易にリセットされ、
+// 連続生成防止の意味がなくなるため、モジュールレベル変数で保持し再マウントをまたいで復元する
+// (2026-07-12、code-review medium で3系統の独立finderが指摘した重大バグの修正)。
+// 既知の限界: この変数はブラウザタブ (JS モジュールスコープ) 単位でしか共有されない。
+// Vertex AI 側の quota はプロジェクト全体で共有されるため、複数タブ・複数ユーザーが
+// 同時に生成すると、それぞれのタブでは isCoolingDown=false のまま合算で quota を
+// 超過しうる。根本対応 (Firestore 等でのサーバー側共有状態管理) は今回のスコープ外。
+let sharedCooldownUntil: number | null = null;
 
 // --- Image Generation Modal ---
 export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePrompt, onApplyImage, characterDescription, isGenerating: isGeneratingProp }) => {
@@ -22,6 +33,19 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
     const chatInputRef = useRef(null);
     const refinementInputRef = useRef(null);
     const [isConfirmingClose, setIsConfirmingClose] = useState(false);
+    // Vertex AI 側の画像生成 quota (1分あたり IMAGE_GENERATION_BATCH_SIZE 回相当) が
+    // 連続生成に耐えられず、429エラーが prod で複数回再現したための予防的クールダウン
+    // (2026-07-12)。cooldownUntil は次に生成可能になる時刻 (epoch ms)。初期値を
+    // sharedCooldownUntil から復元することで、モーダルの閉じ直しでクールダウンが
+    // リセットされるのを防ぐ (setCooldownUntil はこのモジュール変数も同期更新する)。
+    const [cooldownUntil, setCooldownUntilState] = useState<number | null>(sharedCooldownUntil);
+    const [cooldownRemainingSec, setCooldownRemainingSec] = useState(() =>
+        sharedCooldownUntil === null ? 0 : Math.max(0, Math.ceil((sharedCooldownUntil - Date.now()) / 1000))
+    );
+    const setCooldownUntil = (value: number | null) => {
+        sharedCooldownUntil = value;
+        setCooldownUntilState(value);
+    };
 
     useEffect(() => {
         if (isOpen) {
@@ -35,8 +59,27 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
             setIsLoadingChat(false);
             setIsGeneratingImages(false);
             setIsConfirmingClose(false);
+            // クールダウンはここで意図的にリセットしない。sharedCooldownUntil モジュール
+            // 変数からの初期値復元により、モーダルを閉じてすぐ開き直しても連続生成防止が
+            // 効き続ける (2026-07-12、旧実装ではここで毎回リセットされ回避可能だった)。
         }
     }, [isOpen, characterDescription]);
+
+    useEffect(() => {
+        if (cooldownUntil === null) return;
+        const tick = () => {
+            const remainingMs = cooldownUntil - Date.now();
+            if (remainingMs <= 0) {
+                setCooldownRemainingSec(0);
+                setCooldownUntil(null);
+                return;
+            }
+            setCooldownRemainingSec(Math.ceil(remainingMs / 1000));
+        };
+        tick();
+        const interval = setInterval(tick, 1000);
+        return () => clearInterval(interval);
+    }, [cooldownUntil]);
 
     useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatHistory, isLoadingChat]);
     useEffect(() => {
@@ -54,14 +97,28 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
     }, [refinementInput]);
     
     const isBusy = isLoadingChat || isGeneratingImages;
+    // isBusy とは別枠で扱う: 「この画像で決定する」やモード切替は API 呼出を伴わない
+    // ためクールダウン中でも操作可能にする。生成系ボタンにのみ個別に適用する。
+    const isCoolingDown = cooldownRemainingSec > 0;
+    // 3つの生成ボタンで同じ文言を使い回す (code-review medium 指摘: コピペ重複の解消)。
+    const cooldownButtonLabel = `あと${cooldownRemainingSec}秒お待ちください`;
+    const cooldownTitle = isCoolingDown ? `連続生成を防ぐため、${cooldownButtonLabel}` : undefined;
 
     const handleGenerate = async (promptToUse: string, append: boolean = false) => {
+        // クールダウン中の呼び出しを弾く二重防御 (ボタン disabled が主防御)。
+        if (isCoolingDown) return;
         setIsGeneratingImages(true);
         setSelectedImage(null);
         if (!append) {
             setGeneratedImages([]);
         }
         setBasePrompt(promptToUse);
+        // リクエスト実行前 (await の前) にクールダウンを開始する。完了後に開始すると、
+        // 実行中に閉じるボタンでモーダルを閉じてすぐ開き直した場合、in-flight の
+        // リクエストと新規リクエストが重複発行され quota を倍消費してしまう
+        // (handleCloseRequest は generatedImages が空の間は isGeneratingImages を
+        // 見ずに即 onClose するため生成中でも閉じられる。Codex review 指摘、2026-07-12)。
+        setCooldownUntil(Date.now() + IMAGE_GENERATION_COOLDOWN_MS);
         const result = await onGenerate(promptToUse, append);
         if (result) {
             setGeneratedImages(prev => append ? [...prev, ...result] : result);
@@ -94,12 +151,21 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
             setChatHistory(prev => [...prev, { role: 'assistant', text: reply, mode: 'consult' }]);
         }
         if (finalPrompt) {
-            await handleGenerate(finalPrompt);
+            // クールダウン中は handleGenerate 内で無言の早期 return になってしまうため、
+            // ここで先にチャット上にフィードバックを出す (2026-07-12、code-review medium
+            // で複数finderが指摘: チャット経由の生成だけ isCoolingDown 未チェックだった)。
+            if (isCoolingDown) {
+                setChatHistory(prev => [...prev, { role: 'assistant', text: `連続生成を防ぐため、あと${cooldownRemainingSec}秒お待ちください。時間を置いてから改めて生成をお願いします。`, mode: 'consult' }]);
+            } else {
+                await handleGenerate(finalPrompt);
+            }
         }
     };
     
     const handleRefine = async () => {
-        if (!refinementInput.trim() || !basePrompt || isBusy) return;
+        // ボタンの disabled が主防御だが、Ctrl+Enter のキーボードショートカット経由
+        // でも呼ばれるため、ここでも isCoolingDown をチェックする (二重防御)。
+        if (!refinementInput.trim() || !basePrompt || isBusy || isCoolingDown) return;
 
         // 修正用の特別な会話履歴を生成
         const refinementHistory: ChatMessage[] = [
@@ -162,8 +228,8 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
                             className="w-full bg-gray-900 border border-gray-600 rounded-md px-3 py-2 text-sm resize-none overflow-y-auto max-h-48 focus:ring-0 text-white" />
                     </div>
                     <div className="flex-shrink-0 pt-4 space-y-2">
-                        <button onClick={handleRefine} disabled={!canUseAi || isBusy || !refinementInput.trim()} title={!canUseAi ? aiBlockedReason : undefined} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-cyan-600 text-sm rounded-md hover:bg-cyan-500 transition text-white disabled:bg-gray-600 disabled:cursor-not-allowed">
-                            <Icons.MagicWandIcon /> 修正して再生成
+                        <button onClick={handleRefine} disabled={!canUseAi || isBusy || isCoolingDown || !refinementInput.trim()} title={!canUseAi ? aiBlockedReason : cooldownTitle} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-cyan-600 text-sm rounded-md hover:bg-cyan-500 transition text-white disabled:bg-gray-600 disabled:cursor-not-allowed">
+                            <Icons.MagicWandIcon /> {isCoolingDown ? cooldownButtonLabel : '修正して再生成'}
                         </button>
                         <button onClick={handleFinalize} disabled={!canUseAi || isBusy} title={!canUseAi ? aiBlockedReason : undefined} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-sm rounded-md hover:bg-emerald-500 transition text-white disabled:bg-gray-600 disabled:cursor-not-allowed">
                             この画像で決定する
@@ -219,11 +285,11 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
                                 const prompt = `masterpiece, best quality, full body, solo, adult, simple white background, no text, no letters, ${characterDescription.replace(/[\n\r:]+/g, ', ')}`;
                                 handleGenerate(prompt);
                             }}
-                            disabled={!canUseAi || isBusy || !characterDescription.trim()}
-                            title={!canUseAi ? aiBlockedReason : undefined}
+                            disabled={!canUseAi || isBusy || isCoolingDown || !characterDescription.trim()}
+                            title={!canUseAi ? aiBlockedReason : cooldownTitle}
                             className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-cyan-600 text-sm rounded-md hover:bg-cyan-500 transition text-white disabled:bg-gray-600 disabled:cursor-not-allowed"
                         >
-                            <Icons.MoonIcon /> 画像を生成
+                            <Icons.MoonIcon /> {isCoolingDown ? cooldownButtonLabel : '画像を生成'}
                         </button>
                     </div>
                 </div>
@@ -282,11 +348,11 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
                         {!isGeneratingImages && generatedImages.length > 0 && (
                             <button
                                 onClick={() => handleGenerate(basePrompt, true)}
-                                disabled={!canUseAi || isBusy}
-                                title={!canUseAi ? aiBlockedReason : undefined}
+                                disabled={!canUseAi || isBusy || isCoolingDown}
+                                title={!canUseAi ? aiBlockedReason : cooldownTitle}
                                 className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-700 text-sm rounded-md hover:bg-gray-600 transition text-white disabled:bg-gray-600 disabled:cursor-not-allowed"
                             >
-                                <Icons.PlusCircleIcon className="h-5 w-5" /> 追加で{IMAGE_GENERATION_BATCH_SIZE}枚生成する
+                                <Icons.PlusCircleIcon className="h-5 w-5" /> {isCoolingDown ? cooldownButtonLabel : `追加で${IMAGE_GENERATION_BATCH_SIZE}枚生成する`}
                             </button>
                         )}
                     </div>

@@ -1,4 +1,4 @@
-import { GenerateContentParameters, GenerateContentResponse, Modality } from '@google/genai';
+import { GenerateContentResponse, Modality } from '@google/genai';
 import { getAiClient, IMAGE_MODEL, isVertexAiMode } from '../aiClient';
 import { PartialSuccessError } from './usageService';
 import { IMAGE_GENERATION_BATCH_SIZE } from '../../shared/imageGenerationConfig';
@@ -49,55 +49,14 @@ const SAFETY_FINISH_REASONS = new Set<string>([
 
 const SAFETY_BLOCKED_MESSAGE = 'キャラクターの外見が生成ポリシーに抵触した可能性があります。プロンプトを調整して再試行してください。';
 
-// 2026-07-12: 直前の生成成功から10〜20秒程度の短間隔で再度生成すると、Vertex AI 側の
-// QPM クォータ (1分単位のウィンドウ) が回復しきっておらず RESOURCE_EXHAUSTED (429) に
-// なる現象が prod で複数回再現した (1回の生成で NUM_IMAGES 並列呼出するため消費が早い)。
-// gRPC code 8 = RESOURCE_EXHAUSTED (errorHandler.ts の quota 判定と同じ文字列基準)。
-const isQuotaExhaustedError = (error: unknown): boolean => {
-    if (error == null) return false;
-    const code = (error as { code?: unknown }).code;
-    if (code === 8 || code === 'RESOURCE_EXHAUSTED') return true;
-    const message = error instanceof Error ? error.message : String(error);
-    return message.includes('RESOURCE_EXHAUSTED');
-};
-
-const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
-
-// 2026-07-12 実測: 初回 [3000, 8000] (合計11秒) では不足で、この待機を使い切っても
-// なお RESOURCE_EXHAUSTED が続くケースが prod で確認された。[10000, 20000, 40000]
-// (合計70秒) に延長。Cloud Run timeoutSeconds=300 に対し十分余裕がある。それでも
-// 429 が続く場合は Vertex AI 側のクォータ引き上げ申請を検討する。
-// テスト環境 (vitest が自動設定する process.env.VITEST) ではミリ秒オーダーに短縮し、
-// CI 実行時間への影響を避ける（実際のリトライ分岐ロジック自体は本番と同一のまま検証）。
-const QUOTA_RETRY_DELAYS_MS = process.env.VITEST === 'true'
-    ? [10, 20, 40]
-    : [10000, 20000, 40000];
-
-// RESOURCE_EXHAUSTED のみ待機してリトライする。認証エラー等の permanent error は
-// リトライしても無意味なため即座に伝播する。
-const generateContentWithQuotaRetry = async (
-    client: ReturnType<typeof getAiClient>,
-    params: GenerateContentParameters,
-): Promise<GenerateContentResponse> => {
-    for (let attempt = 0; ; attempt++) {
-        try {
-            return await client.models.generateContent(params);
-        } catch (err) {
-            if (attempt >= QUOTA_RETRY_DELAYS_MS.length || !isQuotaExhaustedError(err)) {
-                throw err;
-            }
-            const delayMs = QUOTA_RETRY_DELAYS_MS[attempt];
-            logger.warn({
-                message: 'imageService: RESOURCE_EXHAUSTED (429) を検知、待機して自動リトライする',
-                imageGenerationEvent: 'quota-retry',
-                attempt: attempt + 1,
-                delayMs,
-            });
-            await sleep(delayMs);
-        }
-    }
-};
-
+// 2026-07-12: 直前の生成成功から短間隔で再度生成すると RESOURCE_EXHAUSTED (429) になる
+// 現象が prod で複数回再現した。GCP のクォータ定義を確認したところ
+// generate_content_image_gen_per_project_per_base_model_global が 1分あたり2リクエスト
+// (= NUM_IMAGES 並列呼出1回分) しかなく、そもそも短間隔の連続生成を成立させる余地がない
+// ことが判明した。リトライ（3秒→8秒→2026-07-12に10秒→20秒→40秒へ延長）を一度実装したが、
+// リトライ呼出自体が同じ 1分ウィンドウ内の追加消費となり、かえって回復を遅らせている
+// 疑いが実測ログから濃厚だったため撤去。連続生成の防止は呼び出し元 UI 側の
+// クールダウン表示に委ねる方針とした。
 export const generateImage = async (prompt: string): Promise<string[]> => {
     const client = getAiClient();
 
@@ -108,7 +67,7 @@ export const generateImage = async (prompt: string): Promise<string[]> => {
     // NUM_IMAGES 枚揃わない場合は UX 上これまで通り全体を失敗として扱う (部分画像は返さない)。
     const settled = await Promise.allSettled(
         Array.from({ length: NUM_IMAGES }, () =>
-            generateContentWithQuotaRetry(client, {
+            client.models.generateContent({
                 model: IMAGE_MODEL,
                 contents: prompt,
                 config: {
