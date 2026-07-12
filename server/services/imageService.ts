@@ -63,11 +63,15 @@ const isQuotaExhaustedError = (error: unknown): boolean => {
 
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
-// 待機時間は未実測 (本番環境への追加プローブは auto mode classifier によりブロックされた
-// ため、クォータウィンドウの正確な回復間隔は不明)。Cloud Run timeoutSeconds=300 に対し
-// 十分余裕のある exponential backoff を暫定値として採用し、実運用で 429 再発が続く場合は
-// 値を調整する。
-const QUOTA_RETRY_DELAYS_MS = [3000, 8000];
+// 2026-07-12 実測: 初回 [3000, 8000] (合計11秒) では不足で、この待機を使い切っても
+// なお RESOURCE_EXHAUSTED が続くケースが prod で確認された。[10000, 20000, 40000]
+// (合計70秒) に延長。Cloud Run timeoutSeconds=300 に対し十分余裕がある。それでも
+// 429 が続く場合は Vertex AI 側のクォータ引き上げ申請を検討する。
+// テスト環境 (vitest が自動設定する process.env.VITEST) ではミリ秒オーダーに短縮し、
+// CI 実行時間への影響を避ける（実際のリトライ分岐ロジック自体は本番と同一のまま検証）。
+const QUOTA_RETRY_DELAYS_MS = process.env.VITEST === 'true'
+    ? [10, 20, 40]
+    : [10000, 20000, 40000];
 
 // RESOURCE_EXHAUSTED のみ待機してリトライする。認証エラー等の permanent error は
 // リトライしても無意味なため即座に伝播する。
