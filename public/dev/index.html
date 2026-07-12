@@ -142,6 +142,35 @@ body{
   font-family: var(--font-display);
 }
 
+.env-links{
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: var(--space-sm);
+}
+.env-btn{
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--ink-soft);
+  color: var(--ink);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  min-height: 32px;
+}
+.env-btn:hover{ background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.env-btn[data-current="true"]{
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(154,53,32,0.08);
+}
+.env-btn .ext{ opacity: 0.6; }
+
 .tab-nav{
   position: sticky;
   top: 0;
@@ -682,6 +711,10 @@ footer a:hover{ color: var(--ink); border-bottom-color: var(--ink); }
         Last updated · 2026-07-07<br />
         Branch · main / clean<br />
         Tests · 920 / 920 PASS
+        <div class="env-links" role="group" aria-label="環境を開く">
+          <a class="env-btn" id="env-dev" href="https://novel-writer-ramnh3ulya-an.a.run.app/" target="_blank" rel="noopener">開発 (dev)<span class="ext" aria-hidden="true">↗</span></a>
+          <a class="env-btn" id="env-prod" href="https://novel-writer-df263ic6wa-an.a.run.app/" target="_blank" rel="noopener">本番 (prod)<span class="ext" aria-hidden="true">↗</span></a>
+        </div>
       </div>
     </div>
   </header>
@@ -1379,6 +1412,15 @@ flowchart LR
   if (location.hash){
     var id = location.hash.slice(1);
     if (document.getElementById(id)) activate(id, false);
+  }
+
+  var envDev = document.getElementById('env-dev');
+  var envProd = document.getElementById('env-prod');
+  if (envDev && location.hostname === new URL(envDev.href).hostname){
+    envDev.setAttribute('data-current', 'true');
+  }
+  if (envProd && location.hostname === new URL(envProd.href).hostname){
+    envProd.setAttribute('data-current', 'true');
   }
 
   var CHECKLIST = [
