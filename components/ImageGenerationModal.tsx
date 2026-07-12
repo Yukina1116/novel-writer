@@ -11,6 +11,10 @@ import { IMAGE_GENERATION_BATCH_SIZE, IMAGE_GENERATION_COOLDOWN_MS } from '../sh
 // コンポーネント内 useState だけで管理すると「閉じてすぐ開き直す」操作で容易にリセットされ、
 // 連続生成防止の意味がなくなるため、モジュールレベル変数で保持し再マウントをまたいで復元する
 // (2026-07-12、code-review medium で3系統の独立finderが指摘した重大バグの修正)。
+// 既知の限界: この変数はブラウザタブ (JS モジュールスコープ) 単位でしか共有されない。
+// Vertex AI 側の quota はプロジェクト全体で共有されるため、複数タブ・複数ユーザーが
+// 同時に生成すると、それぞれのタブでは isCoolingDown=false のまま合算で quota を
+// 超過しうる。根本対応 (Firestore 等でのサーバー側共有状態管理) は今回のスコープ外。
 let sharedCooldownUntil: number | null = null;
 
 // --- Image Generation Modal ---
@@ -109,6 +113,12 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
             setGeneratedImages([]);
         }
         setBasePrompt(promptToUse);
+        // リクエスト実行前 (await の前) にクールダウンを開始する。完了後に開始すると、
+        // 実行中に閉じるボタンでモーダルを閉じてすぐ開き直した場合、in-flight の
+        // リクエストと新規リクエストが重複発行され quota を倍消費してしまう
+        // (handleCloseRequest は generatedImages が空の間は isGeneratingImages を
+        // 見ずに即 onClose するため生成中でも閉じられる。Codex review 指摘、2026-07-12)。
+        setCooldownUntil(Date.now() + IMAGE_GENERATION_COOLDOWN_MS);
         const result = await onGenerate(promptToUse, append);
         if (result) {
             setGeneratedImages(prev => append ? [...prev, ...result] : result);
@@ -116,9 +126,6 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
             // Handle error case, maybe show a message
         }
         setIsGeneratingImages(false);
-        // 成功・失敗を問わず Vertex AI 側に呼出は発生している (429 時も quota を
-        // 消費するため) ので、クールダウンは常に開始する。
-        setCooldownUntil(Date.now() + IMAGE_GENERATION_COOLDOWN_MS);
     };
 
     const handleSendMessage = async () => {
