@@ -118,6 +118,7 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 - **CSP**: `server/index.ts` の helmet `scriptSrc` に `https://cdn.jsdelivr.net` を追加（`styleSrc` 等は変更なし、最小権限）
 - **更新運用**: マイルストーン進捗・テスト件数・Last Updated はファイル内に固定文字列で埋め込み。grep で機械的に書き換える（`v0.0.0 (M7-α)` / `2026-05-01` / `Tests · 435 / 435 PASS` / `<div class="milestone-row">` ブロックの状態）
 - **規律**: 動的描画は `createElement` + `textContent` のみ（`innerHTML` 禁止、security_reminder hook 指摘を構造的に閉じる）
+- **環境リンク (PR #264)**: ヘッダー（`masthead` 内 `meta-stack`）に dev/prod Cloud Run URL への直接リンクボタン（`#env-dev` / `#env-prod`、`target="_blank"`）を設置。`location.hostname` 判定でアクセス中の環境を `data-current="true"` で強調表示
 
 ### パスエイリアス
 
