@@ -12,6 +12,7 @@ export const IMAGE_GENERATION_BATCH_SIZE = 2 as const;
 // 同じ quota window 内の追加消費となり回復を遅らせている疑いも濃厚だったため、
 // リトライは撤去し FE 側の生成前クールダウンで連続生成そのものを防ぐ方針に変更した。
 // quota window が fixed か sliding かは未確定 (Google 非公開)。429 直後に次の成功
-// まで要した実測間隔 (最短169秒、リトライ試行を含む値のため撤去後の正確な回復時間
-// ではない点に留意) を踏まえ、120 秒に設定。
-export const IMAGE_GENERATION_COOLDOWN_MS = 120_000 as const;
+// まで要した実測間隔 (最短169秒、リトライ試行を含む値のため撤去後の正確な回復時間の
+// 下限ではなく単一の観測点) を安全マージン込みで上回る 180 秒に設定 (code-review
+// large tier 指摘対応、2026-07-12: 実測値未満の値では429再発を防げない懸念)。
+export const IMAGE_GENERATION_COOLDOWN_MS = 180_000 as const;
