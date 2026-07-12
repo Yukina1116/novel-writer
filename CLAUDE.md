@@ -54,7 +54,7 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 | `/api/ai/novel/generate` | novelService + `withUsageQuota('novel/generate', 200 sen)` | 小説続き生成 |
 | `/api/ai/character/{update,reply,image-prompt}` | characterService + `withUsageQuota('character/*', 100 sen)` | キャラクター作成・更新 |
 | `/api/ai/world/{update,reply}` | worldService + `withUsageQuota('world/*', 100 sen)` | 世界観設定 |
-| `/api/ai/image/generate` | imageService + `withUsageQuota('image/generate', 1200 sen)` | AI立ち絵生成（Nano Banana 2 Lite、quota制約により1回2枚の段階生成） |
+| `/api/ai/image/generate` | imageService + `withUsageQuota('image/generate', 1200 sen)` | AI立ち絵生成（Nano Banana 2 Lite = `gemini-3.1-flash-lite-image`、quota制約により1回2枚の段階生成。Vertex AI quota上限 2 req/分/プロジェクト/モデルのため、連続生成時の429対策としてFE側 180 秒クールダウンUIで抑制（PR #269、prod反映済み）。Imagen4は2026-06-30付で全ライン(`imagen-4.0-{,fast-,ultra-}generate-001`)が公式廃止済み（`gemini-2.5-flash-image`へ移行推奨、代替バージョンなし）のため不採用、詳細は`docs/handoff/LATEST.md`） |
 | `/api/ai/utility/{names,knowledge-name,extract-character}` | utilityService + `withUsageQuota('utility/*', 50-100 sen)` | 名前生成、キャラ抽出等 |
 | `/api/ai/analysis/import` | analysisService + `withUsageQuota('analysis/import', 200 sen)` | テキストインポート分析 |
 | `/api/users/init` | verifyIdToken middleware → Firestore `users/{uid}` を transaction で冪等初期化（M2 PR-C） | ログイン直後のユーザーメタ初期化、M7-α で `termsAcceptedAt` / `termsVersion` / `currentTermsVersion` をレスポンスに追加 |
