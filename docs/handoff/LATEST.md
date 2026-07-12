@@ -1,8 +1,8 @@
-# Handoff: 2026-07-12/13 画像生成429問題の根本原因解明・UIクールダウン方式へ移行（PR #269）
+# Handoff: 2026-07-12/13 画像生成429問題の根本原因解明・UIクールダウン方式へ移行（PR #269）→ Imagen4調査・PR #269 prod反映完了
 
 - Session Date: 2026-07-12 〜 2026-07-13
 - Owner: yasushi-honda
-- Status: ✅ 完了（429リトライ撤去+UIクールダウン実装のPR #269をマージ・dev反映済み。prodへの反映は本田様判断で見送り・次セッション判断待ち）
+- Status: ✅ 完了（PR #269 dev+prod両反映済み。Imagen4調査完了・不採用確定＝現行Nano Banana 2 Lite + UIクールダウン方式を継続）
 - Previous: [2026-07-12d-icon-devportal-image-error-investigation.md](./2026-07-12d-icon-devportal-image-error-investigation.md)
 
 ## セッション要旨
@@ -51,19 +51,45 @@ Codexへのセカンドオピニオン相談で「180秒固定クールダウン
 - 起票数: 0件
 - Net: 0件（今回の発見はtriage基準の「実害」「再現バグ」には該当せず、PR説明文・本handoffへの記録で対応）
 
+## 2026-07-13 追記: Imagen4調査結果 + PR #269 prod反映完了
+
+### Imagen4調査結果（即着手タスク#1、完了）
+
+`gcloud alpha services quota list --service=aiplatform.googleapis.com`（asia-northeast1実測）で、Imagen4系（fast/standard/ultra全ライン）のクォータは`online_prediction_requests_per_base_model` = **20 req/分**と判明。現行Nano Banana 2 Lite（`generate_content_image_gen_per_project_per_base_model` = 2 req/分）の**10倍**で、数字だけ見れば魅力的だった。
+
+しかし公式ドキュメント（`docs.cloud.google.com/vertex-ai/generative-ai/docs/models/imagen/4-0-{generate,fast-generate,ultra-generate}-001`、およびVertex AI release notes）を個別に直接確認したところ、**Imagen4は`imagen-4.0-{,fast-,ultra-}generate-001`全ラインが2026年3月24日付で公式に廃止発表済み、Discontinuation date 2026年6月30日を経過している**ことが判明（移行推奨先: `gemini-2.5-flash-image`、現行モデルより旧世代）。検索結果に出た`imagen-4.0-generate-preview-06-06`という別バージョンもcurlで確認したところ301リダイレクトで同一の廃止対象ページに転送されるだけで、抜け道は存在しない。
+
+**結論: Imagen4への切替は不採用**。10倍クォータは公式に廃止された製品ラインの数字であり、実生成テスト（速度・成功率比較）は実施する意味がないため見送った。現行のNano Banana 2 Lite + UIクールダウン方式（PR #269、180秒）を継続するのが現時点の最適解と判断（本田様確認済み、「最適解で進めましょう」の指示を受けPR #269 prod反映を実施）。
+
+料金（$0.02〜$0.06/画像という数字）は複数の二次情報源はあったが、公式pricing pageが長大でWebFetchツールがtruncateし一次ソースでの裏取りはできなかった。ただし廃止済みモデルのため実務上の影響はない。
+
+### PR #269 prod反映（条件待ち#1、完了）
+
+本田様の明示指示「最適解で進めましょう。prod反映ができたら」を受け、`gh workflow run deploy-prod.yml --ref main`を実行。
+
+- Workflow run: [29212549257](https://github.com/Yukina1116/novel-writer/actions/runs/29212549257)（test job → deploy job、共に success）
+- 反映確認: `gcloud run services describe novel-writer --project=novel-writer-prod --region=asia-northeast1 --format="value(spec.template.spec.containers[0].image)"` → イメージタグ `1e1b614...`（mainのHEAD、PR #269 + #270まで反映）と一致確認済み
+
 ## 次のアクション（3分割）
 
 ### 即着手タスク
 
+なし（Imagen4調査は完了・PR #269 prod反映も完了）。
+
+<details>
+<summary>完了済みタスク（参考、折りたたみ）</summary>
+
 | # | タスク | ROI | 想定工数 | 完了条件 | 関連ファイル / コマンド |
 |---|--------|-----|----------|---------|------------------------|
-| 1 | Imagen4モデルでの画像生成クォータ・生成体験を調査し、Nano Banana 2 Lite（現行）と比較 | 本田様から明示指示「imagen4だったらこんなにも不便なのか、確認してください」。現行モデルはTier 1予算(100円/月=8回程度)+Vertex AIクォータ(2 req/分、実測境界1分33秒〜2分39秒)の二重の不便さがある | 30-60分（gcloud quota確認+実際の生成テスト） | Imagen4の`gcloud alpha services quota list`でのクォータ値確認、可能であれば実際に数回生成して体感速度・成功率を比較、現行モデルとのトレードオフ（画質・速度・コスト・クォータ）を本田様に報告 | `gcloud alpha services quota list --service=aiplatform.googleapis.com` |
+| 1 | ~~Imagen4モデルでの画像生成クォータ・生成体験を調査し、Nano Banana 2 Lite（現行）と比較~~ ✅完了(2026-07-13) | 本田様から明示指示「imagen4だったらこんなにも不便なのか、確認してください」。現行モデルはTier 1予算(100円/月=8回程度)+Vertex AIクォータ(2 req/分、実測境界1分33秒〜2分39秒)の二重の不便さがある | 30-60分（gcloud quota確認+実際の生成テスト） | Imagen4の`gcloud alpha services quota list`でのクォータ値確認、可能であれば実際に数回生成して体感速度・成功率を比較、現行モデルとのトレードオフ（画質・速度・コスト・クォータ）を本田様に報告 | `gcloud alpha services quota list --service=aiplatform.googleapis.com` |
+
+</details>
 
 ### 条件待ち（明示 trigger 付き）
 
 | # | 項目 | trigger（充足条件） | 充足時のタスク | 充足確認方法 |
 |---|------|------------------|--------------|------------|
-| 1 | PR #269（429リトライ撤去+UIクールダウン）のprodへの反映 | 本田様の明示判断（今回は「まだprodには未反映とする」と明言、dev運用でのしばらくの様子見の可能性） | `deploy-prod.yml`をworkflow_dispatchで手動実行 → prodデプロイ確認（イメージSHA一致） | 本田様への確認、または`gh workflow run`可否の指示 |
+| 1 | ~~PR #269（429リトライ撤去+UIクールダウン）のprodへの反映~~ | ✅完了(2026-07-13)。本田様の明示指示「最適解で進めましょう。prod反映ができたら」 | `gh workflow run deploy-prod.yml --ref main`実行、run [29212549257](https://github.com/Yukina1116/novel-writer/actions/runs/29212549257)成功、イメージSHA `1e1b614`一致確認済み | 完了 |
 | 2 | prodで429が再発した場合の調査 | 実際の429再発報告 | 同根再発スキャンで記録した仮説（DSQ変動）を優先的に検証。Cloud Loggingで429本文（`Quota exceeded`か`Resource exhausted, please try again later`か）を確認し、明示クォータ超過か共有容量不足かを判別 | `gcloud logging read` |
 | 3 | Issue #232の次の一手（可視化/サブ上限/コンバージョン導線） | 計測データが一定量蓄積された後の本田様の方針判断 | Issue #232本文の4論点から選択、`/impl-plan`で計画立案 | `gh issue view 232` |
 | 4 | Issue #156/#152/#147/#137 | 各Issue本文記載のtrigger | 各Issue本文参照 | `gh issue view <N>` |
@@ -81,21 +107,21 @@ Codexへのセカンドオピニオン相談で「180秒固定クールダウン
 
 ## デプロイ状況
 
-- dev: `4ba1b54`（PR #269マージ後の正規CI/CDビルド）に一致、CI（Deploy to Cloud Run）成功確認済み。検証用に一時デプロイしたTier 1バイパスビルドは完全に削除済み（Artifact Registry・ローカルDockerイメージとも）
-- prod: `67038c6`（PR #268時点）のまま。**PR #269は本田様の判断で意図的に未反映**（次のアクション条件待ち#1参照）
+- dev: `1e1b614`（PR #269 + #270マージ後の正規CI/CDビルド）に一致、CI（Deploy to Cloud Run）成功確認済み
+- prod: `1e1b614`に一致（2026-07-13、workflow run [29212549257](https://github.com/Yukina1116/novel-writer/actions/runs/29212549257)で反映完了、`gcloud run services describe`で実イメージSHA確認済み）。**dev/prod完全同期**
 
 ## 再開可能性判定
 
-✅ **再開可能** - ドキュメントから開発再開できます。即着手タスクは1件（Imagen4調査、本田様の明示指示あり）。
+✅ **再開可能** - ドキュメントから開発再開できます。即着手タスクなし（Imagen4調査・PR #269 prod反映とも完了）。
 
 ## 最終結論
 
-✅ **セッション終了可** — 残作業ゼロ、Git clean、dev同期済み（prodは意図的に未反映）
+✅ **セッション終了可** — 残作業ゼロ、Git clean、dev/prod完全同期済み
 
 - OPEN PR: 0件（#269マージ・ブランチ削除済み）
 - active Issue: 5件（すべてdecision-maker明示指示待ちまたはtrigger待ち、Net 0）
-- Git: clean（`main`ブランチ、`origin/main`と同期済み、`4ba1b54`）
-- 即着手タスク: 1件（Imagen4調査、本田様指示あり） / 条件待ち: 5件 / 却下候補: 3件
+- Git: clean（`main`ブランチ、`origin/main`と同期済み、`1e1b614`）
+- 即着手タスク: 0件（Imagen4調査・PR #269 prod反映とも完了） / 条件待ち: 4件（元5件から#1解消） / 却下候補: 3件
 - 同根再発スキャン: **⚠️ 監視事項あり** — 2026-07-05のhandoffに記録された「15分〜2時間の429継続」観測と、本セッションの「180秒で十分」という結論の間に未解消の緊張関係。180秒はVertex AI側の変動するDynamic Shared Quotaに対する理論保証ではなく実測ベースの安全マージン（PR説明文に明記済み）。prodで429が再発した場合は条件待ち#2の手順で調査すること
 - 対症療法判定: 基準3該当（同症状PRの連続）→ 実測・Codexセカンドオピニオン・Firestore実データ確認による構造的検証を実施、対症療法ではなく根本原因（Tier 1予算枯渇という新発見＋Vertex AI側DSQ変動）の特定と判定
 - 残留プロセス: なし
