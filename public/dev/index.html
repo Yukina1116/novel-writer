@@ -1029,6 +1029,14 @@ sequenceDiagram
     </div>
   </div>
 
+  <div class="diagram" data-fig="Fig. III-2b / Screenshot">
+    <img src="/dev/images/image-generation-cooldown.jpg" alt="AI立ち絵生成モーダルで「連続生成を防ぐため、あと152秒お待ちください」と表示されているクールダウンUIの実機キャプチャ" style="max-width:100%; display:block; margin:0 auto;">
+    <p style="max-width: 65ch; margin-top: 0.75rem;">
+      実機キャプチャ（2026-07-13、dev環境）。<code>image/generate</code> は Vertex AI 側の quota 上限（2 req/分/プロジェクト/モデル）に抵触しやすいため、FE 側で 180 秒クールダウンを挟んで 429 を予防する（<code>components/ImageGenerationModal.tsx</code>、PR #269）。
+      <strong>これは上図の Tier 月間予算（Firestore <code>usage</code>）とは独立した機構</strong>で、開発者アカウントかどうかに関わらず全ユーザーに一律適用される。開発者 Tier 免除（下記 ENV の <code>DEVELOPER_UIDS</code>、PR #275）と混同しないこと。
+    </p>
+  </div>
+
   <h3 class="h-rule">③ 暗号化バックアップ Import 状態遷移 <span class="small">/ M6 State Machine</span></h3>
   <div class="diagram" data-fig="Fig. III-3">
     <div class="mermaid">
@@ -1262,6 +1270,7 @@ gantt
       <tr><td><code>VITE_FIREBASE_*</code> ×6</td><td class="v">apiKey / authDomain / projectId / appId / storageBucket / messagingSenderId</td><td>build-time 注入。Dockerfile <code>--build-arg</code> 経由（PR #79）</td></tr>
       <tr><td><code>VITE_USE_AUTH_EMULATOR</code></td><td class="v">true（emulator用）</td><td>dev:emu スクリプトで Auth/Firestore Emulator 接続</td></tr>
       <tr><td><code>FIREBASE_AUTH_EMULATOR_HOST</code></td><td class="v">localhost:9099</td><td>サーバー側 verifyIdToken の宛先切替</td></tr>
+      <tr><td><code>DEVELOPER_UIDS</code></td><td class="v">カンマ区切り uid（例: 単一 uid のみ設定中）</td><td>開発者アカウントを Tier 月間予算から免除し、10 倍上限を適用（<code>server/middleware/developerOverride.ts</code> / <code>withUsageQuota.ts</code>、PR #275）。prod のみ配線済み、dev は <code>deploy.yml</code> 未配線</td></tr>
     </tbody>
   </table>
 
