@@ -5,8 +5,10 @@
 // 誤って課金プランの一種として扱われる事故を構造的に防ぐ (Codex セカンドオピニオン
 // 2026-07-13 反映)。
 //
-// DEVELOPER_UIDS 環境変数 (カンマ区切り) に含まれる uid は withUsageQuota.reserve()
-// の limit を undefined (= 上限なし) として扱う。
+// DEVELOPER_UIDS 環境変数 (カンマ区切り) に含まれる uid は withUsageQuota.ts で
+// usageConfig.DEVELOPER_OVERRIDE_LIMIT_SEN (Tier 1 の 10 倍、有限値) を上限として
+// 適用される。完全な無制限にはしない (2026-07-13 code review 指摘反映、暴走ループ
+// 等への歯止めを残すため、usageConfig.ts の DEVELOPER_OVERRIDE_LIMIT_SEN コメント参照)。
 
 const parseDeveloperUids = (raw: string | undefined): Set<string> => {
     if (!raw) return new Set();
