@@ -20,6 +20,15 @@ export const MONTHLY_LIMIT_SEN: Record<Tier, number> = {
     free: 10000,
 };
 
+// 開発者アカウント（DEVELOPER_UIDS）向けの月間上限。課金プラン (Tier) とは
+// 意図的に分離した運用上の例外として管理する（将来 users.plan から Tier を
+// 取得する経路に切り替わった際、この例外が課金プランの一種として誤って扱われる
+// 事故を防ぐため、developerOverride.ts / withUsageQuota.ts 参照）。
+// 完全な無制限 (undefined) ではなく、Tier 1 の 10 倍 = 1000 円相当の有限値とする
+// ことで、テストがブロックされない十分な余裕を確保しつつ、リトライバグや誤操作
+// による暴走時のコスト上限を残す（2026-07-13 code review 指摘反映）。
+export const DEVELOPER_OVERRIDE_LIMIT_SEN = 100_000;
+
 // AI route ごとの予約コスト（sen 単位）。
 // 控えめに見積もり、実コストが上回った場合は commit で精算する設計。
 export const ROUTE_COST_SEN = {

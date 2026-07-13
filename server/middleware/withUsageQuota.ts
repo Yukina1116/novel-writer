@@ -20,7 +20,8 @@ import {
     reserve,
     type ReservationHandle,
 } from '../services/usageService';
-import { MONTHLY_LIMIT_SEN, ROUTE_COST_SEN, type AiRouteKey, type Tier } from '../services/usageConfig';
+import { DEVELOPER_OVERRIDE_LIMIT_SEN, MONTHLY_LIMIT_SEN, ROUTE_COST_SEN, type AiRouteKey, type Tier } from '../services/usageConfig';
+import { isDeveloperOverrideUid } from './developerOverride';
 import { logger, serializeError } from '../utils/logger';
 
 // 現状 Tier 取得経路がないため固定。将来 users.plan からの取得に切替予定。
@@ -67,8 +68,21 @@ export const withUsageQuota = <TData>(
         }
 
         const tier = DEFAULT_TIER;
-        const limit = MONTHLY_LIMIT_SEN[tier];
         const estimatedCost = ROUTE_COST_SEN[routeKey];
+        // 開発者アカウント (DEVELOPER_UIDS) は課金プラン (Tier) とは独立した運用上の
+        // 例外として、Tier 1 の 10 倍の上限 (DEVELOPER_OVERRIDE_LIMIT_SEN) を渡す
+        // (developerOverride.ts 冒頭コメント参照)。財務安全装置を弱める変更のため、
+        // 発動時は必ずログを残す (2026-07-13 code review 指摘: サイレント発動の監査性欠如)。
+        const isDeveloperOverride = isDeveloperOverrideUid(uid);
+        const limit = isDeveloperOverride ? DEVELOPER_OVERRIDE_LIMIT_SEN : MONTHLY_LIMIT_SEN[tier];
+        if (isDeveloperOverride) {
+            logger.info({
+                message: 'usage:developer-override applied',
+                uid,
+                route: routeKey,
+                limit,
+            });
+        }
 
         let handle: ReservationHandle;
         try {
