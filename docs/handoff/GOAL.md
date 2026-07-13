@@ -29,7 +29,7 @@ updated: 2026-07-13
 - [x] GitHub Secrets `PROD_DEVELOPER_UIDS` の登録
 - [x] PR #275 マージ・prod反映（`gh workflow run deploy-prod.yml`、イメージSHA `7e2a19c` 一致確認済み）
 - [x] `gcloud run services describe` で `DEVELOPER_UIDS` を含む全環境変数が破壊されずに反映されていることを確認（`^;^` 区切り文字構文が正常動作、他5つの既存環境変数も無事）
-- [ ] 対象uid（本田様）でprodのAI機能（image/generate等）を呼び出してもクォータ超過エラーが発生しないことの実機確認（本田様ご自身の操作が必要、AIはIDトークンで代行不可）
+- [ ] 対象uid（本田様）でprodのAI機能（image/generate等）を呼び出してもクォータ超過エラーが発生しないことの実機確認（本田様ご自身の操作が必要、AIはIDトークンで代行不可）。**間接証拠あり（2026-07-13）**: prod Cloud Loggingで `usage:developer-override applied` ログを4件確認（対象uidに対し `image/generate` / `character/image-prompt`、limit=100000 sen）。ただし本田様ご自身の「エラーが出なかった」という明示確認はまだ得られていないため `[ ]` のまま維持
 
 ## 🔄 中断点（in-flight）
 なし（残るタスクは本田様ご自身によるprod実機確認のみ。DEVELOPER_UIDSにはまだ単一uidのみ設定のため、カンマ区切り複数uidでの区切り文字構文検証は将来複数アカウント追加時に別途実施）
