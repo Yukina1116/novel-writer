@@ -1,8 +1,8 @@
-# Handoff: 2026-07-12/13 画像生成429問題の根本原因解明・UIクールダウン方式へ移行（PR #269）→ Imagen4調査・PR #269 prod反映完了
+# Handoff: 2026-07-12/13 画像生成429問題の根本原因解明・UIクールダウン方式へ移行（PR #269）→ Imagen4調査 → 開発者アカウントTier免除実装（PR #275）まで完了
 
 - Session Date: 2026-07-12 〜 2026-07-13
 - Owner: yasushi-honda
-- Status: ✅ 完了（PR #269 dev+prod両反映済み。Imagen4調査完了・不採用確定＝現行Nano Banana 2 Lite + UIクールダウン方式を継続）
+- Status: ✅ 完了（PR #269〜#276 全てdev+prod反映済み。開発者アカウントのTier 1月間予算免除機構を実装しprod反映、環境変数実機確認まで完了）
 - Previous: [2026-07-12d-icon-devportal-image-error-investigation.md](./2026-07-12d-icon-devportal-image-error-investigation.md)
 
 ## セッション要旨
@@ -103,27 +103,93 @@ Codexへのセカンドオピニオン相談で「180秒固定クールダウン
 | 2 | `characterService.ts`/`ImageGenerationModal.tsx` の `full body`/`solo`/`simple white background` ハードコード | 前々セッションのExplore agent二次発見 | 「AI立ち絵生成」機能の性質上、意図的な仕様である可能性が高くROI不明確 |
 | 3 | 未成年設定キャラクターのAI立ち絵生成が構造的に失敗する制約 | PR #266で`personGeneration: ALLOW_ALL`に変更し一部緩和済み | 残る制約はGoogle Prohibited Use Policyによる安全フィルタの正常動作であり、AIが「直すべき」と判断すること自体が越権 |
 
-> ⚠️ 「優先順にすすめて」等の包括指示で次セッションが動けるのは即着手タスクのみ（今回は1件、Imagen4調査）。
+> ⚠️ 「優先順にすすめて」等の包括指示で次セッションが動けるのは即着手タスクのみ（今回は0件、全て条件待ちまたは却下候補）。
+
+## 2026-07-13 追記②: 開発者アカウントTier 1月間予算免除の実装・prod反映完了
+
+### セッション要旨
+
+本田様がprodでAI機能をテストする際、Tier 1月間予算（100円/月=10000sen）を頻繁に使い切ってしまう問題に対し、まず1回限りのGitHub Actions workflowで応急対応し、その後恒久的な「開発者override」機構を実装・prod反映した。
+
+**1回限り対応（PR #273/#274）**: `usage/{uid}_{yyyymm}`ドキュメントのusedCostを手動リセットするworkflowを作成・実行・削除。実行過程でADCアカウント不一致（gcloud CLIは`hy.unimail.11@gmail.com`だがADCは`yasushi.honda@aozora-cg.com`という別アカウント）とFirebase Auth権限不足（`roles/firebaseauth.admin`が別SAにのみ付与）を発見し、本田様の明示承認を得てIAM権限を一時付与→実行→即時取消の手順で対処。usedCost 9100→0のリセットを実測確認。
+
+**恒久対応（PR #275）**: `DEVELOPER_UIDS`環境変数に含まれるuidをTier 1の10倍（`DEVELOPER_OVERRIDE_LIMIT_SEN`=100,000sen=1000円相当）の上限で運用する「開発者override」を実装。Codexへのセカンドオピニオン（plan mode）を経て、Tier概念（課金プラン）とは意図的に分離した設計とした。
+
+### 品質ゲートで検出・修正した重大な設計ミス
+
+`/code-review high`（8角度find+1票verify）で4件CONFIRMED/PLAUSIBLE指摘を検出:
+1. **[CONFIRMED]** 当初`reserve()`の`limit`を`number | undefined`とし`undefined`=完全無制限で設計していたが、暴走ループ・リトライバグ等への歯止めが一切ないと指摘。本田様の判断で「高いが有限の上限」方式に変更し、`reserve()`のシグネチャ変更自体を巻き戻した
+2. **[CONFIRMED]** `deploy-prod.yml`の`flags`内でsecret値が未クォートのまま埋め込まれており、値に空白が入るとデプロイが壊れるリスク → ダブルクォートで囲んで修正
+3. **[CONFIRMED]** override発動が完全にサイレント（ログなし）→ `logger.info`で監査ログを追加
+4. **[PLAUSIBLE]** dev環境（`deploy.yml`）には同じ免除が配線されていない → GOAL.mdに既知のスコープ判断として記録（対応不要、本田様の明示指示なし）
+
+さらに`/review`でPR diffを再確認した際、`developerOverride.ts`冒頭コメントが巻き戻し前の古い設計（"limitをundefinedとして扱う"）のまま残っていた見落としを発見・修正。`codex review-diff`では重大な問題なしとの評価。
+
+### prod反映・実機確認
+
+`gh workflow run deploy-prod.yml`でデプロイ実行、イメージSHA `7e2a19c`（PR #275）→ `1852c99`（PR #276、GOAL.md更新）まで一致確認。`gcloud run services describe`で`DEVELOPER_UIDS`を含む全6環境変数が破壊されずに反映されていることを実機確認（`^;^`区切り文字構文が正常動作）。
+
+### セッション中のトラブルと復旧
+
+GOAL.md更新作業中に`git reset --soft HEAD~1`を誤って`main`ブランチに対して実行し、ローカルの`main`がPR #275マージ前に巻き戻る事故が発生（リモートは無事）。stash退避を経て`git reset --hard origin/main`で安全に復旧。また、GOAL.mdに本田様のFirebase uidを平文で書きそうになった箇所を自動モードのガードレールが検出しブロック、uidを含まない形に修正した。
+
+## 本セッション merged PR（追加5件、計6件）
+
+| PR | 内容 | 規模 | 種別 |
+|----|------|------|------|
+| #271 | docs: Imagen4調査結果とPR #269 prod反映をハンドオフに記録 | 2 files, +37/-11 | ドキュメント |
+| #272 | docs(dev-portal): テスト件数とLast Updatedを実測値に同期 | 1 file, +2/-2 | ドキュメント |
+| #273 | ops: 本番usageリセット用の1回限りworkflowを追加 | 2 files, +105 | 運用ツール（一時） |
+| #274 | ops: 実行完了した本番usageリセットの1回限りworkflowを削除 | 2 files, -105 | 運用ツール（一時、削除） |
+| #275 | feat(usage): 開発者アカウントをTier 1月間予算から免除 | 7 files, +210/-4 | 新機能（large tier） |
+| #276 | docs(goal): PR #275 prod反映完了をGOAL.mdに記録 | 1 file, +6/-4 | ドキュメント |
 
 ## デプロイ状況
 
-- dev: `1e1b614`（PR #269 + #270マージ後の正規CI/CDビルド）に一致、CI（Deploy to Cloud Run）成功確認済み
-- prod: `1e1b614`に一致（2026-07-13、workflow run [29212549257](https://github.com/Yukina1116/novel-writer/actions/runs/29212549257)で反映完了、`gcloud run services describe`で実イメージSHA確認済み）。**dev/prod完全同期**
+- dev: `1852c99`（PR #276マージ後の正規CI/CDビルド）に一致、CI（Deploy to Cloud Run）成功確認済み
+- prod: `1852c99`相当（実デプロイは`7e2a19c`＝PR #275時点、GOAL.md更新のPR #276はドキュメントのみのためprod再デプロイ不要）に一致。`DEVELOPER_UIDS`含む全環境変数の実機反映確認済み。**dev/prod完全同期**
+
+## 次のアクション（3分割）
+
+### 即着手タスク
+
+なし（executor領分の作業は全て完了。残る候補は全て外部trigger待ち）。
+
+### 条件待ち（明示 trigger 付き）
+
+| # | 項目 | trigger（充足条件） | 充足時のタスク | 充足確認方法 |
+|---|------|------------------|--------------|------------|
+| 1 | 開発者override機構の実機動作確認（GOAL.md最終タスク） | 本田様ご自身がprodでAI機能（image/generate等）をテストし、クォータ超過エラーが出ないことを確認 | 本田様からの確認結果報告を待つのみ、AI側の追加作業なし | 本田様への確認 |
+| 2 | dev環境（`deploy.yml`）へのDEVELOPER_UIDS配線 | dev環境でも同様のTier1予算枯渇が発生した場合の本田様指示 | `deploy.yml`に同様の環境変数配線を追加、`/impl-plan`軽量モードで計画 | 本田様への確認、または`gh workflow run`可否の指示 |
+| 3 | 別プロジェクト（aozora-sns-auto/apps/admin-web）の残留devサーバー（PID 52872）停止 | 本田様の停止指示（並行実行中の別セッションの可能性があるため） | `~/.claude/scripts/cleanup-node.sh --kill`または該当プロセスを個別kill | `ps -p 52872` |
+| 4 | prodで429が再発した場合の調査 | 実際の429再発報告 | 同根再発スキャンで記録した仮説（DSQ変動）を優先的に検証。Cloud Loggingで429本文を確認 | `gcloud logging read` |
+| 5 | Issue #232の次の一手（可視化/サブ上限/コンバージョン導線） | 計測データが一定量蓄積された後の本田様の方針判断 | Issue #232本文の4論点から選択、`/impl-plan`で計画立案 | `gh issue view 232` |
+| 6 | Issue #156/#152/#147/#137 | 各Issue本文記載のtrigger | 各Issue本文参照 | `gh issue view <N>` |
+| 7 | Issue #243 対応候補(b)/(c) | 本田様の優先度判断 | Issue #243本文参照、`/impl-plan`で計画立案 | `gh issue view 243` |
+
+### 却下候補（記録のみ）
+
+| # | 項目 | 検討経緯 | 着手しない理由 |
+|---|------|---------|---------------|
+| 1 | サーバー側での共有状態管理（Firestore等）によるプロジェクト全体のクォータ制御 | Codex review-diff P1指摘、PR #269の既知の限界に明記済み | 複数タブ/複数ユーザーの合算超過防止には必要だが、現状の利用規模では過剰実装の可能性。本田様の明示指示なし |
+| 2 | `characterService.ts`/`ImageGenerationModal.tsx` の `full body`/`solo`/`simple white background` ハードコード | 前々セッションのExplore agent二次発見 | 「AI立ち絵生成」機能の性質上、意図的な仕様である可能性が高くROI不明確 |
+| 3 | 未成年設定キャラクターのAI立ち絵生成が構造的に失敗する制約 | PR #266で`personGeneration: ALLOW_ALL`に変更し一部緩和済み | 残る制約はGoogle Prohibited Use Policyによる安全フィルタの正常動作であり、AIが「直すべき」と判断すること自体が越権 |
+| 4 | dev環境への開発者override先行実装 | 本セッションでprodのみ実装 | ROI不明確（devでの予算枯渇は未報告）、本田様の明示指示なし。条件待ち#2として保持 |
 
 ## 再開可能性判定
 
-✅ **再開可能** - ドキュメントから開発再開できます。即着手タスクなし（Imagen4調査・PR #269 prod反映とも完了）。
+✅ **再開可能** - ドキュメントから開発再開できます。即着手タスク0件、全て条件待ち（本田様の確認・指示待ち）。
 
 ## 最終結論
 
 ✅ **セッション終了可** — 残作業ゼロ、Git clean、dev/prod完全同期済み
 
-- OPEN PR: 0件（#269マージ・ブランチ削除済み）
+- OPEN PR: 0件（#271〜#276 全てマージ・ブランチ削除済み）
 - active Issue: 5件（すべてdecision-maker明示指示待ちまたはtrigger待ち、Net 0）
-- Git: clean（`main`ブランチ、`origin/main`と同期済み、`1e1b614`）
-- 即着手タスク: 0件（Imagen4調査・PR #269 prod反映とも完了） / 条件待ち: 4件（元5件から#1解消） / 却下候補: 3件
-- 同根再発スキャン: **⚠️ 監視事項あり** — 2026-07-05のhandoffに記録された「15分〜2時間の429継続」観測と、本セッションの「180秒で十分」という結論の間に未解消の緊張関係。180秒はVertex AI側の変動するDynamic Shared Quotaに対する理論保証ではなく実測ベースの安全マージン（PR説明文に明記済み）。prodで429が再発した場合は条件待ち#2の手順で調査すること
-- 対症療法判定: 基準3該当（同症状PRの連続）→ 実測・Codexセカンドオピニオン・Firestore実データ確認による構造的検証を実施、対症療法ではなく根本原因（Tier 1予算枯渇という新発見＋Vertex AI側DSQ変動）の特定と判定
-- 残留プロセス: なし
-- テスト: CI(test) PASS（PR #269）、`npx vitest run` 933/933 PASS、lint（tsc --noEmit）clean
-- 既知の blocker: なし（prod反映は本田様の意図的な見送り判断、blockerではなく条件待ち）
+- Git: clean（`main`ブランチ、`origin/main`と同期済み、`1852c99`）
+- 即着手タスク: 0件 / 条件待ち: 7件 / 却下候補: 4件
+- 同根再発スキャン（§4.6）: 過去7日アーカイブ0件ヒット。「Tier 1」というキーワードが過去handoffにヒットしたのはM6暗号化バックアップ機能の同名異義語のみで、真の同根なし。PR #273/#274→#275は同一問題への段階対応（応急→恒久）であり、悪い意味での同根再発ではない
+- 対症療法判定（§4.7）: 該当なし。retry/fallback等の表面的対処ではなく、Codexセカンドオピニオン+`/code-review high`構造的検証を経た根本対応（Tier概念と分離した運用上例外の新規実装）
+- 残留プロセス: 1件検出（別プロジェクト `aozora-sns-auto/apps/admin-web` の pnpm dev、PID 52872、⚠️本チェックは現在のプロジェクトに限らないマシン全体のチェック。並行実行中の別セッションの可能性があるため停止は条件待ち#3に留める）
+- テスト: `npm run lint` PASS、`npm run test` 945/945 PASS
+- 既知の blocker: なし（残タスクは全て本田様の確認・判断待ちで、AI側のblockerではない）
