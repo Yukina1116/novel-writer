@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
+import { DEVELOPER_OVERRIDE_LIMIT_SEN } from '../services/usageConfig';
 
 // withUsageQuota 単体の commit/cancel 分岐を検証する。
 // ai-auth.test.ts は認証ゲートとの連携検証に専念しているため、
@@ -175,6 +176,56 @@ describe('withUsageQuota - QuotaExceededError 計測 (Issue #232)', () => {
 
         expect(res.status).toBe(429);
         expect(res.body.code).toBe('QUOTA_EXCEEDED');
+    });
+});
+
+describe('withUsageQuota - 開発者アカウント Tier 免除 (DEVELOPER_UIDS)', () => {
+    beforeEach(() => {
+        verifyIdTokenSdkMock.mockReset();
+        reserveMock.mockReset();
+        commitMock.mockReset();
+        cancelMock.mockReset();
+        generateImageMock.mockReset();
+        verifyIdTokenSdkMock.mockResolvedValue({ uid: 'u1', email: 'a@example.com' });
+        reserveMock.mockResolvedValue(handle);
+        generateImageMock.mockResolvedValue(['data:image/png;base64,aaa']);
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
+    it('DEVELOPER_UIDS に含まれる uid では reserve に DEVELOPER_OVERRIDE_LIMIT_SEN (Tier 1 の 10 倍、無制限ではない) が渡る', async () => {
+        vi.stubEnv('DEVELOPER_UIDS', 'u1');
+
+        await request(buildApp())
+            .post('/api/ai/image/generate')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ requestId: REQ_ID, prompt: 'test' });
+
+        expect(reserveMock).toHaveBeenCalledWith('u1', REQ_ID, 1200, DEVELOPER_OVERRIDE_LIMIT_SEN);
+    });
+
+    it('DEVELOPER_UIDS に含まれない uid では従来どおり limit=10000 が渡る（回帰確認）', async () => {
+        vi.stubEnv('DEVELOPER_UIDS', 'someone-else');
+
+        await request(buildApp())
+            .post('/api/ai/image/generate')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ requestId: REQ_ID, prompt: 'test' });
+
+        expect(reserveMock).toHaveBeenCalledWith('u1', REQ_ID, 1200, 10000);
+    });
+
+    it('DEVELOPER_UIDS 未設定時は全 uid が limit=10000（安全側デフォルト）', async () => {
+        vi.stubEnv('DEVELOPER_UIDS', undefined as unknown as string);
+
+        await request(buildApp())
+            .post('/api/ai/image/generate')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ requestId: REQ_ID, prompt: 'test' });
+
+        expect(reserveMock).toHaveBeenCalledWith('u1', REQ_ID, 1200, 10000);
     });
 });
 

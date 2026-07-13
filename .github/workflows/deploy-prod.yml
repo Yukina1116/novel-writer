@@ -100,13 +100,22 @@ jobs:
           # ADR-0001 §M3 振り返り / docs/spec/m3/tasks.md PR-G。
           # この flag を外すと FE が 403 で詰むため、本番 rollback 時のみ
           # `gcloud run services update novel-writer --no-allow-unauthenticated` を使う。
+          # --set-env-vars は ^;^ で区切り文字を , から ; に変更している。DEVELOPER_UIDS
+          # の値自体がカンマ区切りの複数 uid になり得るため (gcloud topic escaping、
+          # デフォルトの , 区切りのままだと値内のカンマが別の env var 指定として誤解釈
+          # されデプロイが壊れる。Codex セカンドオピニオン 2026-07-13 で指摘)。
+          # --set-env-vars=... 全体をダブルクォートで囲んでいるのは、
+          # google-github-actions/deploy-cloudrun の flags パーサーが未クォートの
+          # 空白を引数区切りとして扱うため。PROD_DEVELOPER_UIDS の値に空白を含む
+          # 形式 (例: "uid1, uid2") を設定してもデプロイが壊れないようにする
+          # (2026-07-13 code review 指摘)。
           flags: >-
             --service-account=novel-writer-run@novel-writer-prod.iam.gserviceaccount.com
             --memory=512Mi
             --timeout=300
             --max-instances=2
             --allow-unauthenticated
-            --set-env-vars=GCP_PROJECT=novel-writer-prod,GCLOUD_PROJECT=novel-writer-prod,GCP_LOCATION=asia-northeast1,USE_VERTEX_AI=true,NODE_ENV=production
+            --set-env-vars="^;^GCP_PROJECT=novel-writer-prod;GCLOUD_PROJECT=novel-writer-prod;GCP_LOCATION=asia-northeast1;USE_VERTEX_AI=true;NODE_ENV=production;DEVELOPER_UIDS=${{ secrets.PROD_DEVELOPER_UIDS }}"
 
       - name: Output URL
         run: echo "Deployed to ${{ steps.deploy.outputs.url }}"
