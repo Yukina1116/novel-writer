@@ -102,3 +102,15 @@ describe('ImageGenerationModal クールダウンとバジー状態の分離 (20
         expect(finalPromptBlock![0]).toMatch(/if \(isCoolingDown\) \{\s*\n\s*setChatHistory\(prev => \[\.\.\.prev, \{[\s\S]*?\}\]\);\s*\n\s*\} else \{\s*\n\s*await handleGenerate\(finalPrompt\);\s*\n\s*\}/);
     });
 });
+
+describe('ImageGenerationModal 簡易生成モードの新規/追加生成ボタン重複表示 (PR #281 static pin)', () => {
+    const source = readFileSync(resolve(__dirname, 'ImageGenerationModal.tsx'), 'utf-8');
+
+    it('簡易生成モードの「画像を生成」ボタンは generatedImages.length === 0 のときのみ描画する（本田様がdev環境実機で発見: 画像生成後も常時表示されると、右パネルの「追加でN枚生成する」ボタンと機能が重複して見え、クールダウン中は両方が同一ラベルになり冗長だった）', () => {
+        // mode === 'simple' 分岐 (else ブロック) 全体を抽出し、その中で「画像を生成」ボタンが
+        // generatedImages.length === 0 の条件でラップされていることを確認する。
+        const simpleModeMatch = source.match(/\} else \{ \/\/ mode === 'simple'[\s\S]*?\n {8}\}\n {4}\};/);
+        expect(simpleModeMatch).toBeTruthy();
+        expect(simpleModeMatch![0]).toMatch(/\{generatedImages\.length === 0 && \(\s*\n[\s\S]*?画像を生成[\s\S]*?\n\s*\)\}/);
+    });
+});

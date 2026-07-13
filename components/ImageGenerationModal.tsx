@@ -279,19 +279,21 @@ export const ImageGenerationModal = ({ isOpen, onClose, onGenerate, onGeneratePr
                     <div className="bg-gray-900/50 rounded-lg p-3 overflow-y-auto mb-4 text-xs text-gray-400 flex-grow">
                         <p className="whitespace-pre-wrap">{characterDescription || '設定が入力されていません。'}</p>
                     </div>
-                    <div className="mt-auto pt-4">
-                        <button
-                            onClick={() => {
-                                const prompt = `masterpiece, best quality, full body, solo, adult, simple white background, no text, no letters, ${characterDescription.replace(/[\n\r:]+/g, ', ')}`;
-                                handleGenerate(prompt);
-                            }}
-                            disabled={!canUseAi || isBusy || isCoolingDown || !characterDescription.trim()}
-                            title={!canUseAi ? aiBlockedReason : cooldownTitle}
-                            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-cyan-600 text-sm rounded-md hover:bg-cyan-500 transition text-white disabled:bg-gray-600 disabled:cursor-not-allowed"
-                        >
-                            <Icons.MoonIcon /> {isCoolingDown ? cooldownButtonLabel : '画像を生成'}
-                        </button>
-                    </div>
+                    {generatedImages.length === 0 && (
+                        <div className="mt-auto pt-4">
+                            <button
+                                onClick={() => {
+                                    const prompt = `masterpiece, best quality, full body, solo, adult, simple white background, no text, no letters, ${characterDescription.replace(/[\n\r:]+/g, ', ')}`;
+                                    handleGenerate(prompt);
+                                }}
+                                disabled={!canUseAi || isBusy || isCoolingDown || !characterDescription.trim()}
+                                title={!canUseAi ? aiBlockedReason : cooldownTitle}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-cyan-600 text-sm rounded-md hover:bg-cyan-500 transition text-white disabled:bg-gray-600 disabled:cursor-not-allowed"
+                            >
+                                <Icons.MoonIcon /> {isCoolingDown ? cooldownButtonLabel : '画像を生成'}
+                            </button>
+                        </div>
+                    )}
                 </div>
             );
         }
