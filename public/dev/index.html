@@ -300,6 +300,7 @@ h3.h-rule .small{
   border: 1px solid var(--rule);
   padding: var(--space-md);
   position: relative;
+  min-width: 0;
 }
 .card::before{
   content: "";
@@ -313,6 +314,8 @@ h3.h-rule .small{
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 1.2rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .card .kicker{
   font-family: var(--font-mono);
