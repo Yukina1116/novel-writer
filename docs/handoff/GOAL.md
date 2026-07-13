@@ -25,9 +25,11 @@ updated: 2026-07-13
 - [x] E: `withUsageQuota.ts` で developerOverride を呼び出しDEVELOPER_OVERRIDE_LIMIT_SENに反映 + override発動ログ追加
 - [x] F: `withUsageQuota.test.ts` に開発者override時の回帰テスト追加
 - [x] G: `deploy-prod.yml` に DEVELOPER_UIDS を `^;^` 区切り文字構文（ダブルクォート囲み）でGitHub Secrets経由追加
-- [x] 実装後 `/safe-refactor` → `/code-review high`（Evaluator分離対象、4件CONFIRMED/PLAUSIBLE指摘を全て反映）
-- [ ] GitHub Secrets `PROD_DEVELOPER_UIDS` の登録
-- [ ] PRマージ・prod反映・実機確認
+- [x] 実装後 `/safe-refactor` → `/code-review high`（Evaluator分離対象、4件CONFIRMED/PLAUSIBLE指摘を全て反映）+ `/review`（PR diff再確認で古いコメント発見・修正）+ `codex review-diff`（重大な問題なしと評価）
+- [x] GitHub Secrets `PROD_DEVELOPER_UIDS` の登録
+- [x] PR #275 マージ・prod反映（`gh workflow run deploy-prod.yml`、イメージSHA `7e2a19c` 一致確認済み）
+- [x] `gcloud run services describe` で `DEVELOPER_UIDS` を含む全環境変数が破壊されずに反映されていることを確認（`^;^` 区切り文字構文が正常動作、他5つの既存環境変数も無事）
+- [ ] 対象uid（本田様）でprodのAI機能（image/generate等）を呼び出してもクォータ超過エラーが発生しないことの実機確認（本田様ご自身の操作が必要、AIはIDトークンで代行不可）
 
 ## 🔄 中断点（in-flight）
-なし
+なし（残るタスクは本田様ご自身によるprod実機確認のみ。DEVELOPER_UIDSにはまだ単一uidのみ設定のため、カンマ区切り複数uidでの区切り文字構文検証は将来複数アカウント追加時に別途実施）
