@@ -9,10 +9,17 @@
 export interface LegalDoc {
     label: string;
     url: string;
+    ariaLabel?: string;
 }
 
 export const LEGAL_DOCS: ReadonlyArray<LegalDoc> = [
     { label: '利用規約', url: '/legal/terms-of-service.html' },
     { label: 'プライバシーポリシー', url: '/legal/privacy-policy.html' },
     { label: '特定商取引法に基づく表記', url: '/legal/tokushou.html' },
+];
+
+// Footer にのみ表示する外部 SNS リンク。LEGAL_DOCS とは意味が異なる
+// (法的文書ではない、same-origin でもない) ため別定数として保持する。
+export const SOCIAL_LINKS: ReadonlyArray<LegalDoc> = [
+    { label: 'X', url: 'https://x.com/novelwriter_app', ariaLabel: 'X（旧Twitter）' },
 ];
