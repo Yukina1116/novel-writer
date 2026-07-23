@@ -52,7 +52,7 @@ AI 機能を利用した場合、以下を Firestore に保管します:
 
 ## 2. AI 機能利用時のデータ送信
 
-ユーザーが AI 機能を利用した場合、以下のデータが Google Cloud Vertex AI（gemini-3.1-flash-lite, Nano Banana 2 Lite 等）に送信されます:
+ユーザーが AI 機能を利用した場合、以下のデータが Google Cloud の生成 AI サービス（Vertex AI）に送信されます:
 
 - ユーザーが入力したプロンプト
 - 関連する設定情報（キャラクター設定、世界観設定、プロット等から AI が必要と判断した範囲）
