@@ -140,6 +140,12 @@ export const COLLECTION_OVERFLOW_MARKER =
  *
  * `processed element` = recurse 通過後の値 (image / non-image marker 化後の短文を含む) を想定。
  * 「leaf-level marker 化済の element は cumulative 圧迫しない」を保証する。
+ *
+ * @warning `onStringifyFailure` を省略すると JSON.stringify failure が silent fallback
+ * (4 bytes) のみで処理され、paired signal (Cloud Logging 早期検知) なしで通過する
+ * (Issue #156、register-or-forget リスク)。新規 callsite を追加する際は必ず
+ * `bytesEstimationAggregator.tick(...)` 等の callback を渡すこと。
+ * 詳細: `docs/spec/promptSafety/2026-06-04-bytes-estimation-paired-signal-design.md` §11
  */
 export function estimateElementBytes(value: unknown, onStringifyFailure?: () => void): number {
   try {
