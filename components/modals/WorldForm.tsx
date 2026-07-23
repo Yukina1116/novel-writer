@@ -137,7 +137,9 @@ export const WorldForm: React.FC<WorldFormProps> = ({
             name: data?.name || '',
             fields: (data?.fields || []).map((f: any) => ({
                 key: f.key || '',
-                value: f.value || ''
+                value: f.value || '',
+                groupKey: f.groupKey || '',
+                groupName: f.groupName || ''
             })),
             longDescription: data?.longDescription || '',
             memo: data?.memo || '',
@@ -146,7 +148,11 @@ export const WorldForm: React.FC<WorldFormProps> = ({
         };
     }, []);
 
-    const populateState = (data) => {
+    // 戻り値は補完済み（groupKey/groupName確定後）のfieldsを含むデータ。
+    // isDirty比較のbaseline（initialStateString）はこれを使う必要がある。
+    // itemToEdit生データ（レガシーデータはgroupKey未保存）をそのままbaselineにすると、
+    // 補完後の実state（fields）と食い違い、未編集でもisDirty=trueになってしまう。
+    const populateState = (data): Partial<SettingItem> => {
         const safeData = data || initialEmptyWorldState;
         setName(safeData.name || '');
         setLongDescription(safeData.longDescription || '');
@@ -154,17 +160,28 @@ export const WorldForm: React.FC<WorldFormProps> = ({
         setExportDescription(safeData.exportDescription || '');
         setMapImageUrl(safeData.mapImageUrl || '');
 
+        let normalizedFields: Field[] = [];
         if (safeData.fields) {
             const initialFields = (safeData.fields || []).map(f => {
+                // groupKeyが保存済みならそれを正とする（複数テンプレートで同名キー「種別」等が
+                // 重複するため、キー名だけからのテンプレート逆引きは一意に定まらない）
+                if (f.groupKey) {
+                    return {
+                        ...f,
+                        id: uuidv4(),
+                        groupName: f.groupName || fieldKeyToTemplateMap.get(f.key)?.name || 'カスタム項目'
+                    };
+                }
                 const templateInfo = fieldKeyToTemplateMap.get(f.key);
-                return { 
-                    ...f, 
+                return {
+                    ...f,
                     id: uuidv4(),
                     groupKey: templateInfo?.key || 'custom',
                     groupName: templateInfo?.name || 'カスタム項目'
                 };
             });
             setFields(initialFields);
+            normalizedFields = initialFields;
 
             const initialExpanded = initialFields.reduce((acc, field) => {
                 acc[field.groupKey] = true;
@@ -175,6 +192,8 @@ export const WorldForm: React.FC<WorldFormProps> = ({
             setFields([]);
             setExpandedGroups({});
         }
+
+        return { ...safeData, fields: normalizedFields };
     };
 
     useEffect(() => {
@@ -208,13 +227,13 @@ export const WorldForm: React.FC<WorldFormProps> = ({
             const hasDataToEdit = itemToEdit && (itemToEdit.id || Object.keys(itemToEdit).length > 0);
             
             if (hasDataToEdit) {
-                populateState(itemToEdit);
+                const populatedData = populateState(itemToEdit);
                 useStore.getState().setFormData('world', itemToEdit);
-                setInitialStateString(JSON.stringify(getNormalizedData(itemToEdit)));
+                setInitialStateString(JSON.stringify(getNormalizedData(populatedData)));
             } else {
                 resetFormData('world'); // ストアにある前回の残骸を消す
-                populateState(initialEmptyWorldState);
-                setInitialStateString(JSON.stringify(getNormalizedData(initialEmptyWorldState)));
+                const populatedData = populateState(initialEmptyWorldState);
+                setInitialStateString(JSON.stringify(getNormalizedData(populatedData)));
             }
             
             setEditedFields(new Set());
@@ -345,8 +364,10 @@ export const WorldForm: React.FC<WorldFormProps> = ({
     const buttonClass = (colorClass: string) => `${colorClass} text-white rounded-md transition btn-pressable flex items-center justify-center gap-2 ${isMobile ? 'p-3 text-base w-full' : 'px-4 py-2 text-sm'}`;
 
     const renderFieldInput = (field: Field) => {
-        const allTemplateFields = Object.values(worldTemplates).flatMap(t => t.fields);
-        const templateField = allTemplateFields.find(f => f.key === field.key);
+        // 複数テンプレートで同名キー（例：「種別」）が重複するため、まず所属テンプレート内で検索する
+        const ownTemplate = worldTemplates[field.groupKey as keyof typeof worldTemplates];
+        const templateField = ownTemplate?.fields.find(f => f.key === field.key)
+            ?? Object.values(worldTemplates).flatMap(t => t.fields).find(f => f.key === field.key);
 
         if (templateField && templateField.type === 'select') {
             const isCustom = !templateField.options.includes(field.value);
