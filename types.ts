@@ -74,7 +74,7 @@ export interface SettingItem {
     };
     
     // World specific
-    fields?: { key: string, value: string }[];
+    fields?: { key: string, value: string, groupKey?: string, groupName?: string }[];
     mapImageUrl?: string;
 }
 
