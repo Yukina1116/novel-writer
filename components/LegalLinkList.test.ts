@@ -18,4 +18,8 @@ describe('LegalLinkList contract', () => {
     it('concatenates LEGAL_DOCS before extraLinks (legal docs first, SNS links after)', () => {
         expect(source).toMatch(/\[\.\.\.LEGAL_DOCS,\s*\.\.\.extraLinks\]/);
     });
+
+    it('renders aria-label from doc.ariaLabel (WCAG 2.4.4 Link Purpose)', () => {
+        expect(source).toMatch(/aria-label=\{doc\.ariaLabel\}/);
+    });
 });

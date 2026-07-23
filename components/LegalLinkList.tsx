@@ -15,6 +15,7 @@ export const LegalLinkList: React.FC<Props> = ({ containerClassName, linkClassNa
                     href={doc.url}
                     target="_blank"
                     rel="noopener noreferrer"
+                    aria-label={doc.ariaLabel}
                     className={linkClassName}
                 >
                     {doc.label}

@@ -9,6 +9,7 @@
 export interface LegalDoc {
     label: string;
     url: string;
+    ariaLabel?: string;
 }
 
 export const LEGAL_DOCS: ReadonlyArray<LegalDoc> = [
@@ -20,5 +21,5 @@ export const LEGAL_DOCS: ReadonlyArray<LegalDoc> = [
 // Footer にのみ表示する外部 SNS リンク。LEGAL_DOCS とは意味が異なる
 // (法的文書ではない、same-origin でもない) ため別定数として保持する。
 export const SOCIAL_LINKS: ReadonlyArray<LegalDoc> = [
-    { label: 'X', url: 'https://x.com/novelwriter_app' },
+    { label: 'X', url: 'https://x.com/novelwriter_app', ariaLabel: 'X（旧Twitter）' },
 ];

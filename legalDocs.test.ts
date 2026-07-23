@@ -48,4 +48,11 @@ describe('SOCIAL_LINKS', () => {
             expect(legalUrls.has(link.url)).toBe(false);
         }
     });
+
+    it('every entry has a descriptive ariaLabel (WCAG 2.4.4 Link Purpose)', () => {
+        // 'X' のような短いラベルだけでは、外部SNSリンクであることがスクリーンリーダーで伝わらないため必須。
+        for (const link of SOCIAL_LINKS) {
+            expect(link.ariaLabel?.length ?? 0).toBeGreaterThan(0);
+        }
+    });
 });
