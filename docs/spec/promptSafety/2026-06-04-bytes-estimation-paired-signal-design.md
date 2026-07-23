@@ -393,3 +393,11 @@ AC-12: lockstep manual failing path 手動確認 (TS enum から BYTES_ESTIMATIO
 - `feedback_silent_fail_paired_signal.md` (paired signal 規律、本設計の根拠)
 - 既存 spec [`2026-06-04-observability-metric-counter-design.md`](./2026-06-04-observability-metric-counter-design.md) (上位設計、SAFETY_EVENTS 規約)
 - 既存 spec [`2026-06-03-collection-level-guard-design.md`](./2026-06-03-collection-level-guard-design.md) (estimateElementBytes 導入元)
+
+## 11. 運用規律 (Issue #156 対応、2026-07-23 追記)
+
+Issue #156 (`estimateElementBytes` の callback register-or-forget リスク) への対応として、(A) ESLint custom rule / (D) JSDoc + 規律記録 の2案を検討し、**(D) を採用**した。
+
+**採用理由**: 2026-07-23 時点で `estimateElementBytes` の callsite は `stripPromptHeavyFields` 内の 1 箇所のみ (定義+呼出の grep で確認)。Issue #156 自身の推奨方針「callsite が 2-3 件に増えた段階で (A) ESLint ルール化に移行」に従い、現状は軽量な (D) 案で運用する。
+
+**規律**: `estimateElementBytes` に新規 callsite を追加する開発者は、必ず `onStringifyFailure` callback で対応する `createWarnAggregator` 系の paired signal を register すること (JSDoc `@warning` として本体にも明記済、上記参照)。callback 省略は TypeScript の型上は許容される (optional) ため、tsc / lint では機械的に検知できない。callsite が 2-3 件に増えた時点で、本セクションの規律を ESLint custom rule (Issue #156 案 A) へ昇格させることを検討する。
