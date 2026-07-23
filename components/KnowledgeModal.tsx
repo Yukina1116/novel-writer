@@ -60,12 +60,6 @@ export const KnowledgeModal: React.FC<{
         return JSON.stringify(currentState) !== initialStateString;
     }, [name, content, category, tags, initialStateString]);
 
-    const existingCategories = useMemo(() => {
-        if (!allKnowledge) return ['未分類'];
-        const categories = new Set(allKnowledge.map(k => k.category || '未分類'));
-        return Array.from(categories);
-    }, [allKnowledge]);
-
     const handleTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter' || e.key === ',') {
             e.preventDefault();
@@ -90,7 +84,11 @@ export const KnowledgeModal: React.FC<{
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!name.trim()) return;
-        onSave({ ...itemToEdit, name, content, category, tags }, 'knowledge');
+        // Enter/カンマを押さずタグ入力欄に文字が残ったまま保存すると、そのタグが
+        // 未コミットのまま消えてしまうため、送信時にも確定させる。
+        const pendingTag = tagInput.trim();
+        const finalTags = pendingTag && !tags.includes(pendingTag) ? [...tags, pendingTag] : tags;
+        onSave({ ...itemToEdit, name, content, category, tags: finalTags }, 'knowledge');
     };
     
     const handleKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
@@ -184,12 +182,8 @@ export const KnowledgeModal: React.FC<{
                                     type="text"
                                     value={category}
                                     onChange={e => { setCategory(e.target.value); markEdited('category'); }}
-                                    list="category-suggestions"
                                     className={inputClass}
                                 />
-                                <datalist id="category-suggestions">
-                                    {existingCategories.map(cat => <option key={cat} value={cat} />)}
-                                </datalist>
                             </div>
                             <div>
                                 {renderLabel("タグ (Enterで追加)", "tags")}
