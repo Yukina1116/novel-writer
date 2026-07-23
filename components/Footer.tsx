@@ -1,5 +1,6 @@
 import React from 'react';
 import { LegalLinkList } from './LegalLinkList';
+import { SOCIAL_LINKS } from '../legalDocs';
 
 export const Footer: React.FC = () => {
     return (
@@ -7,6 +8,7 @@ export const Footer: React.FC = () => {
             <LegalLinkList
                 containerClassName="flex flex-wrap gap-x-4 gap-y-1 justify-center text-xs text-gray-600 dark:text-gray-400"
                 linkClassName="hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline"
+                extraLinks={SOCIAL_LINKS}
             />
         </footer>
     );
