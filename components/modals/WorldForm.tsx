@@ -148,7 +148,11 @@ export const WorldForm: React.FC<WorldFormProps> = ({
         };
     }, []);
 
-    const populateState = (data) => {
+    // 戻り値は補完済み（groupKey/groupName確定後）のfieldsを含むデータ。
+    // isDirty比較のbaseline（initialStateString）はこれを使う必要がある。
+    // itemToEdit生データ（レガシーデータはgroupKey未保存）をそのままbaselineにすると、
+    // 補完後の実state（fields）と食い違い、未編集でもisDirty=trueになってしまう。
+    const populateState = (data): Partial<SettingItem> => {
         const safeData = data || initialEmptyWorldState;
         setName(safeData.name || '');
         setLongDescription(safeData.longDescription || '');
@@ -156,6 +160,7 @@ export const WorldForm: React.FC<WorldFormProps> = ({
         setExportDescription(safeData.exportDescription || '');
         setMapImageUrl(safeData.mapImageUrl || '');
 
+        let normalizedFields: Field[] = [];
         if (safeData.fields) {
             const initialFields = (safeData.fields || []).map(f => {
                 // groupKeyが保存済みならそれを正とする（複数テンプレートで同名キー「種別」等が
@@ -176,6 +181,7 @@ export const WorldForm: React.FC<WorldFormProps> = ({
                 };
             });
             setFields(initialFields);
+            normalizedFields = initialFields;
 
             const initialExpanded = initialFields.reduce((acc, field) => {
                 acc[field.groupKey] = true;
@@ -186,6 +192,8 @@ export const WorldForm: React.FC<WorldFormProps> = ({
             setFields([]);
             setExpandedGroups({});
         }
+
+        return { ...safeData, fields: normalizedFields };
     };
 
     useEffect(() => {
@@ -219,13 +227,13 @@ export const WorldForm: React.FC<WorldFormProps> = ({
             const hasDataToEdit = itemToEdit && (itemToEdit.id || Object.keys(itemToEdit).length > 0);
             
             if (hasDataToEdit) {
-                populateState(itemToEdit);
+                const populatedData = populateState(itemToEdit);
                 useStore.getState().setFormData('world', itemToEdit);
-                setInitialStateString(JSON.stringify(getNormalizedData(itemToEdit)));
+                setInitialStateString(JSON.stringify(getNormalizedData(populatedData)));
             } else {
                 resetFormData('world'); // ストアにある前回の残骸を消す
-                populateState(initialEmptyWorldState);
-                setInitialStateString(JSON.stringify(getNormalizedData(initialEmptyWorldState)));
+                const populatedData = populateState(initialEmptyWorldState);
+                setInitialStateString(JSON.stringify(getNormalizedData(populatedData)));
             }
             
             setEditedFields(new Set());
