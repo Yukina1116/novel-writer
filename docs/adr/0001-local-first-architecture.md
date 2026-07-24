@@ -78,6 +78,7 @@
 - 課金導入時の法務作業（利用規約、特商法、プライバシーポリシー）
   - **2026-04-28 更新**: M7-α (P4) で Tier 0/1 範囲の stub 3 文書を `docs/legal/` に作成、本番公開前に法務確認 MUST。Tier 2 規約節 / 特商法本文の確定は M7-β（M5 完了後）で対応
   - **2026-06-21 更新**: 本番公開前法務確認の方針を緩和。Tier 0/1 無料運用範囲では「一般的な最低限の自己整備」(個人情報保護法 21 条のプライバシーポリシー設置 + 利用目的通知) で公開可とし、`LEGAL_REVIEW_REQUIRED` stub の状態で本番反映済 (2026-06-21 時点)。顧問弁護士確認は任意で、Tier 2 (有料化) 着手時の前提条件として再評価する。決済基盤も Stripe 単独前提から **Stripe / Lemon Squeezy / Paddle / Polar 等の比較選定** に変更 (M5 着手時に決定)
+  - **2026-07-24 更新**: 本田様が内容を「一般的なものであれば OK」と判断し、`LEGAL_REVIEW_REQUIRED` 警告文言（「本文書は実装担当 AI が作成した雛形」等）を 3 文書 (`terms-of-service` / `privacy-policy` / `tokushou`、public/legal・docs/legal 双方) から削除。顧問弁護士確認を Tier 2 着手時の前提条件とする方針自体は変更なし（stub 表記の除去のみ）
 - 将来「複数端末同期」要望が出た場合の対応（CRDT 検討、ただし当面は Export/Import で対応）
 - Firebase Auth Emulator と Cloud Run の本番認証フローの差異（M3 で対応）
 
