@@ -13,8 +13,7 @@
 // - **innerHTML 不使用**: DOMPurify の RETURN_DOM_FRAGMENT で DocumentFragment を取得し、
 //   appendChild で描画する (security_reminder hook の趣旨に沿う)。
 // - **fail-closed**: fetch / parse / sanitize いずれかが失敗したら "読み込みに失敗しました"
-//   を表示し、生 markdown を素のまま見せない (LEGAL_REVIEW_REQUIRED コメント等が
-//   壊れた状態で見えるのを防ぐ)。
+//   を表示し、生 markdown を壊れた状態のまま見せない。
 
 import { marked } from 'https://cdn.jsdelivr.net/npm/marked@13.0.3/lib/marked.esm.js';
 import DOMPurify from 'https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.es.mjs';
