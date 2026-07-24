@@ -12,10 +12,12 @@ export interface LegalDoc {
     ariaLabel?: string;
 }
 
+// 特定商取引法に基づく表記 (public/legal/tokushou.html) は 2026-07-24 時点で Footer から意図的に除外。
+// 有料プラン（＋ブックプラン）未提供のため同法の表記義務対象外（tokushou.md §現状 参照）、
+// ページファイル自体は有料プラン提供開始時の復活に備えて残置。
 export const LEGAL_DOCS: ReadonlyArray<LegalDoc> = [
     { label: '利用規約', url: '/legal/terms-of-service.html' },
     { label: 'プライバシーポリシー', url: '/legal/privacy-policy.html' },
-    { label: '特定商取引法に基づく表記', url: '/legal/tokushou.html' },
 ];
 
 // Footer にのみ表示する外部 SNS リンク。LEGAL_DOCS とは意味が異なる

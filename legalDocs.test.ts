@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { LEGAL_DOCS, SOCIAL_LINKS } from './legalDocs';
 
 // PR-D-2: legalDocs.ts は静的定数で、Footer / TermsConsentModal が link 先として参照する。
-// AC-7 (footer 3 link 表示) の前提条件として URL 形状と件数を pin する。
+// AC-7 (footer link 表示) の前提条件として URL 形状と件数を pin する。
 // PR #91 で self-host 化: GitHub blob URL から /legal/*.html (同 origin) に切替。
+// 2026-07-24: 特商法表記 (tokushou.html) は有料プラン未提供のため表記義務対象外と判断し、
+// Footer から意図的に除外（2 entries: terms / privacy）。ページファイル自体は残置。
 
 describe('LEGAL_DOCS', () => {
-    it('contains exactly 3 entries (terms / privacy / tokushou)', () => {
-        expect(LEGAL_DOCS).toHaveLength(3);
+    it('contains exactly 2 entries (terms / privacy)', () => {
+        expect(LEGAL_DOCS).toHaveLength(2);
     });
 
     it('every entry has a non-empty label and a same-origin /legal/*.html URL', () => {
@@ -17,15 +19,19 @@ describe('LEGAL_DOCS', () => {
         }
     });
 
-    it('covers all 3 required documents (terms-of-service / privacy-policy / tokushou)', () => {
+    it('covers the 2 required documents (terms-of-service / privacy-policy)', () => {
         const filenames = LEGAL_DOCS.map(doc => doc.url.split('/').pop());
         expect(filenames).toEqual(
             expect.arrayContaining([
                 'terms-of-service.html',
                 'privacy-policy.html',
-                'tokushou.html',
             ]),
         );
+    });
+
+    it('excludes tokushou.html (有料プラン未提供のため表記義務対象外)', () => {
+        const filenames = LEGAL_DOCS.map(doc => doc.url.split('/').pop());
+        expect(filenames).not.toContain('tokushou.html');
     });
 
     it('labels are unique (avoid duplicate footer entries)', () => {
