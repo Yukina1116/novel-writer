@@ -49,9 +49,11 @@ export const EventForm: React.FC<EventFormProps> = ({ event, onSave, onCancel, l
         const organizationTypes = ['国家', 'ギルド', '秘密結社', '企業'];
         const organizationIds = new Set(
             allSettings
-                .filter(item => 
+                .filter(item =>
                     item.type === 'world' &&
-                    item.fields?.some(f => f.key === '種別' && organizationTypes.includes(f.value))
+                    // 種別が「その他」で自由入力された場合、値はプリセット文字列ではなく入力テキストそのものに
+                    // 置き換わる（WorldForm.tsx）ため、値の一致だけでなく保存時の groupKey（テンプレート由来）でも判定する。
+                    item.fields?.some(f => f.key === '種別' && (f.groupKey === 'organization' || organizationTypes.includes(f.value)))
                 )
                 .map(item => item.id)
         );
