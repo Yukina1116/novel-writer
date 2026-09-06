@@ -1144,7 +1144,7 @@ gantt
   <h3 class="h-rule">マネタイズロードマップ（予備検討） <span class="small">/ M5 Pre-research</span></h3>
   <p style="max-width: 65ch;">
     M5（Tier 2 有料化）着手前の予備調査として、決済基盤各社の一次情報比較を実施（2026-09-06）。
-    サービス規模がまだ小さい段階のため、<strong>まずは審査不要な標準 Stripe（Billing + Tax）でシンプルに始める方針</strong>。
+    サービス規模がまだ小さい段階のため、<strong>まずは事業適格性の審査が不要な標準 Stripe（Billing + Tax）でシンプルに始める方針</strong>（本人確認・銀行口座紐付け等の通常のアカウント有効化は別途必要）。
     Managed Payments（消費税・請求書処理までまとめて代行する追加オプション、事業形態・地域による利用資格審査あり）は、
     規模が大きくなってから改めて検討する後回し事項。<strong>着手時期そのものは本田様判断待ちで未定</strong>。
     詳細は <code>.claude/memory/payment_provider_reference_2026-09.md</code>（決済基盤比較）・
@@ -1154,7 +1154,7 @@ gantt
   <div class="diagram" data-fig="Fig. IV-2 / Monetization Roadmap">
     <div class="mermaid">
 flowchart LR
-  A["Phase A<br/>計測の準備<br/>(着手可・決済不要)"] --> B["Phase B<br/>決済の導入<br/>標準 Stripe Billing + Tax<br/>(審査不要ですぐ使える)"]
+  A["Phase A<br/>計測の準備<br/>(着手可・決済不要)"] --> B["Phase B<br/>決済の導入<br/>標準 Stripe Billing + Tax<br/>(事業適格性審査は不要)"]
   B --> C["Phase C<br/>限定公開でのテスト"]
   C --> D["Phase D<br/>本格展開・継続改善"]
 
@@ -1174,7 +1174,7 @@ flowchart LR
     <div class="card">
       <p class="kicker">決済基盤の推奨</p>
       <h4>Stripe（標準 Billing + Tax）を採用</h4>
-      <p>審査不要ですぐ使える標準の仕組みでシンプルに始める。消費税の申告・納付は自社対応になるが、規模がまだ小さい段階では負荷は軽い。Managed Payments（MoR、税務まで代行）は規模拡大後に再検討。Firebase 公式の決済連携 Extension は 2027-03-31 EOL 確定のため新規に採用しない。</p>
+      <p>事業適格性の審査が不要な標準の仕組みでシンプルに始める（本人確認・銀行口座紐付け等の通常のアカウント有効化待ちは別途発生しうる）。消費税の申告・納付は自社対応になるが、規模がまだ小さい段階では負荷は軽い。Managed Payments（MoR、税務まで代行）は規模拡大後に再検討。Firebase 公式の決済連携 Extension は 2027-03-31 EOL 確定のため新規に採用しない。</p>
     </div>
     <div class="card">
       <p class="kicker">価格の方向性</p>
@@ -1183,8 +1183,8 @@ flowchart LR
     </div>
     <div class="card">
       <p class="kicker">特商法表記のタイミング</p>
-      <h4>限定公開開始時点で一括追記</h4>
-      <p>決済基盤（価格・支払方法等）確定後、Phase C 開始時点で必要事項を一度だけ機械的に追記（価格改定のたびの書き直しを避ける）。顧問弁護士確認は 2026-07-24 方針（一般的な内容であれば追加確認不要）を踏襲。</p>
+      <h4>限定公開開始時点で初回記載、以降は条件変更のたびに更新</h4>
+      <p>決済基盤が未確定な間の書き直しを避けるため、価格・支払方法等が確定した Phase C 開始時点で初めて記載する。ただし掲載後は「一度書けば終わり」ではなく、価格改定など実際の商取引条件が変わるたびに追随して更新する法的義務が継続する。顧問弁護士確認は 2026-07-24 方針（一般的な内容であれば追加確認不要）を踏襲。</p>
     </div>
     <div class="card">
       <p class="kicker">想定工数</p>
