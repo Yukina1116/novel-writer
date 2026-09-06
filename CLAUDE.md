@@ -119,6 +119,7 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 - **更新運用**: マイルストーン進捗・テスト件数・Last Updated はファイル内に固定文字列で埋め込み。grep で機械的に書き換える（`v0.0.0 (M7-α)` / `2026-05-01` / `Tests · 435 / 435 PASS` / `<div class="milestone-row">` ブロックの状態）
 - **規律**: 動的描画は `createElement` + `textContent` のみ（`innerHTML` 禁止、security_reminder hook 指摘を構造的に閉じる）
 - **環境リンク (PR #264)**: ヘッダー（`masthead` 内 `meta-stack`）に dev/prod Cloud Run URL への直接リンクボタン（`#env-dev` / `#env-prod`、`target="_blank"`）を設置。`location.hostname` 判定でアクセス中の環境を `data-current="true"` で強調表示
+- **`<head>`非共有**: `index.html`（SPA本体）・`public/dev/index.html`・`public/dev/sns.html` は独立した静的HTML文書で `<head>`（favicon・meta description等）を共有しない。3ファイルとも別々に`<link rel="icon">`宣言が必要
 
 ### パスエイリアス
 
