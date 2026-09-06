@@ -680,9 +680,12 @@ footer a:hover{ color: var(--ink); border-bottom-color: var(--ink); }
   padding: var(--space-md);
   margin: var(--space-md) 0;
   background: rgba(154,53,32,0.05);
+  overflow-wrap: anywhere;
 }
 .callout > p{ margin: 0.2rem 0; }
 .callout strong{ font-family: var(--font-display); color: var(--accent); }
+.callout a{ color: var(--accent); text-decoration: underline; text-decoration-color: var(--accent-soft); }
+.callout a:hover{ color: var(--ink); }
 
 @media print{
   .tab-nav, .cl-toolbar, .cl-btn, .meta-stack { display: none !important; }
@@ -1147,7 +1150,7 @@ gantt
   </p>
 
   <div class="callout">
-    <p><strong>参考資料:</strong> <code>.claude/memory/payment_provider_reference_2026-09.md</code>（決済基盤比較）／ <code>.claude/memory/pricing_tier2_reference_2026-06.md</code>（価格設定）</p>
+    <p><strong>参考資料:</strong> <a href="https://github.com/Yukina1116/novel-writer/blob/main/.claude/memory/payment_provider_reference_2026-09.md" target="_blank" rel="noopener">payment_provider_reference_2026-09.md</a>（決済基盤比較）／ <a href="https://github.com/Yukina1116/novel-writer/blob/main/.claude/memory/pricing_tier2_reference_2026-06.md" target="_blank" rel="noopener">pricing_tier2_reference_2026-06.md</a>（価格設定）</p>
   </div>
 
   <div class="diagram" data-fig="Fig. IV-2 / Monetization Roadmap">
