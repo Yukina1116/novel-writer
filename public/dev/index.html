@@ -714,7 +714,7 @@ footer a:hover{ color: var(--ink); border-bottom-color: var(--ink); }
       </div>
       <div class="meta-stack">
         <b>v0.0.0 (Phase 5 / 公開中)</b>
-        Last updated · 2026-07-13<br />
+        Last updated · 2026-09-06<br />
         Branch · main / clean<br />
         Tests · 945 / 945 PASS
         <div class="env-links" role="group" aria-label="環境を開く">
@@ -1140,6 +1140,73 @@ gantt
     <div class="milestone-row"><span class="ms-tag">M5</span><div><span class="ms-name">Stripe Subscription Tier 2 — 法務本文確定が前提</span></div><span class="ms-state hold">保留</span></div>
     <div class="milestone-row"><span class="ms-tag">M7-β</span><div><span class="ms-name">公開最終チェック（規約 Tier 2 節 + 特商法本文）</span></div><span class="ms-state hold">保留</span></div>
   </div>
+
+  <h3 class="h-rule">マネタイズロードマップ（予備検討） <span class="small">/ M5 Pre-research</span></h3>
+  <p style="max-width: 65ch;">
+    M5（Tier 2 有料化）着手前の予備調査として、決済基盤各社の一次情報比較を実施（2026-09-06）。
+    サービス規模がまだ小さい段階のため、<strong>まずは事業適格性の審査が不要な標準 Stripe（Billing + Tax）でシンプルに始める方針</strong>（本人確認・銀行口座紐付け等の通常のアカウント有効化は別途必要）。
+    Managed Payments（消費税・請求書処理までまとめて代行する追加オプション、事業形態・地域による利用資格審査あり）は、
+    規模が大きくなってから改めて検討する後回し事項。<strong>着手時期そのものは本田様判断待ちで未定</strong>。
+    詳細は <code>.claude/memory/payment_provider_reference_2026-09.md</code>（決済基盤比較）・
+    <code>.claude/memory/pricing_tier2_reference_2026-06.md</code>（価格設定）を参照。
+  </p>
+
+  <div class="diagram" data-fig="Fig. IV-2 / Monetization Roadmap">
+    <div class="mermaid">
+flowchart LR
+  A["Phase A<br/>計測の準備<br/>(着手可・決済不要)"] --> B["Phase B<br/>決済の導入<br/>標準 Stripe Billing + Tax<br/>(事業適格性審査は不要)"]
+  B --> C["Phase C<br/>限定公開でのテスト"]
+  C --> D["Phase D<br/>本格展開・継続改善"]
+
+  classDef box fill:#fbf3dc,stroke:#1b2535,stroke-width:1.5px,color:#1b2535
+  class A,B,C,D box
+    </div>
+  </div>
+
+  <div style="margin-top: var(--space-md)">
+    <div class="milestone-row"><span class="ms-tag">Phase A</span><div><span class="ms-name">計測の準備 — 無料枠上限到達・画像生成利用状況の計測、上限到達時の案内表示</span></div><span class="ms-state plan">検討中</span></div>
+    <div class="milestone-row"><span class="ms-tag">Phase B</span><div><span class="ms-name">決済の導入 — Stripe アカウント開設・標準 Billing 実装・サブスク状態同期</span></div><span class="ms-state hold">保留</span></div>
+    <div class="milestone-row"><span class="ms-tag">Phase C</span><div><span class="ms-name">限定公開でのテスト — 少人数への先行案内、価格・プラン内容の反応を見て調整</span></div><span class="ms-state hold">保留</span></div>
+    <div class="milestone-row"><span class="ms-tag">Phase D</span><div><span class="ms-name">本格展開・継続改善 — 正式公開、価格改定・決済手段追加の継続検討</span></div><span class="ms-state hold">保留</span></div>
+  </div>
+
+  <div class="grid-auto" style="margin-top: var(--space-md);">
+    <div class="card">
+      <p class="kicker">決済基盤の推奨</p>
+      <h4>Stripe（標準 Billing + Tax）を採用</h4>
+      <p>事業適格性の審査が不要な標準の仕組みでシンプルに始める（本人確認・銀行口座紐付け等の通常のアカウント有効化待ちは別途発生しうる）。消費税の申告・納付は自社対応になるが、規模がまだ小さい段階では負荷は軽い。Managed Payments（MoR、税務まで代行）は規模拡大後に再検討。Firebase 公式の決済連携 Extension は 2027-03-31 EOL 確定のため新規に採用しない。</p>
+    </div>
+    <div class="card">
+      <p class="kicker">価格の方向性</p>
+      <h4>案A: ¥980 単一プランからスタート</h4>
+      <p>AI コスト上限を Tier 1 の 30 倍、Imagen 月 50 回、Cloud Storage 1GB。半年後にデータを見て 2 段階プラン（案B）へ拡張する方針（2026-06 検討済み、本メモで方針継続を確認）。</p>
+    </div>
+    <div class="card">
+      <p class="kicker">特商法表記のタイミング</p>
+      <h4>限定公開開始時点で初回記載、以降は条件変更のたびに更新</h4>
+      <p>決済基盤が未確定な間の書き直しを避けるため、価格・支払方法等が確定した Phase C 開始時点で初めて記載する。ただし掲載後は「一度書けば終わり」ではなく、価格改定など実際の商取引条件が変わるたびに追随して更新する法的義務が継続する。顧問弁護士確認は 2026-07-24 方針（一般的な内容であれば追加確認不要）を踏襲。</p>
+    </div>
+    <div class="card">
+      <p class="kicker">想定工数</p>
+      <h4>目安 2〜3 人日（15〜25 時間）</h4>
+      <p>Phase B（決済導入）の実装のみの目安。Stripe アカウントの本人確認・銀行口座紐付けの承認待ちや、Webhook のローカル動作確認（Stripe CLI 等）にかかる時間は別途。初めて触る外部サービス連携のため、多少のバッファを見込むのが無難。</p>
+    </div>
+  </div>
+
+  <h4 style="font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; margin: var(--space-md) 0 var(--space-sm);">Phase B 内訳の目安</h4>
+  <table class="stack-table" aria-label="決済導入 作業内訳の目安">
+    <thead><tr><th>作業</th><th>目安</th></tr></thead>
+    <tbody>
+      <tr><td>Checkout セッション作成・Stripe SDK 組み込み</td><td class="v">2〜3h</td></tr>
+      <tr><td>Webhook 受信 + 署名検証 + 冪等処理（<code>stripeEvents</code>）</td><td class="v">3〜4h</td></tr>
+      <tr><td>サブスク状態の Firestore 同期（<code>users.plan</code>）</td><td class="v">2〜3h</td></tr>
+      <tr><td>Tier 2 クォータ設定（<code>usageConfig.ts</code> 拡張）</td><td class="v">1〜2h</td></tr>
+      <tr><td>カスタマーポータル連携（解約・支払方法変更の自己対応）</td><td class="v">1〜2h</td></tr>
+      <tr><td>FE: 価格表示・アップグレード導線・プラン状態表示</td><td class="v">3〜5h</td></tr>
+      <tr><td>テスト（Webhook 契約テスト・Tier 切替の境界値）</td><td class="v">2〜4h</td></tr>
+      <tr><td>特商法表記の一括追記</td><td class="v">1h</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section id="p-checklist" class="panel" aria-labelledby="h-cl">
