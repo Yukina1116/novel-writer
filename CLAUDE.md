@@ -119,8 +119,7 @@ Browser → fetch(/api/*) → server/routes/ → server/services/ → Vertex AI 
 - **更新運用**: マイルストーン進捗・テスト件数・Last Updated はファイル内に固定文字列で埋め込み。grep で機械的に書き換える（`v0.0.0 (M7-α)` / `2026-05-01` / `Tests · 435 / 435 PASS` / `<div class="milestone-row">` ブロックの状態）
 - **規律**: 動的描画は `createElement` + `textContent` のみ（`innerHTML` 禁止、security_reminder hook 指摘を構造的に閉じる）
 - **環境リンク (PR #264)**: ヘッダー（`masthead` 内 `meta-stack`）に dev/prod Cloud Run URL への直接リンクボタン（`#env-dev` / `#env-prod`、`target="_blank"`）を設置。`location.hostname` 判定でアクセス中の環境を `data-current="true"` で強調表示
-- **`public/dev/sns.html`（SNS投稿キット、dev限定）**: `/dev/index.html` とは別タブ「viii. SNS素材」からリンクされる独立ページ。アプリ概要・機能スクリーンショット・投稿文言ドラフトを1ページに集約。`public/dev/sns-assets/`（スクリーンショット）と `public/dev/presentation-assets/`（一般向け紹介プレゼン: 音読原稿`script.md`+スライド`slides.pdf`、正本は`docs/presentation/`、こちらは配布用コピー）を配信
-- **`<head>`は3ファイルとも独立・非共有**: `index.html`（SPA本体）・`public/dev/index.html`・`public/dev/sns.html` はそれぞれ独立した静的HTML文書で、`<head>`（favicon・meta description等）を一切共有しない。favicon（`/branding/favicon.svg` + PNG(32x32)/apple-touch-icon(180x180)フォールバック、2026-09追加）は3ファイルそれぞれに個別の`<link>`宣言が必要。ブランド更新等で1箇所だけ直して「直った」と思い込みやすいので、変更時は3ファイルとも確認する（2026-09-06セッションで実際に取り違えが発生: 依頼対象は`/dev/`側だったが最初にSPA本体`index.html`を変更してしまい、revertする追加PRが必要になった）
+- **`<head>`非共有**: `index.html`（SPA本体）・`public/dev/index.html`・`public/dev/sns.html` は独立した静的HTML文書で `<head>`（favicon・meta description等）を共有しない。3ファイルとも別々に`<link rel="icon">`宣言が必要
 
 ### パスエイリアス
 
