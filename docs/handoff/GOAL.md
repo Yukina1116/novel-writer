@@ -29,7 +29,7 @@ updated: 2026-07-13
 - [x] GitHub Secrets `PROD_DEVELOPER_UIDS` の登録
 - [x] PR #275 マージ・prod反映（`gh workflow run deploy-prod.yml`、イメージSHA `7e2a19c` 一致確認済み）
 - [x] `gcloud run services describe` で `DEVELOPER_UIDS` を含む全環境変数が破壊されずに反映されていることを確認（`^;^` 区切り文字構文が正常動作、他5つの既存環境変数も無事）
-- [ ] 対象uid（本田様）でprodのAI機能（image/generate等）を呼び出してもクォータ超過エラーが発生しないことの実機確認（本田様ご自身の操作が必要、AIはIDトークンで代行不可）。**間接証拠あり（2026-07-13）**: prod Cloud Loggingで `usage:developer-override applied` ログを4件確認（対象uidに対し `image/generate` / `character/image-prompt`、limit=100000 sen）。ただし本田様ご自身の「エラーが出なかった」という明示確認はまだ得られていないため `[ ]` のまま維持
+- [x] 対象uid（本田様）でprodのAI機能（image/generate等）を呼び出してもクォータ超過エラーが発生しないことの実機確認。**2026-09-06 完了**: Playwright MCPでprod (`novel-writer-df263ic6wa-an.a.run.app`) にアクセスし、Google OAuthログインのみ本田様ご自身が操作（`hy.unimail.11@gmail.com`、AIはIDトークン代行不可のため）、以降のキャラクター作成・AI立ち絵生成操作はAIが実行。`POST /api/ai/character/image-prompt` および `POST /api/ai/image/generate` がともに200 OKで画像2枚を生成、クォータ超過（429）エラーは発生せず。テスト用プロジェクトは確認後に削除済み。2026-07-13の間接証拠（Cloud Loggingの `usage:developer-override applied` ログ）と合わせて本ミッションは完了
 
 ## 🔄 中断点（in-flight）
-なし（残るタスクは本田様ご自身によるprod実機確認のみ。DEVELOPER_UIDSにはまだ単一uidのみ設定のため、カンマ区切り複数uidでの区切り文字構文検証は将来複数アカウント追加時に別途実施）
+なし（本ミッションは完了。DEVELOPER_UIDSにはまだ単一uidのみ設定のため、カンマ区切り複数uidでの区切り文字構文検証は将来複数アカウント追加時に別途実施）
