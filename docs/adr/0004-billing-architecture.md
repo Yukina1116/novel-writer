@@ -1,6 +1,6 @@
 # ADR-0004: 課金アーキテクチャ (Tier 2 / Stripe) — 最小構成
 
-- Status: Draft (AI 起草の草案。採否は decision-maker = 本田様。M5 着手は本田様の明示指示後)
+- Status: Draft (AI 起草の草案。採否は decision-maker = オーナー。M5 着手はオーナーの明示指示後)
 - Date: 2026-09-20
 - 方針: ほぼ個人開発 (2 名以下) + ユーザー数 0。**最低限必要なものだけ**作る。Stripe の画面に任せられるものは任せる
 - Related: [ADR-0001](./0001-local-first-architecture.md) / `.claude/memory/payment_provider_reference_2026-09.md` / `.claude/memory/pricing_tier2_reference_2026-06.md`
