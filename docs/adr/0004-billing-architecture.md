@@ -5,6 +5,8 @@
 - 方針: ほぼ個人開発 (2 名以下) + ユーザー数 0。**最低限必要なものだけ**作る。Stripe の画面に任せられるものは任せる
 - Related: [ADR-0001](./0001-local-first-architecture.md) / `.claude/memory/payment_provider_reference_2026-09.md` / `.claude/memory/pricing_tier2_reference_2026-06.md`
 
+> **位置づけ: 構想であり、システムへの実装は未着手・実装の予定も未定。** 本書はロードマップ (dev ポータル §IV) を補足する設計メモで、エンドポイント名・環境変数名・rules 等の細部は **M5 着手が決まった時点で Stripe の公式 docs を再確認し、必要なら書き直す前提**。Stripe API は変わりうる (例: `current_period_end` の取得元は API バージョンで変わった)。本書の細部を、そのまま確定仕様として扱わない。
+
 ## 決定
 
 ### 1. 購入・契約管理は Stripe の画面に任せる
