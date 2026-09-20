@@ -794,8 +794,8 @@ footer a:hover{ color: var(--ink); border-bottom-color: var(--ink); }
     </div>
     <div class="card">
       <p class="kicker">保留</p>
-      <h4>Tier 2（有料化）は法務本文確定待ち</h4>
-      <p>M5 (Stripe) / M7-β (公開最終チェック) は法務確認の完了が前提。無料範囲 (Tier 0/1) の一般公開はこの完了を待たずに実施済み（2026-06-21 方針変更）。AI セッション外。</p>
+      <h4>Tier 2（有料化）は着手指示待ち</h4>
+      <p>M5 (Stripe) は本田様の着手指示待ち（設計案は ADR-0004）。M7-β (公開最終チェック) は M5 の後。法務確認は新たな必須手続きとしては課さない方針（ADR-0001、2026-09-06）。無料範囲 (Tier 0/1) の一般公開は実施済み。</p>
     </div>
     <div class="card">
       <p class="kicker">監視中</p>
@@ -1099,7 +1099,7 @@ sequenceDiagram
   <header class="section-header">
     <div class="section-num">IV.</div>
     <h2 id="h-ms">マイルストーン進捗</h2>
-    <p>local-first → 認証 → 課金前提整備 → バックアップ E2EE → 規約同意 → 一般公開準備・公開実行の順でレイヤーを積み上げてきた。M5 / M7-β（Tier 2 有料化）は無料範囲の公開実行と並行する保留ブランチ。</p>
+    <p>local-first → 認証 → 課金前提整備 → バックアップ E2EE → 規約同意 → 一般公開準備・公開実行の順でレイヤーを積み上げてきた。M5 / M7-β（Tier 2 有料化）は無料範囲の公開実行と並行する保留ブランチで、着手時期が未定のため下のタイムラインには含めない。</p>
   </header>
 
   <div class="diagram" data-fig="Fig. IV-1 / Timeline">
@@ -1124,9 +1124,6 @@ gantt
   section Phase 4〜5（無料範囲公開）
   Phase 4 一般公開準備 (GO-1〜GO-5) :done, p4, after m7a, 16d
   Phase 5 公開実行 (GO-6 本田様確認・KPI追跡) :active, p5, after p4, 1d
-  section 保留（Tier 2 有料化）
-  M5 Stripe Tier 2 :crit, m5, after m7a, 14d
-  M7-β 公開最終チェック :crit, m7b, after m5, 7d
     </div>
   </div>
 
@@ -1140,7 +1137,7 @@ gantt
     <div class="milestone-row"><span class="ms-tag">M7-α</span><div><span class="ms-name">利用規約同意フロー — TermsConsentModal + TERMS_VERSION_MISMATCH</span></div><span class="ms-state done">完了</span></div>
     <div class="milestone-row"><span class="ms-tag">Phase 4</span><div><span class="ms-name">一般公開準備 — GO-1〜GO-5（PITR / Logging / SLO / 法務・課金クォータ判断）</span></div><span class="ms-state done">完了</span></div>
     <div class="milestone-row"><span class="ms-tag">Phase 5</span><div><span class="ms-name">公開実行 — GO-6 本田様確認、無料範囲 (Tier 0/1) で一般公開中</span></div><span class="ms-state done">公開中</span></div>
-    <div class="milestone-row"><span class="ms-tag">M5</span><div><span class="ms-name">Stripe Subscription Tier 2 — 法務本文確定が前提</span></div><span class="ms-state hold">保留</span></div>
+    <div class="milestone-row"><span class="ms-tag">M5</span><div><span class="ms-name">Stripe Subscription Tier 2 — 着手は本田様の指示待ち（設計案: ADR-0004）</span></div><span class="ms-state hold">保留</span></div>
     <div class="milestone-row"><span class="ms-tag">M7-β</span><div><span class="ms-name">公開最終チェック（規約 Tier 2 節 + 特商法本文）</span></div><span class="ms-state hold">保留</span></div>
   </div>
 
@@ -1150,7 +1147,7 @@ gantt
   </p>
 
   <div class="callout">
-    <p><strong>参考資料:</strong> <a href="https://github.com/Yukina1116/novel-writer/blob/main/.claude/memory/payment_provider_reference_2026-09.md" target="_blank" rel="noopener">payment_provider_reference_2026-09.md</a>（決済基盤比較）／ <a href="https://github.com/Yukina1116/novel-writer/blob/main/.claude/memory/pricing_tier2_reference_2026-06.md" target="_blank" rel="noopener">pricing_tier2_reference_2026-06.md</a>（価格設定）</p>
+    <p><strong>参考資料:</strong> <a href="https://github.com/Yukina1116/novel-writer/blob/main/.claude/memory/payment_provider_reference_2026-09.md" target="_blank" rel="noopener">payment_provider_reference_2026-09.md</a>（決済基盤比較）／ <a href="https://github.com/Yukina1116/novel-writer/blob/main/.claude/memory/pricing_tier2_reference_2026-06.md" target="_blank" rel="noopener">pricing_tier2_reference_2026-06.md</a>（価格設定）／ <a href="https://github.com/Yukina1116/novel-writer/blob/main/docs/adr/0004-billing-architecture.md" target="_blank" rel="noopener">0004-billing-architecture.md</a>（課金アーキテクチャ設計案）</p>
   </div>
 
   <div class="diagram" data-fig="Fig. IV-2 / Monetization Roadmap">
@@ -1167,8 +1164,8 @@ flowchart LR
 
   <div style="margin-top: var(--space-md)">
     <div class="milestone-row"><span class="ms-tag">Phase A</span><div><span class="ms-name">計測の準備 — 無料枠上限到達・画像生成利用状況の計測、上限到達時の案内表示</span></div><span class="ms-state plan">検討中</span></div>
-    <div class="milestone-row"><span class="ms-tag">Phase B</span><div><span class="ms-name">決済の導入 — Stripe アカウント開設・標準 Billing 実装・サブスク状態同期</span></div><span class="ms-state hold">保留</span></div>
-    <div class="milestone-row"><span class="ms-tag">Phase C</span><div><span class="ms-name">限定公開でのテスト — 少人数への先行案内、価格・プラン内容の反応を見て調整</span></div><span class="ms-state hold">保留</span></div>
+    <div class="milestone-row"><span class="ms-tag">Phase B</span><div><span class="ms-name">決済の導入 — Stripe アカウント開設・Payment Link 作成・Webhook による課金状態の自動反映（最小構成、設計は ADR-0004）</span></div><span class="ms-state hold">保留</span></div>
+    <div class="milestone-row"><span class="ms-tag">Phase C</span><div><span class="ms-name">限定公開でのテスト — 少人数への先行案内、価格・プラン内容の反応を見て調整。特商法表記を初回記載</span></div><span class="ms-state hold">保留</span></div>
     <div class="milestone-row"><span class="ms-tag">Phase D</span><div><span class="ms-name">本格展開・継続改善 — 正式公開、価格改定・決済手段追加の継続検討</span></div><span class="ms-state hold">保留</span></div>
   </div>
 
@@ -1190,8 +1187,8 @@ flowchart LR
     </div>
     <div class="card">
       <p class="kicker">想定工数</p>
-      <h4>目安 2〜3 人日（15〜25 時間）</h4>
-      <p>Phase B（決済導入）の実装のみの目安。Stripe アカウントの本人確認・銀行口座紐付けの承認待ちや、Webhook のローカル動作確認（Stripe CLI 等）にかかる時間は別途。初めて触る外部サービス連携のため、多少のバッファを見込むのが無難。</p>
+      <h4>目安 1.5〜2 人日（10〜16 時間）</h4>
+      <p>Phase B（決済導入）の実装のみの目安（設計時点の見積もりで、実測ではない）。購入は Payment Link、契約管理はカスタマーポータルに任せ、自前の課金 API は Webhook 1 本に絞る（ADR-0004）。Stripe アカウントの本人確認・銀行口座紐付けの承認待ちや、Webhook のローカル動作確認（Stripe CLI 等）にかかる時間は別途。初めて触る外部サービス連携のため、多少のバッファを見込むのが無難。</p>
     </div>
   </div>
 
@@ -1199,14 +1196,12 @@ flowchart LR
   <table class="stack-table" aria-label="決済導入 作業内訳の目安">
     <thead><tr><th>作業</th><th>目安</th></tr></thead>
     <tbody>
-      <tr><td>Checkout セッション作成・Stripe SDK 組み込み</td><td class="v">2〜3h</td></tr>
-      <tr><td>Webhook 受信 + 署名検証 + 冪等処理（<code>stripeEvents</code>）</td><td class="v">3〜4h</td></tr>
-      <tr><td>サブスク状態の Firestore 同期（<code>users.plan</code>）</td><td class="v">2〜3h</td></tr>
-      <tr><td>Tier 2 クォータ設定（<code>usageConfig.ts</code> 拡張）</td><td class="v">1〜2h</td></tr>
-      <tr><td>カスタマーポータル連携（解約・支払方法変更の自己対応）</td><td class="v">1〜2h</td></tr>
-      <tr><td>FE: 価格表示・アップグレード導線・プラン状態表示</td><td class="v">3〜5h</td></tr>
-      <tr><td>テスト（Webhook 契約テスト・Tier 切替の境界値）</td><td class="v">2〜4h</td></tr>
-      <tr><td>特商法表記の一括追記</td><td class="v">1h</td></tr>
+      <tr><td>Payment Link・カスタマーポータルの作成（Stripe ダッシュボード設定のみ、コードなし）</td><td class="v">0.5h</td></tr>
+      <tr><td>Webhook 1 本（署名検証・Subscription 取り直し・課金状態の更新・失敗ログ）</td><td class="v">3〜4h</td></tr>
+      <tr><td>課金状態の保存（<code>billing</code>）と rules・Tier 判定</td><td class="v">2〜3h</td></tr>
+      <tr><td>Tier 2 クォータ設定（<code>usageConfig.ts</code> 拡張）・<code>users/init</code> 拡張</td><td class="v">1〜2h</td></tr>
+      <tr><td>FE: 購入ボタン・プラン状態表示・ポータルへのリンク</td><td class="v">2〜3h</td></tr>
+      <tr><td>テスト（Webhook・Tier 判定の境界値・rules）</td><td class="v">2〜3h</td></tr>
     </tbody>
   </table>
 </section>
