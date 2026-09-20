@@ -785,7 +785,7 @@ footer a:hover{ color: var(--ink); border-bottom-color: var(--ink); }
     <div class="card">
       <p class="kicker">公開状況</p>
       <h4>無料範囲で一般公開中</h4>
-      <p>M0 → M4 / M6 / M7-α + Phase 4（一般公開準備 GO-1〜GO-5）が完成。2026-07-06 に本田様 GO-6 確認のうえ Phase 5（公開実行）着手済み。</p>
+      <p>M0 → M4 / M6 / M7-α + Phase 4（一般公開準備 GO-1〜GO-5）が完成。2026-07-06 にオーナーが GO-6 確認のうえ Phase 5（公開実行）着手済み。</p>
     </div>
     <div class="card">
       <p class="kicker">テスト</p>
@@ -795,7 +795,7 @@ footer a:hover{ color: var(--ink); border-bottom-color: var(--ink); }
     <div class="card">
       <p class="kicker">保留</p>
       <h4>Tier 2（有料化）は着手指示待ち</h4>
-      <p>M5 (Stripe) は本田様の着手指示待ち（設計案は ADR-0004）。M7-β (公開最終チェック) は M5 の後。法務確認は新たな必須手続きとしては課さない方針（ADR-0001、2026-09-06）。無料範囲 (Tier 0/1) の一般公開は実施済み。</p>
+      <p>M5 (Stripe) はオーナーの着手指示待ち（設計案は ADR-0004）。M7-β (公開最終チェック) は M5 の後。法務確認は新たな必須手続きとしては課さない方針（ADR-0001、2026-09-06）。無料範囲 (Tier 0/1) の一般公開は実施済み。</p>
     </div>
     <div class="card">
       <p class="kicker">監視中</p>
@@ -1123,7 +1123,7 @@ gantt
   M7-α PR-D-1〜2 規約同意 + 共有 termsCodes :done, m7a, after m6, 7d
   section Phase 4〜5（無料範囲公開）
   Phase 4 一般公開準備 (GO-1〜GO-5) :done, p4, after m7a, 16d
-  Phase 5 公開実行 (GO-6 本田様確認・KPI追跡) :active, p5, after p4, 1d
+  Phase 5 公開実行 (GO-6 オーナー確認・KPI追跡) :active, p5, after p4, 1d
     </div>
   </div>
 
@@ -1136,14 +1136,14 @@ gantt
     <div class="milestone-row"><span class="ms-tag">M6</span><div><span class="ms-name">E2EE 暗号化バックアップ — PR-A schema / PR-B state / PR-C UI / PR-D 統合</span></div><span class="ms-state done">完了</span></div>
     <div class="milestone-row"><span class="ms-tag">M7-α</span><div><span class="ms-name">利用規約同意フロー — TermsConsentModal + TERMS_VERSION_MISMATCH</span></div><span class="ms-state done">完了</span></div>
     <div class="milestone-row"><span class="ms-tag">Phase 4</span><div><span class="ms-name">一般公開準備 — GO-1〜GO-5（PITR / Logging / SLO / 法務・課金クォータ判断）</span></div><span class="ms-state done">完了</span></div>
-    <div class="milestone-row"><span class="ms-tag">Phase 5</span><div><span class="ms-name">公開実行 — GO-6 本田様確認、無料範囲 (Tier 0/1) で一般公開中</span></div><span class="ms-state done">公開中</span></div>
-    <div class="milestone-row"><span class="ms-tag">M5</span><div><span class="ms-name">Stripe Subscription Tier 2 — 着手は本田様の指示待ち（設計案: ADR-0004）</span></div><span class="ms-state hold">保留</span></div>
+    <div class="milestone-row"><span class="ms-tag">Phase 5</span><div><span class="ms-name">公開実行 — GO-6 オーナー確認、無料範囲 (Tier 0/1) で一般公開中</span></div><span class="ms-state done">公開中</span></div>
+    <div class="milestone-row"><span class="ms-tag">M5</span><div><span class="ms-name">Stripe Subscription Tier 2 — 着手はオーナーの指示待ち（設計案: ADR-0004）</span></div><span class="ms-state hold">保留</span></div>
     <div class="milestone-row"><span class="ms-tag">M7-β</span><div><span class="ms-name">公開最終チェック（規約 Tier 2 節 + 特商法本文）</span></div><span class="ms-state hold">保留</span></div>
   </div>
 
   <h3 class="h-rule">マネタイズロードマップ（予備検討） <span class="small">/ M5 Pre-research</span></h3>
   <p style="max-width: 65ch;">
-    M5（Tier 2 有料化）着手前の予備調査として、決済基盤各社の一次情報比較を実施（2026-09-06）。サービス規模がまだ小さい段階のため、まずは事業適格性の審査が不要な標準 Stripe（Billing + Tax）でシンプルに始める方針とする。Managed Payments（消費税・請求書処理までまとめて代行する追加オプション）は規模拡大後に改めて検討する後回し事項とし、<strong>着手時期そのものは本田様判断待ちで未定</strong>。
+    M5（Tier 2 有料化）着手前の予備調査として、決済基盤各社の一次情報比較を実施（2026-09-06）。サービス規模がまだ小さい段階のため、まずは事業適格性の審査が不要な標準 Stripe（Billing + Tax）でシンプルに始める方針とする。Managed Payments（消費税・請求書処理までまとめて代行する追加オプション）は規模拡大後に改めて検討する後回し事項とし、<strong>着手時期そのものはオーナー判断待ちで未定</strong>。
   </p>
 
   <div class="callout">
