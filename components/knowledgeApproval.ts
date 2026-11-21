@@ -18,6 +18,8 @@ export interface KnowledgeApproverDeps {
     removeSuggestion: (suggestion: KnowledgeSuggestionRef) => void;
     /** 通信中の提案（content）の一覧が変わるたびに呼ばれる（UI のスピナー/無効化用） */
     onInFlightChange: (inFlightContents: string[]) => void;
+    /** 保存などに失敗したとき、ユーザーに見える形で通知する（console のみの握りつぶしにしない） */
+    notifyError?: (message: string) => void;
 }
 
 export const createKnowledgeApprover = (deps: KnowledgeApproverDeps) => {
@@ -42,6 +44,7 @@ export const createKnowledgeApprover = (deps: KnowledgeApproverDeps) => {
             deps.removeSuggestion(suggestion);
         } catch (error) {
             console.error('Error approving knowledge suggestion:', error);
+            deps.notifyError?.('ナレッジの追加に失敗しました。もう一度お試しください。');
         } finally {
             inFlight.delete(suggestion.content);
             notify();

@@ -16,13 +16,15 @@ const setup = (generateName: (s: string) => Promise<NameResult>) => {
     const saved: Array<{ name: string; content: string }> = [];
     const removed: string[] = [];
     const inFlightLog: string[][] = [];
+    const errors: string[] = [];
     const approver = createKnowledgeApprover({
         generateName,
         saveKnowledge: (item) => { saved.push(item); },
         removeSuggestion: (s) => { removed.push(s.content); },
         onInFlightChange: (keys) => { inFlightLog.push([...keys]); },
+        notifyError: (message) => { errors.push(message); },
     });
-    return { approver, saved, removed, inFlightLog };
+    return { approver, saved, removed, inFlightLog, errors };
 };
 
 const flush = () => new Promise(r => setTimeout(r, 0));
@@ -75,21 +77,23 @@ describe('createKnowledgeApprover', () => {
 
     it('名前生成が success:false でも、本文を名前にして 1 件だけ保存する', async () => {
         const generateName = vi.fn(async (): Promise<NameResult> => ({ success: false, error: new Error('AUTH_REQUIRED') }));
-        const { approver, saved } = setup(generateName);
+        const { approver, saved, removed } = setup(generateName);
 
         await approver.approve({ content: '提案A' });
 
         expect(saved).toEqual([{ name: '提案A', content: '提案A' }]);
+        expect(removed).toEqual(['提案A']); // フォールバック保存後も提案は一覧から除去される
     });
 
     it('名前生成が例外を投げても、本文を名前にして 1 件だけ保存し、in-flight を解放する', async () => {
         const generateName = vi.fn(async (): Promise<NameResult> => { throw new Error('network down'); });
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const { approver, saved } = setup(generateName);
+        const { approver, saved, removed } = setup(generateName);
 
         await approver.approve({ content: '提案A' });
 
         expect(saved).toEqual([{ name: '提案A', content: '提案A' }]);
+        expect(removed).toEqual(['提案A']);
         expect(approver.isInFlight('提案A')).toBe(false);
         errorSpy.mockRestore();
     });
@@ -125,19 +129,85 @@ describe('createKnowledgeApprover', () => {
     it('保存が例外を投げても in-flight は解放され、保存を二重に試みない', async () => {
         const generateName = vi.fn(async (): Promise<NameResult> => ({ success: true, data: { name: 'N' } }));
         const saveKnowledge = vi.fn(() => { throw new Error('save failed'); });
+        const removeSuggestion = vi.fn();
+        const errors: string[] = [];
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         const approver = createKnowledgeApprover({
             generateName,
             saveKnowledge,
-            removeSuggestion: () => {},
+            removeSuggestion,
             onInFlightChange: () => {},
+            notifyError: (m) => { errors.push(m); },
         });
 
         await approver.approve({ content: '提案A' });
         await flush();
 
         expect(saveKnowledge).toHaveBeenCalledTimes(1); // 旧実装は catch で再度 save していた
+        expect(removeSuggestion).not.toHaveBeenCalled(); // 保存失敗で提案が消えると承認内容が失われる
+        expect(errors).toHaveLength(1); // ユーザーに失敗を通知する（console のみの握りつぶしにしない）
         expect(approver.isInFlight('提案A')).toBe(false);
         errorSpy.mockRestore();
+    });
+
+    it('通知列: 並行 A/B は [[A],[A,B],[B],[]]、重複呼び出しは通知を増やさない', async () => {
+        const { generateName, pending } = deferredName();
+        const { approver, inFlightLog } = setup(generateName);
+
+        const a = approver.approve({ content: '提案A' });
+        const b = approver.approve({ content: '提案B' });
+        void approver.approve({ content: '提案A' }); // 無視される重複呼び出し
+        pending[0].resolve({ success: true, data: { name: 'NA' } });
+        await a;
+        pending[1].resolve({ success: true, data: { name: 'NB' } });
+        await b;
+
+        expect(inFlightLog).toEqual([['提案A'], ['提案A', '提案B'], ['提案B'], []]);
+    });
+
+    it('通知列: 単独呼び出しは [[A],[]]（最後の提案の通信中表示が必ず消える）', async () => {
+        const generateName = vi.fn(async (): Promise<NameResult> => ({ success: true, data: { name: 'N' } }));
+        const { approver, inFlightLog } = setup(generateName);
+
+        await approver.approve({ content: '提案A' });
+
+        expect(inFlightLog).toEqual([['提案A'], []]);
+    });
+
+    it('失敗後も同じ提案を再承認できる（generateName・save が再度実行される）', async () => {
+        const generateName = vi.fn(async (): Promise<NameResult> => { throw new Error('network down'); });
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const { approver, saved } = setup(generateName);
+
+        await approver.approve({ content: '提案A' });
+        await approver.approve({ content: '提案A' });
+
+        expect(generateName).toHaveBeenCalledTimes(2);
+        expect(saved).toHaveLength(2);
+        errorSpy.mockRestore();
+    });
+
+    it('generateName が同期的に throw しても、本文を名前にして 1 件保存する', async () => {
+        const generateName = vi.fn((): Promise<NameResult> => { throw new Error('sync throw'); });
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const { approver, saved } = setup(generateName);
+
+        await approver.approve({ content: '提案A' });
+
+        expect(saved).toEqual([{ name: '提案A', content: '提案A' }]);
+        errorSpy.mockRestore();
+    });
+
+    it('同一 content で id だけ違う提案（一覧側と履歴側）は同一視され、通信中は二重承認されない', async () => {
+        const { generateName, pending } = deferredName();
+        const { approver, saved } = setup(generateName);
+
+        const first = approver.approve({ content: '提案A' });
+        const second = approver.approve({ content: '提案A', id: 'history-1' });
+        pending[0].resolve({ success: true, data: { name: 'NA' } });
+        await Promise.all([first, second]);
+
+        expect(generateName).toHaveBeenCalledTimes(1);
+        expect(saved).toHaveLength(1);
     });
 });
