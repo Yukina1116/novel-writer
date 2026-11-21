@@ -20,7 +20,24 @@ export interface KnowledgeApproverDeps {
     onInFlightChange: (inFlightContents: string[]) => void;
     /** 保存などに失敗したとき、ユーザーに見える形で通知する（console のみの握りつぶしにしない） */
     notifyError?: (message: string) => void;
+    /** 名前生成の期限(ms)。既定 30 秒。超えたら承認を打ち切ってロックを解く */
+    nameTimeoutMs?: number;
 }
+
+const DEFAULT_NAME_TIMEOUT_MS = 30_000;
+
+class NameGenerationTimeoutError extends Error {}
+
+// apiCall / fetch にはタイムアウトがないため、サーバーが応答しないと承認が永久に終わらず、
+// 通信中の状態(= 承認・却下ボタンの無効化)が残り続ける。承認処理の内側だけで期限を設ける。
+const withDeadline = <T>(promise: Promise<T>, ms: number): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new NameGenerationTimeoutError()), ms);
+        promise.then(
+            (value) => { clearTimeout(timer); resolve(value); },
+            (error) => { clearTimeout(timer); reject(error); },
+        );
+    });
 
 export const createKnowledgeApprover = (deps: KnowledgeApproverDeps) => {
     // state ではなく同期的な Set でガードする（React state は非同期更新のため二重クリックを防ぎきれない）
@@ -35,9 +52,18 @@ export const createKnowledgeApprover = (deps: KnowledgeApproverDeps) => {
             // 名前生成の失敗（success:false / 例外）は本文を名前にするフォールバックで吸収し、保存は常に 1 回だけ行う
             let name = suggestion.content;
             try {
-                const result = await deps.generateName(suggestion.content);
+                const result = await withDeadline(
+                    deps.generateName(suggestion.content),
+                    deps.nameTimeoutMs ?? DEFAULT_NAME_TIMEOUT_MS,
+                );
                 if (result.success) name = result.data.name;
             } catch (error) {
+                if (error instanceof NameGenerationTimeoutError) {
+                    // 期限切れは承認の失敗として扱う（保存しない・提案は残す）。finally でロックを解くので再試行できる
+                    console.error('Knowledge name generation timed out');
+                    deps.notifyError?.('名前の生成がタイムアウトしました。もう一度お試しください。');
+                    return;
+                }
                 console.error('Error generating knowledge name:', error);
             }
             deps.saveKnowledge({ name, content: suggestion.content });
