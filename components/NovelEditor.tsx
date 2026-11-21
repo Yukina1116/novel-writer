@@ -134,11 +134,11 @@ export const NovelEditor: React.FC = () => {
                 id="novel-editor-content"
                 tabIndex={-1}
                 ref={novelContentRef}
-                className={`flex-1 p-6 pb-32 overflow-y-auto min-h-0 transition-colors duration-300 ${themeClass.bg} ${themeClass.text} focus:outline-none focus:ring-2 focus:ring-indigo-500 relative`}
+                className={`flex-1 px-6 pt-6 overflow-y-auto min-h-[6rem] transition-colors duration-300 ${themeClass.bg} ${themeClass.text} focus:outline-none focus:ring-2 focus:ring-indigo-500 relative`}
                 data-tutorial-id="tutorial-center-panel"
                 onScroll={handleScroll}
             >
-                <div className={`${proseClasses} prose-custom-font`} style={{ ...contentStyles, '--custom-font-family': contentStyles.fontFamily } as React.CSSProperties}>
+                <div className={`${proseClasses} prose-custom-font pb-32`} style={{ ...contentStyles, '--custom-font-family': contentStyles.fontFamily } as React.CSSProperties}>
                     {chapters.map(chapter => (
                         <div key={chapter.id} id={`chapter-scroll-${chapter.id}`} className="chapter-group">
                             {chapter.chunks.map(chunk => (
@@ -162,7 +162,7 @@ export const NovelEditor: React.FC = () => {
                 </div>
             </div>
             <div 
-                className={`border-t border-gray-700/50 flex-shrink-0 z-10 relative shadow-[0_-4px_12px_rgba(0,0,0,0.15)] ${themeClass.bg}`}
+                className={`border-t border-gray-700/50 flex flex-col min-h-0 z-10 relative shadow-[0_-4px_12px_rgba(0,0,0,0.15)] ${themeClass.bg}`}
                 style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
             >
                 {!isAtBottom && (
@@ -175,12 +175,12 @@ export const NovelEditor: React.FC = () => {
                     </button>
                 )}
                 <Tooltip helpId="direct_input_open">
-                    <div className="group flex justify-between items-center p-2 cursor-pointer hover:bg-gray-700" onClick={() => setIsNewChunkInputOpen(p => !p)} aria-expanded={isNewChunkInputOpen} aria-controls="new-chunk-panel">
+                    <div className="group flex flex-shrink-0 justify-between items-center p-2 cursor-pointer hover:bg-gray-700" onClick={() => setIsNewChunkInputOpen(p => !p)} aria-expanded={isNewChunkInputOpen} aria-controls="new-chunk-panel">
                         <h3 className="text-sm font-semibold text-gray-400 group-hover:text-white transition-colors">本文を直接入力</h3>
                         <button className="p-1 text-gray-400 group-hover:text-white transition-colors btn-pressable" aria-label={isNewChunkInputOpen ? '入力を閉じる' : '入力を開く'}>{isNewChunkInputOpen ? <Icons.ChevronDownIcon className="h-5 w-5" /> : <Icons.ChevronUpIcon className="h-5 w-5" />}</button>
                     </div>
                 </Tooltip>
-                <div id="new-chunk-panel" className={`transition-all duration-300 ease-in-out overflow-hidden ${isNewChunkInputOpen ? 'max-h-96' : 'max-h-0'}`}>
+                <div id="new-chunk-panel" className={`transition-all duration-300 ease-in-out min-h-0 ${isNewChunkInputOpen ? 'max-h-96 overflow-y-auto' : 'max-h-0 overflow-hidden'}`}>
                     <div className="p-4 pt-0">
                         <textarea
                             ref={newChunkTextareaRef}
