@@ -188,7 +188,7 @@ export const Tutorial: React.FC<TutorialProps> = ({ isMobile = false }) => {
             {position && <div style={style}></div>}
             <div 
                 ref={popoverRef}
-                style={{...popoverStyle, position: 'fixed', zIndex: 10001, width: popoverWidth, maxWidth: '90vw'}} 
+                style={{...popoverStyle, position: 'fixed', zIndex: 10001, width: popoverWidth, maxWidth: '90vw', maxHeight: 'calc(100vh - 16px)', overflowY: 'auto'}} 
                 className="bg-gray-800 border border-indigo-500 rounded-lg shadow-2xl p-5 text-white transition-all duration-200"
             >
                 <h3 className="font-bold text-lg text-indigo-400 mb-2">{currentStep.title}</h3>
