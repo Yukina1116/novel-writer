@@ -44,6 +44,21 @@ describe('EditableParagraph color buttons — 範囲未選択では本文を変�
     it('ヒントはトーストではなくインライン表示にする（モバイルは Toast 非描画、設定でオフにもできるため）', () => {
         expect(applyColorBody).not.toMatch(/showToast/);
         // role="status" の要素で colorHint を表示する（スクリーンリーダーにも伝わる）
-        expect(source).toMatch(/role="status"[\s\S]{0,240}\{colorHint\}/);
+        expect(source).toMatch(/role="status"[\s\S]{0,300}\{colorHint\}/);
+    });
+
+    it('ライブ領域(role=status)は常時マウントし、内容だけを更新する（メッセージ入りで新規挿入すると読み上げられないことがある）', () => {
+        // 条件付き描画 `{colorHint && (<div role="status">…)}` にしない
+        expect(source).not.toMatch(/\{colorHint && \(/);
+        // 空のときは視覚的に隠す(sr-only)だけで、要素自体は残す
+        expect(source).toMatch(/role="status"[\s\S]{0,200}sr-only/);
+    });
+
+    it('適用できなかったときはテキストエリアへフォーカスを戻す（スウォッチ経由でパレットが閉じてもフォーカスが body に落ちない）', () => {
+        const failBranch = applyColorBody.slice(applyColorBody.indexOf('if (!result)'), applyColorBody.indexOf('setColorHint(null)'));
+        expect(failBranch).toMatch(/textarea\.focus\(/);
+        // フォーカスを戻すのは、ヒントを出した後・return false の前
+        expect(failBranch.indexOf('setColorHint(')).toBeLessThan(failBranch.indexOf('textarea.focus('));
+        expect(failBranch.indexOf('textarea.focus(')).toBeLessThan(failBranch.indexOf('return false;'));
     });
 });

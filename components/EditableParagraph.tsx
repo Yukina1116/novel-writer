@@ -265,6 +265,9 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
         });
         if (!result) {
             setColorHint('色を付ける文字を選択してから、色のボタンを押してください。');
+            // スウォッチ経由でパレットが閉じると、キーボードで押した場合フォーカスが body に落ちる。
+            // 続けて文字を選択できるよう、テキストエリアへ戻す（選択位置は変えない）
+            textarea.focus({ preventScroll: true });
             return false;
         }
 
@@ -409,11 +412,13 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
                                 )}
                             </div>
                         </div>
-                        {colorHint && (
-                            <div role="status" className="px-3 py-1.5 text-xs text-amber-200 bg-amber-900/30 border-b border-amber-700/40">
-                                {colorHint}
-                            </div>
-                        )}
+                        {/* ライブ領域は常時マウントし内容だけを更新する（メッセージ入りで新規挿入すると読み上げられないことがある） */}
+                        <div
+                            role="status"
+                            className={colorHint ? 'px-3 py-1.5 text-xs text-amber-200 bg-amber-900/30 border-b border-amber-700/40' : 'sr-only'}
+                        >
+                            {colorHint}
+                        </div>
                     </div>
                     <div className="relative bg-gray-800/50">
                         <textarea
