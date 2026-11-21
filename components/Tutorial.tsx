@@ -102,6 +102,8 @@ export const Tutorial: React.FC<TutorialProps> = ({ isMobile = false }) => {
     const [style, setStyle] = useState({});
     const popoverRef = useRef<HTMLDivElement>(null);
     const [popoverHeight, setPopoverHeight] = useState(240);
+    // viewport サイズ変更時に再描画してカード位置を再計算する（対象なしステップは position が null のまま変わらず再描画されない）
+    const [, setViewportTick] = useState(0);
 
     const steps = isMobile ? mobileTutorialSteps : pcTutorialSteps;
     const currentStep = steps[tutorialStep];
@@ -136,7 +138,10 @@ export const Tutorial: React.FC<TutorialProps> = ({ isMobile = false }) => {
         // Small delay to ensure UI is rendered (especially for mobile menu)
         const timer = setTimeout(updatePosition, 100);
         
-        const handleResize = () => updatePosition();
+        const handleResize = () => {
+            updatePosition();
+            setViewportTick(t => t + 1);
+        };
         window.addEventListener('resize', handleResize);
         
         // Also listen for scroll on main containers if they exist
@@ -188,7 +193,7 @@ export const Tutorial: React.FC<TutorialProps> = ({ isMobile = false }) => {
             {position && <div style={style}></div>}
             <div 
                 ref={popoverRef}
-                style={{...popoverStyle, position: 'fixed', zIndex: 10001, width: popoverWidth, maxWidth: '90vw', maxHeight: 'calc(100vh - 16px)', overflowY: 'auto'}} 
+                style={{...popoverStyle, position: 'fixed', zIndex: 10001, width: popoverWidth, maxWidth: '90vw', maxHeight: window.innerHeight - 16, overflowY: 'auto'}} 
                 className="bg-gray-800 border border-indigo-500 rounded-lg shadow-2xl p-5 text-white transition-all duration-200"
             >
                 <h3 className="font-bold text-lg text-indigo-400 mb-2">{currentStep.title}</h3>

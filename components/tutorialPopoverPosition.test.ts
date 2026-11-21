@@ -19,6 +19,7 @@ describe('computePopoverPosition', () => {
         // 実測: 本文エリアが top=128 / bottom=1004 / vh=1080 → 旧実装は top=1016 で「次へ」が y=1203
         const p = computePopoverPosition({ ...base, placement: 'bottom', rect: rect(128, 0, 1024, 876), isMobile: true });
         expectInside(p);
+        expect(p.top).toBe(1080 - 8 - 200); // 反転できず画面下端に clamp
     });
 
     it('bottom: 下に余裕があれば対象の直下（rect.bottom + gap）に置く', () => {
@@ -85,5 +86,73 @@ describe('computePopoverPosition', () => {
         const a = computePopoverPosition({ ...base, placement: undefined, rect: rect(100, 100, 200, 100), isMobile: false });
         const b = computePopoverPosition({ ...base, placement: 'bottom', rect: rect(100, 100, 200, 100), isMobile: false });
         expect(a).toEqual(b);
+    });
+
+    // --- clamp に頼らない通常ケース（座標式そのものを検証） ---
+    it('right: clamp されない通常ケースは (rect.top, rect.right + gap)', () => {
+        const p = computePopoverPosition({ ...base, placement: 'right', rect: rect(100, 100, 200, 100), isMobile: false });
+        expect(p).toEqual({ top: 100, left: 312 });
+    });
+
+    it('left: clamp されない通常ケースは (rect.top, rect.left - width - gap)', () => {
+        const p = computePopoverPosition({ ...base, placement: 'left', rect: rect(100, 500, 200, 100), isMobile: false });
+        expect(p).toEqual({ top: 100, left: 188 });
+    });
+
+    it('bottom-end: clamp されない通常ケースは対象の右端に右揃え（rect.right - width）', () => {
+        const p = computePopoverPosition({ ...base, placement: 'bottom-end', rect: rect(100, 400, 400, 40), isMobile: true });
+        expect(p).toEqual({ top: 152, left: 500 });
+    });
+
+    it('bottom-end: 下に収まらず上に余裕があれば上へ反転する', () => {
+        const p = computePopoverPosition({ ...base, placement: 'bottom-end', rect: rect(700, 400, 300, 300), isMobile: true });
+        expect(p).toEqual({ top: 700 - 12 - 200, left: 700 - 300 });
+    });
+
+    // --- 反転条件の境界値（maxTop = 1080 - 8 - 200 = 872） ---
+    it('境界: 直下の top がちょうど maxTop なら反転しない', () => {
+        // rect.bottom = 860 → below = 872 (== maxTop)。反転すると 300 - 212 = 88 になるので 872 なら反転していない
+        const p = computePopoverPosition({ ...base, placement: 'bottom', rect: rect(300, 100, 200, 560), isMobile: false });
+        expect(p.top).toBe(872);
+    });
+
+    it('境界: 直下の top が maxTop + 1 なら上へ反転する', () => {
+        // rect.bottom = 861 → below = 873 (> 872)。上側は 300 - 212 = 88 ≥ 8 なので反転
+        const p = computePopoverPosition({ ...base, placement: 'bottom', rect: rect(300, 100, 200, 561), isMobile: false });
+        expect(p.top).toBe(88);
+    });
+
+    it('境界: 反転後の top がちょうど margin なら反転する', () => {
+        // rect.top = 220 → 220 - 212 = 8 (== margin)
+        const p = computePopoverPosition({ ...base, placement: 'bottom', rect: rect(220, 100, 200, 641), isMobile: false });
+        expect(p.top).toBe(8);
+    });
+
+    it('境界: 反転後の top が margin - 1 なら反転せず画面下端に clamp する', () => {
+        // rect.top = 219 → 219 - 212 = 7 (< margin)
+        const p = computePopoverPosition({ ...base, placement: 'bottom', rect: rect(219, 100, 200, 642), isMobile: false });
+        expect(p.top).toBe(872);
+    });
+
+    // --- 縦・横の clamp ---
+    it('right: rect.top が大きくても下端に clamp する', () => {
+        const p = computePopoverPosition({ ...base, placement: 'right', rect: rect(1000, 100, 200, 50), isMobile: false });
+        expect(p).toEqual({ top: 872, left: 312 });
+    });
+
+    it('top-start: 右寄りの対象でも右端に clamp する', () => {
+        const p = computePopoverPosition({ ...base, placement: 'top-start', rect: rect(100, 900, 100, 100), isMobile: false });
+        expect(p).toEqual({ top: 112, left: 716 });
+    });
+
+    it('境界: カードの幅が viewport より大きい場合 left は margin に一致する', () => {
+        const p = computePopoverPosition({ ...base, popoverWidth: 2000, viewportWidth: 500, placement: 'bottom', rect: rect(100, 100, 200, 100), isMobile: false });
+        expect(p.left).toBe(8);
+    });
+
+    it('境界: 狭い viewport（320px、カード幅 288）でも画面内に収まる', () => {
+        const o = { ...base, popoverWidth: 288, viewportWidth: 320, viewportHeight: 640 };
+        const p = computePopoverPosition({ ...o, placement: 'bottom', rect: rect(60, 0, 320, 560), isMobile: true });
+        expectInside(p, o);
     });
 });
