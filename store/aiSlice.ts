@@ -8,6 +8,9 @@ const initialState = {
     userInput: '',
     isLoading: false,
     aiSuggestions: { knowledge: [], plot: [] } as { knowledge: string[]; plot: PlotItem[] },
+    // 承認通信中のナレッジ提案(content)。コンポーネントの state ではなく store に置き、モバイルで右パネルが
+    // アンマウント→再マウントされても二重承認ガードとスピナー表示が失われないようにする
+    knowledgeApprovalInFlight: [] as string[],
     archivedKnowledgeSuggestions: [] as { id: string; content: string }[],
     archivedPlotSuggestions: [] as PlotItem[],
     generationMode: 'write' as 'write' | 'consult',
@@ -20,6 +23,7 @@ export interface AiSlice {
     userInput: string;
     isLoading: boolean;
     aiSuggestions: { knowledge: string[]; plot: PlotItem[] };
+    knowledgeApprovalInFlight: string[];
     archivedKnowledgeSuggestions: { id: string; content: string }[];
     archivedPlotSuggestions: PlotItem[];
     generationMode: 'write' | 'consult';

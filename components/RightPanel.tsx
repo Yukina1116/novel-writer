@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as Icons from '../icons';
 import { useStore } from '../store/index';
+import { createKnowledgeApprover } from './knowledgeApproval';
 import { renderMarkdown } from '../utils/sanitizeHtml';
 
 import { Tooltip } from './Tooltip';
@@ -64,6 +65,32 @@ const menuData = [
     }
 ];
 
+// ナレッジ提案の承認ロジックはモジュール単位で 1 つだけ持つ。モバイルは右パネルを閉じるとアンマウントされるため、
+// インスタンスごとに持つと通信中のガードとスピナー状態が失われ、開き直して再承認すると二重保存になる。
+const knowledgeApprover = createKnowledgeApprover({
+    generateName: async (sentence) => {
+        const { generateKnowledgeName } = await import('../utilityApi');
+        return generateKnowledgeName({ sentence });
+    },
+    saveKnowledge: (item) => useStore.getState().handleSaveSetting(item, 'knowledge'),
+    removeSuggestion: (suggestion) => {
+        useStore.setState(state => ({
+            aiSuggestions: {
+                ...state.aiSuggestions,
+                knowledge: state.aiSuggestions.knowledge.filter(s => s !== suggestion.content)
+            }
+        }));
+        if (suggestion.id) {
+            useStore.setState(state => ({
+                archivedKnowledgeSuggestions: state.archivedKnowledgeSuggestions.filter(s => s.id !== suggestion.id)
+            }));
+        }
+    },
+    onInFlightChange: (contents) => useStore.setState({ knowledgeApprovalInFlight: contents }),
+    notifyError: (message) => useStore.getState().showToast(message, 'error'),
+    notifyInfo: (message) => useStore.getState().showToast(message, 'info'),
+});
+
 // 提案履歴モーダルの定義
 const SuggestionHistoryModal: React.FC<{
     isOpen: boolean;
@@ -72,7 +99,7 @@ const SuggestionHistoryModal: React.FC<{
     onApproveKnowledge: (s: { id: string; content: string }) => Promise<void>;
     plotSuggestions: PlotItem[];
     onApprovePlot: (s: PlotItem, type: 'plot') => void;
-    loadingKnowledge: string | null;
+    loadingKnowledge: readonly string[];
     canUseAi: boolean;
     aiBlockedReason: string;
 }> = ({ isOpen, onClose, knowledgeSuggestions, onApproveKnowledge, plotSuggestions, onApprovePlot, loadingKnowledge, canUseAi, aiBlockedReason }) => {
@@ -93,11 +120,11 @@ const SuggestionHistoryModal: React.FC<{
                                     <p className="text-xs text-text-main flex-grow">{s.content}</p>
                                     <button
                                         onClick={() => onApproveKnowledge(s)}
-                                        disabled={!canUseAi || loadingKnowledge === s.content}
+                                        disabled={!canUseAi || loadingKnowledge.includes(s.content)}
                                         title={!canUseAi ? aiBlockedReason : undefined}
                                         className="flex-shrink-0 px-3 py-1 bg-accent text-white text-xs rounded hover:bg-accent/90 disabled:bg-text-muted disabled:cursor-not-allowed flex items-center justify-center min-w-[60px]"
                                     >
-                                        {loadingKnowledge === s.content ? <Icons.LoaderIcon className="h-3 w-3 animate-spin" /> : '採用する'}
+                                        {loadingKnowledge.includes(s.content) ? <Icons.LoaderIcon className="h-3 w-3 animate-spin" /> : '採用する'}
                                     </button>
                                 </div>
                             )) : <p className="text-xs text-text-muted text-center py-4">履歴はありません</p>}
@@ -171,7 +198,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({ userInputRef, isMobile =
     
     if (!activeProjectId) return null;
 
-    const [loadingKnowledge, setLoadingKnowledge] = useState<string | null>(null);
+    const loadingKnowledge = useStore(state => state.knowledgeApprovalInFlight);
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [isFeatureMenuOpen, setIsFeatureMenuOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
@@ -225,33 +252,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({ userInputRef, isMobile =
         }
     };
 
-    const handleApproveKnowledgeSuggestion = async (suggestion: { content: string, id?: string }) => {
-        setLoadingKnowledge(suggestion.content);
-        try {
-            const { generateKnowledgeName } = await import('../utilityApi');
-            const nameResult = await generateKnowledgeName({ sentence: suggestion.content });
-            if (nameResult.success === false) { 
-                handleSaveSetting({ name: suggestion.content, content: suggestion.content }, 'knowledge'); 
-            } else { 
-                handleSaveSetting({ name: nameResult.data.name, content: suggestion.content }, 'knowledge'); 
-            }
-    
-            useStore.setState(state => ({ 
-                aiSuggestions: { 
-                    ...state.aiSuggestions, 
-                    knowledge: state.aiSuggestions.knowledge.filter(s => s !== suggestion.content) 
-                } 
-            }));
-            if (suggestion.id) { 
-                useStore.setState(state => ({ 
-                    archivedKnowledgeSuggestions: state.archivedKnowledgeSuggestions.filter(s => s.id !== suggestion.id) 
-                })); 
-            }
-        } catch (error) {
-            console.error("Error approving knowledge suggestion:", error);
-            handleSaveSetting({ name: suggestion.content, content: suggestion.content }, 'knowledge');
-        } finally { setLoadingKnowledge(null); }
-    };
+    const handleApproveKnowledgeSuggestion = (suggestion: { content: string, id?: string }) =>
+        knowledgeApprover.approve(suggestion);
 
     const canUndo = historyTree.currentNodeId !== null && historyTree.nodes[historyTree.currentNodeId]?.parentId !== null;
     const canRedo = historyTree.currentNodeId !== null && (historyTree.nodes[historyTree.currentNodeId]?.childrenIds?.length || 0) > 0;
@@ -306,7 +308,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({ userInputRef, isMobile =
                                 {continuationChoices && continuationChoices.length === 0 && <div className="p-3 bg-gray-700/50 rounded-lg border border-indigo-500/50 my-4 text-center"><p className="text-sm text-gray-400 mb-3">すべての提案を却下しました。</p><button onClick={regenerateContinuations} disabled={!canUseAi || isLoading} title={!canUseAi ? aiBlockedReason : undefined} className="px-4 py-2 text-sm rounded-md btn-pressable btn-invert-indigo disabled:bg-gray-500 disabled:cursor-not-allowed">{isLoading ? '生成中...' : 'やり直す'}</button></div>}
                             </div>
                             {(aiSuggestions?.knowledge?.length > 0 || aiSuggestions?.plot?.length > 0) && <div className="p-4 border-t border-gray-700/50 max-h-64 overflow-y-auto flex-shrink-0 space-y-4">
-                                {aiSuggestions?.knowledge?.length > 0 && <div className="p-3 bg-gray-700/50 rounded-lg border border-yellow-500/50"><h4 className="text-sm font-semibold text-yellow-300 mb-3 flex items-center"><Icons.BrainCircuitIcon />AIからのナレッジ提案</h4><div className="space-y-2 max-h-32 overflow-y-auto pr-2">{aiSuggestions.knowledge.map((suggestion, index) => { const isThisLoading = loadingKnowledge === suggestion; return <div key={index} className="flex justify-between items-center bg-gray-800 p-2 rounded-md text-xs"><p className="text-gray-300 mr-2">{suggestion}</p><div className="flex-shrink-0">
+                                {aiSuggestions?.knowledge?.length > 0 && <div className="p-3 bg-gray-700/50 rounded-lg border border-yellow-500/50"><h4 className="text-sm font-semibold text-yellow-300 mb-3 flex items-center"><Icons.BrainCircuitIcon />AIからのナレッジ提案</h4><div className="space-y-2 max-h-32 overflow-y-auto pr-2">{aiSuggestions.knowledge.map((suggestion, index) => { const isThisLoading = loadingKnowledge.includes(suggestion); return <div key={index} className="flex justify-between items-center bg-gray-800 p-2 rounded-md text-xs"><p className="text-gray-300 mr-2">{suggestion}</p><div className="flex-shrink-0">
                                     <Tooltip helpId="apply_ai" placement="top">
                                         <button onClick={() => !isThisLoading && handleApproveKnowledgeSuggestion({ content: suggestion })} disabled={!canUseAi || isThisLoading} title={!canUseAi ? aiBlockedReason : undefined} className="px-2 py-1 rounded-md mr-2 font-semibold w-16 disabled:bg-gray-500 disabled:cursor-not-allowed flex justify-center items-center btn-pressable btn-invert-green">{isThisLoading ? <Icons.LoaderIcon className="h-4 w-4" /> : '承認'}</button>
                                     </Tooltip>
