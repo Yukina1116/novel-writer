@@ -105,9 +105,14 @@ describe('applyColorTag — 範囲未選択では本文を一切変更しない'
     expect(r!.newSelectionEnd).toBe(r!.newText.length);
   });
 
-  it('選択あり: 本文の途中の一部だけを包み、前後は変えない', () => {
+  it('選択あり: 本文の途中の一部だけを包み、前後は変えず、カーソルをタグ末尾（</c> の直後）に置く', () => {
     const r = applyColorTag({ text: '前の文。強調。後の文。', selectionStart: 4, selectionEnd: 7, color: '#3b82f6' });
     expect(r!.newText).toBe('前の文。<c:#3b82f6>強調。</c>後の文。');
+    // 末尾(newText.length)ではなく、タグの直後。続けて打つ文字は色の外に入る
+    const tagEnd = r!.newText.indexOf('</c>') + '</c>'.length;
+    expect(r!.newSelectionStart).toBe(tagEnd);
+    expect(r!.newSelectionEnd).toBe(tagEnd);
+    expect(tagEnd).toBeLessThan(r!.newText.length);
   });
 
   it('境界: 1 文字だけの選択でも包む（最小の範囲）', () => {
@@ -115,9 +120,12 @@ describe('applyColorTag — 範囲未選択では本文を一切変更しない'
     expect(r!.newText).toBe('a<c:#ef4444>b</c>c');
   });
 
-  it('境界: 逆向きの選択(start > end)も正規化して包む', () => {
-    const r = applyColorTag({ text: 'abc', selectionStart: 3, selectionEnd: 0, color: COLOR });
-    expect(r!.newText).toBe('<c:#ef4444>abc</c>');
+  it('境界: 逆向きの選択(start > end)も正規化して包み、カーソルもタグ末尾に置く（本文の途中）', () => {
+    const r = applyColorTag({ text: 'abcdef', selectionStart: 4, selectionEnd: 2, color: COLOR });
+    expect(r!.newText).toBe('ab<c:#ef4444>cd</c>ef');
+    const tagEnd = r!.newText.indexOf('</c>') + '</c>'.length;
+    expect(r!.newSelectionStart).toBe(tagEnd);
+    expect(r!.newSelectionEnd).toBe(tagEnd);
   });
 
   it('日本語の選択を正しく包む', () => {
