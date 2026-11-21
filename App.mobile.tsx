@@ -7,6 +7,7 @@ import { Tutorial } from './components/Tutorial';
 import { TutorialModeSelectionModal } from './components/TutorialModeSelectionModal';
 import { BackupWarningBanner } from './components/BackupWarningBanner';
 import { Footer } from './components/Footer';
+import { Toast } from './components/Toast';
 import { useStore } from './store/index';
 import { LeftPanel } from './components/LeftPanel';
 import { RightPanel } from './components/RightPanel';
@@ -171,6 +172,7 @@ const AppMobile: React.FC = () => {
             onTouchEnd={handleTouchEnd}
         >
             {/* アプリケーション機能に必要なオーバーレイコンポーネント */}
+            <Toast />
             <Tutorial isMobile={true} />
             <TutorialModeSelectionModal />
             <ModalManager displayMenuButtonRef={displayMenuButtonRef} isMobile={true} />
