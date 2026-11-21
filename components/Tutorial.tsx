@@ -1,9 +1,17 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 // FIX: The file 'store.ts' does not exist, changed import to 'store/index.ts'.
 import { useStore } from '../store/index';
 import * as Icons from '../icons';
+import { computePopoverPosition, type TutorialPlacement } from './tutorialPopoverPosition';
 
-const pcTutorialSteps = [
+interface TutorialStep {
+    title: string;
+    content: string;
+    targetId: string | null;
+    placement?: TutorialPlacement;
+}
+
+const pcTutorialSteps: TutorialStep[] = [
     {
         title: 'STEP1: プロジェクト画面へようこそ！',
         content: 'ここで物語のタイトルを決めたり、過去の作品を開いたりできます。まずは全体を見ていきましょう！',
@@ -46,7 +54,7 @@ const pcTutorialSteps = [
     },
 ];
 
-const mobileTutorialSteps = [
+const mobileTutorialSteps: TutorialStep[] = [
     {
         title: 'STEP1: 執筆画面へようこそ！',
         content: 'スマホでも快適に物語を執筆できます。まずは基本的な使い方を見ていきましょう！',
@@ -92,6 +100,8 @@ export const Tutorial: React.FC<TutorialProps> = ({ isMobile = false }) => {
     
     const [position, setPosition] = useState(null);
     const [style, setStyle] = useState({});
+    const popoverRef = useRef<HTMLDivElement>(null);
+    const [popoverHeight, setPopoverHeight] = useState(240);
 
     const steps = isMobile ? mobileTutorialSteps : pcTutorialSteps;
     const currentStep = steps[tutorialStep];
@@ -142,58 +152,28 @@ export const Tutorial: React.FC<TutorialProps> = ({ isMobile = false }) => {
     }, [isTutorialActive, tutorialStep, currentStep]);
     
 
+    // 実測したカード高さで clamp する（ステップごとに本文の行数が変わるため）
+    useLayoutEffect(() => {
+        const h = popoverRef.current?.offsetHeight;
+        if (h && h !== popoverHeight) setPopoverHeight(h);
+    });
+
     if (!isTutorialActive || !currentStep) return null;
 
-    // FIX: Changed type to `any` to resolve incorrect TypeScript errors about missing properties on `React.CSSProperties`.
-    const popoverStyle: any = {};
-    
     // Mobile specific adjustments
-    const popoverWidth = isMobile ? 300 : 320;
-    const maxWidth = isMobile ? '90vw' : '320px';
+    const popoverWidth = isMobile ? Math.min(300, window.innerWidth * 0.9) : 320;
 
-    if (position) {
-        const gap = 12;
-
-        switch (currentStep.placement) {
-            case 'right':
-                popoverStyle.top = `${position.top}px`;
-                popoverStyle.left = `${position.right + gap}px`;
-                break;
-            case 'left':
-                popoverStyle.top = `${position.top}px`;
-                popoverStyle.left = `${position.left - popoverWidth - gap}px`;
-                break;
-            case 'top':
-                popoverStyle.top = `${position.top - gap}px`;
-                popoverStyle.left = `${position.left}px`;
-                popoverStyle.transform = 'translateY(-100%)';
-                break;
-            case 'top-start':
-                popoverStyle.top = `${position.top + gap}px`;
-                popoverStyle.left = `${position.left + gap}px`;
-                break;
-            case 'bottom-end':
-                 popoverStyle.top = `${position.bottom + gap}px`;
-                 popoverStyle.right = `${window.innerWidth - position.right}px`;
-                 break;
-            case 'bottom':
-            default:
-                popoverStyle.top = `${position.bottom + gap}px`;
-                // Center align for mobile if possible, otherwise left align
-                if (isMobile) {
-                     popoverStyle.left = '50%';
-                     popoverStyle.transform = 'translateX(-50%)';
-                } else {
-                    popoverStyle.left = `${position.left}px`;
-                }
-                break;
-        }
-    } else {
-        // Center the popover if there's no target
-        popoverStyle.top = '50%';
-        popoverStyle.left = '50%';
-        popoverStyle.transform = 'translate(-50%, -50%)';
-    }
+    // カードは対象要素の位置ではなく viewport 内に収まる座標で配置する（対象が画面ほぼ全高でも「次へ」に届く）
+    const popoverPos = computePopoverPosition({
+        placement: currentStep.placement,
+        rect: position,
+        popoverWidth,
+        popoverHeight: popoverHeight,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        isMobile,
+    });
+    const popoverStyle = { top: `${popoverPos.top}px`, left: `${popoverPos.left}px` };
     
     const handleNext = () => {
         if (tutorialStep < steps.length - 1) {
@@ -207,7 +187,8 @@ export const Tutorial: React.FC<TutorialProps> = ({ isMobile = false }) => {
         <>
             {position && <div style={style}></div>}
             <div 
-                style={{...popoverStyle, position: 'fixed', zIndex: 10001, width: popoverWidth, maxWidth: maxWidth}} 
+                ref={popoverRef}
+                style={{...popoverStyle, position: 'fixed', zIndex: 10001, width: popoverWidth, maxWidth: '90vw'}} 
                 className="bg-gray-800 border border-indigo-500 rounded-lg shadow-2xl p-5 text-white transition-all duration-200"
             >
                 <h3 className="font-bold text-lg text-indigo-400 mb-2">{currentStep.title}</h3>
