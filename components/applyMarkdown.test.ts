@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyMarkdown } from './applyMarkdown';
+import { applyMarkdown, applyColorTag, hasSelection } from './applyMarkdown';
 
 describe('applyMarkdown — no selection (collapsed cursor)', () => {
   it('B with no selection inserts **** and places cursor between markers', () => {
@@ -68,52 +68,61 @@ describe('applyMarkdown — with selection (wrap, preserve inner)', () => {
   });
 });
 
-describe('applyMarkdown — color tag (opt-in placeholder)', () => {
-  const COLOR_PREFIX = '<c:#ef4444>';
-  const COLOR_SUFFIX = '</c>';
-
-  it('color with no selection inserts placeholder and collapses cursor to the end', () => {
-    const r = applyMarkdown({
-      text: '',
-      selectionStart: 0,
-      selectionEnd: 0,
-      prefix: COLOR_PREFIX,
-      suffix: COLOR_SUFFIX,
-      placeholder: 'テキスト',
-      shouldClearSelection: true,
-    });
-    expect(r.newText).toBe('<c:#ef4444>テキスト</c>');
-    expect(r.newSelectionStart).toBe(r.newText.length);
-    expect(r.newSelectionEnd).toBe(r.newText.length);
+describe('hasSelection', () => {
+  it('カーソルのみ(start === end)は選択なし', () => {
+    expect(hasSelection(0, 0)).toBe(false);
+    expect(hasSelection(5, 5)).toBe(false);
   });
 
-  it('color with selection wraps and collapses cursor to the end', () => {
-    const r = applyMarkdown({
-      text: 'hello',
-      selectionStart: 0,
-      selectionEnd: 5,
-      prefix: COLOR_PREFIX,
-      suffix: COLOR_SUFFIX,
-      placeholder: 'テキスト',
-      shouldClearSelection: true,
-    });
-    expect(r.newText).toBe('<c:#ef4444>hello</c>');
-    expect(r.newSelectionStart).toBe(r.newText.length);
-    expect(r.newSelectionEnd).toBe(r.newText.length);
+  it('境界: 1 文字の選択は選択あり。逆向き(start > end)も選択あり', () => {
+    expect(hasSelection(0, 1)).toBe(true);
+    expect(hasSelection(1, 0)).toBe(true);
+  });
+});
+
+describe('applyColorTag — 範囲未選択では本文を一切変更しない', () => {
+  const COLOR = '#ef4444';
+
+  it('REGRESSION: 選択なし(カーソルのみ)は null を返す（旧実装は先頭に「テキスト」入りのタグ 19 文字を挿入していた）', () => {
+    // 編集モードに入った直後はカーソルが先頭(0,0)。この状態で色ボタンを押しても何も挿入されない
+    expect(applyColorTag({ text: 'これは本文です。', selectionStart: 0, selectionEnd: 0, color: COLOR })).toBeNull();
   });
 
-  it('placeholder without shouldClearSelection pre-selects the placeholder for overwrite', () => {
-    const r = applyMarkdown({
-      text: 'a',
-      selectionStart: 1,
-      selectionEnd: 1,
-      prefix: '[',
-      suffix: ']',
-      placeholder: 'X',
-    });
-    expect(r.newText).toBe('a[X]');
-    expect(r.newSelectionStart).toBe(2);
-    expect(r.newSelectionEnd).toBe(3);
+  it('選択なし: カーソルが途中/末尾でも null', () => {
+    expect(applyColorTag({ text: 'abc', selectionStart: 1, selectionEnd: 1, color: COLOR })).toBeNull();
+    expect(applyColorTag({ text: 'abc', selectionStart: 3, selectionEnd: 3, color: COLOR })).toBeNull();
+  });
+
+  it('境界: 空文字 + カーソル 0 でも null（空のタグ対も作らない）', () => {
+    expect(applyColorTag({ text: '', selectionStart: 0, selectionEnd: 0, color: COLOR })).toBeNull();
+  });
+
+  it('選択あり: <c:色>選択文字</c> で包み、カーソルをタグ末尾に置く', () => {
+    const r = applyColorTag({ text: 'hello', selectionStart: 0, selectionEnd: 5, color: COLOR });
+    expect(r).not.toBeNull();
+    expect(r!.newText).toBe('<c:#ef4444>hello</c>');
+    expect(r!.newSelectionStart).toBe(r!.newText.length);
+    expect(r!.newSelectionEnd).toBe(r!.newText.length);
+  });
+
+  it('選択あり: 本文の途中の一部だけを包み、前後は変えない', () => {
+    const r = applyColorTag({ text: '前の文。強調。後の文。', selectionStart: 4, selectionEnd: 7, color: '#3b82f6' });
+    expect(r!.newText).toBe('前の文。<c:#3b82f6>強調。</c>後の文。');
+  });
+
+  it('境界: 1 文字だけの選択でも包む（最小の範囲）', () => {
+    const r = applyColorTag({ text: 'abc', selectionStart: 1, selectionEnd: 2, color: COLOR });
+    expect(r!.newText).toBe('a<c:#ef4444>b</c>c');
+  });
+
+  it('境界: 逆向きの選択(start > end)も正規化して包む', () => {
+    const r = applyColorTag({ text: 'abc', selectionStart: 3, selectionEnd: 0, color: COLOR });
+    expect(r!.newText).toBe('<c:#ef4444>abc</c>');
+  });
+
+  it('日本語の選択を正しく包む', () => {
+    const r = applyColorTag({ text: '日本語テスト', selectionStart: 3, selectionEnd: 6, color: COLOR });
+    expect(r!.newText).toBe('日本語<c:#ef4444>テスト</c>');
   });
 });
 

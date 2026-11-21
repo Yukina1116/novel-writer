@@ -7,7 +7,7 @@ import { renderMarkdown } from '../utils/sanitizeHtml';
 import * as Icons from '../icons';
 import { useStore } from '../store/index';
 import { Tooltip } from './Tooltip';
-import { applyMarkdown as applyMarkdownPure } from './applyMarkdown';
+import { applyMarkdown as applyMarkdownPure, hasSelection } from './applyMarkdown';
 
 // 執筆の世界観に合うプリセットカラー
 const PRESET_COLORS = [
@@ -190,7 +190,7 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
     const applyMarkdown = (
         prefix: string,
         suffix: string = prefix,
-        options: { placeholder?: string; shouldClearSelection?: boolean } = {}
+        options: { shouldClearSelection?: boolean } = {}
     ) => {
         if (!textareaRef.current) return;
 
@@ -206,7 +206,6 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
                 selectionEnd,
                 prefix,
                 suffix,
-                placeholder: options.placeholder,
                 shouldClearSelection: options.shouldClearSelection,
             });
 
@@ -226,6 +225,19 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
 
             return result.newText;
         });
+    };
+
+    // 色付けは「選択した範囲」にだけ適用する。選択がないときは本文を一切変更せず、理由をヒントで知らせる
+    // （旧実装は先頭に「テキスト」入りのタグを挿入し、気づかず保存されて本文に残った）。
+    // 戻り値: 適用できたら true、選択がなく何もしなかったら false
+    const applyColor = (color: string): boolean => {
+        if (!textareaRef.current) return false;
+        if (!hasSelection(textareaRef.current.selectionStart, textareaRef.current.selectionEnd)) {
+            useStore.getState().showToast('色を付ける文字を選択してから、色のボタンを押してください。', 'info');
+            return false;
+        }
+        applyMarkdown(`<c:${color}>`, '</c>', { shouldClearSelection: true });
+        return true;
     };
 
     const wrapperClassName = `relative group transition-all duration-300 ${isHighlighted ? 'bg-indigo-500/10' : ''} ${chunk.isPinned ? 'bg-yellow-500/10' : ''} rounded-md my-4 select-text`;
@@ -262,7 +274,7 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
                                         <button 
                                             onMouseDown={preventFocusLoss}
                                             onClick={() => {
-                                                applyMarkdown(`<c:${brushColor}>`, '</c>', { placeholder: 'テキスト', shouldClearSelection: true });
+                                                applyColor(brushColor);
                                                 setIsApplyPulseActive(false);
                                             }}
                                             className={`p-1.5 rounded hover:bg-gray-600 transition-all duration-300 flex items-center justify-center ${isApplyPulseActive ? 'animate-pulse-prompt' : ''}`}
@@ -307,7 +319,7 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
                                                     onMouseDown={preventFocusLoss}
                                                     onClick={() => {
                                                         setBrushColor(color);
-                                                        applyMarkdown(`<c:${color}>`, '</c>', { placeholder: 'テキスト', shouldClearSelection: true });
+                                                        applyColor(color);
                                                         setIsColorPaletteOpen(false);
                                                         setIsApplyPulseActive(false);
                                                     }}
@@ -328,7 +340,7 @@ export const EditableParagraph: React.FC<EditableParagraphProps> = React.memo(({
                                                         onMouseDown={preventFocusLoss}
                                                         onClick={() => {
                                                             setBrushColor(char.themeColor!);
-                                                            applyMarkdown(`<c:${char.themeColor}>`, '</c>', { placeholder: 'テキスト', shouldClearSelection: true });
+                                                            applyColor(char.themeColor!);
                                                             setIsColorPaletteOpen(false);
                                                             setIsApplyPulseActive(false);
                                                         }}
