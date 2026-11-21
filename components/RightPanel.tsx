@@ -88,6 +88,7 @@ const knowledgeApprover = createKnowledgeApprover({
     },
     onInFlightChange: (contents) => useStore.setState({ knowledgeApprovalInFlight: contents }),
     notifyError: (message) => useStore.getState().showToast(message, 'error'),
+    notifyInfo: (message) => useStore.getState().showToast(message, 'info'),
 });
 
 // 提案履歴モーダルの定義

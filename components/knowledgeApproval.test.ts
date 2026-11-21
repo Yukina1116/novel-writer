@@ -17,14 +17,16 @@ const setup = (generateName: (s: string) => Promise<NameResult>) => {
     const removed: string[] = [];
     const inFlightLog: string[][] = [];
     const errors: string[] = [];
+    const infos: string[] = [];
     const approver = createKnowledgeApprover({
         generateName,
         saveKnowledge: (item) => { saved.push(item); },
         removeSuggestion: (s) => { removed.push(s.content); },
         onInFlightChange: (keys) => { inFlightLog.push([...keys]); },
         notifyError: (message) => { errors.push(message); },
+        notifyInfo: (message) => { infos.push(message); },
     });
-    return { approver, saved, removed, inFlightLog, errors };
+    return { approver, saved, removed, inFlightLog, errors, infos };
 };
 
 const flush = () => new Promise(r => setTimeout(r, 0));
@@ -214,29 +216,32 @@ describe('createKnowledgeApprover', () => {
     describe('名前生成の期限（止まったリクエストでロックされたままにしない）', () => {
         afterEach(() => { vi.useRealTimers(); });
 
-        it('名前生成が期限内に返らなければ、保存せずにロックを解き、エラーを通知する（提案は残り再試行できる）', async () => {
+        it('名前生成が期限内に返らなければ、本文を名前にして 1 件保存し、情報を通知する（再試行は不要）', async () => {
             vi.useFakeTimers();
             const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
             const generateName = vi.fn(() => new Promise<NameResult>(() => {})); // 永久に返らない
-            const { approver, saved, removed, errors, inFlightLog } = setup(generateName);
+            const { approver, saved, removed, errors, infos, inFlightLog } = setup(generateName);
 
             const p = approver.approve({ content: '提案A' });
             expect(approver.isInFlight('提案A')).toBe(true);
             await vi.advanceTimersByTimeAsync(30_000);
             await p;
 
-            expect(saved).toEqual([]);
-            expect(removed).toEqual([]);
-            expect(errors).toHaveLength(1);
+            // 期限切れは他の失敗(success:false/例外)と同じフォールバック。再試行させない(再試行は別 requestId で二重課金になり得る)
+            expect(saved).toEqual([{ name: '提案A', content: '提案A' }]);
+            expect(removed).toEqual(['提案A']);
+            expect(generateName).toHaveBeenCalledTimes(1);
+            expect(infos).toHaveLength(1);
+            expect(errors).toEqual([]);
             expect(approver.isInFlight('提案A')).toBe(false);
             expect(inFlightLog[inFlightLog.length - 1]).toEqual([]);
             errorSpy.mockRestore();
         });
 
-        it('境界: 期限の 1ms 前に返れば通常どおり保存する（エラーなし）', async () => {
+        it('境界: 期限の 1ms 前に返れば通常どおり名前付きで保存する（通知なし・タイマーも残らない）', async () => {
             vi.useFakeTimers();
             const { generateName, pending } = deferredName();
-            const { approver, saved, errors } = setup(generateName);
+            const { approver, saved, errors, infos } = setup(generateName);
 
             const p = approver.approve({ content: '提案A' });
             await vi.advanceTimersByTimeAsync(29_999);
@@ -245,23 +250,23 @@ describe('createKnowledgeApprover', () => {
 
             expect(saved).toEqual([{ name: '名前A', content: '提案A' }]);
             expect(errors).toEqual([]);
+            expect(infos).toEqual([]);
             expect(vi.getTimerCount()).toBe(0); // 成功後に期限用タイマーが残らない
         });
 
-        it('境界: ちょうど期限で打ち切る', async () => {
+        it('境界: ちょうど期限で打ち切り、期限後に届いた応答は無視する（二重保存しない）', async () => {
             vi.useFakeTimers();
             const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
             const { generateName, pending } = deferredName();
-            const { approver, saved, errors } = setup(generateName);
+            const { approver, saved } = setup(generateName);
 
             const p = approver.approve({ content: '提案A' });
             await vi.advanceTimersByTimeAsync(30_000);
             await p;
-            pending[0].resolve({ success: true, data: { name: '遅れて到着' } }); // 期限後の応答は無視される
+            pending[0].resolve({ success: true, data: { name: '遅れて到着' } });
             await vi.advanceTimersByTimeAsync(0);
 
-            expect(saved).toEqual([]);
-            expect(errors).toHaveLength(1);
+            expect(saved).toEqual([{ name: '提案A', content: '提案A' }]); // 遅れて届いた名前では保存し直さない
             errorSpy.mockRestore();
         });
 
@@ -269,13 +274,13 @@ describe('createKnowledgeApprover', () => {
             vi.useFakeTimers();
             const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
             const generateName = vi.fn(() => new Promise<NameResult>(() => {}));
-            const errors: string[] = [];
+            const infos: string[] = [];
             const approver = createKnowledgeApprover({
                 generateName,
                 saveKnowledge: () => {},
                 removeSuggestion: () => {},
                 onInFlightChange: () => {},
-                notifyError: (m) => { errors.push(m); },
+                notifyInfo: (m) => { infos.push(m); },
                 nameTimeoutMs: 1_000,
             });
 
@@ -283,26 +288,25 @@ describe('createKnowledgeApprover', () => {
             await vi.advanceTimersByTimeAsync(1_000);
             await p;
 
-            expect(errors).toHaveLength(1);
+            expect(infos).toHaveLength(1);
             errorSpy.mockRestore();
         });
 
-        it('期限切れの後は同じ提案を再承認できる', async () => {
+        it('期限切れの後も in-flight が解放され、他の提案の承認に影響しない', async () => {
             vi.useFakeTimers();
             const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-            let call = 0;
-            const generateName = vi.fn((): Promise<NameResult> => {
-                call += 1;
-                return call === 1 ? new Promise<NameResult>(() => {}) : Promise.resolve({ success: true, data: { name: '再試行' } });
-            });
+            const generateName = vi.fn((sentence: string): Promise<NameResult> =>
+                sentence === '提案A' ? new Promise<NameResult>(() => {}) : Promise.resolve({ success: true, data: { name: 'NB' } }));
             const { approver, saved } = setup(generateName);
 
-            const first = approver.approve({ content: '提案A' });
+            const a = approver.approve({ content: '提案A' });
+            await approver.approve({ content: '提案B' }); // A が止まっていても B は通常どおり完了する
+            expect(approver.isInFlight('提案A')).toBe(true);
             await vi.advanceTimersByTimeAsync(30_000);
-            await first;
-            await approver.approve({ content: '提案A' });
+            await a;
 
-            expect(saved).toEqual([{ name: '再試行', content: '提案A' }]);
+            expect(approver.isInFlight('提案A')).toBe(false);
+            expect(saved.map(s => s.content).sort()).toEqual(['提案A', '提案B']);
             errorSpy.mockRestore();
         });
     });

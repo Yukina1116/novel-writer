@@ -20,8 +20,10 @@ export interface KnowledgeApproverDeps {
     onInFlightChange: (inFlightContents: string[]) => void;
     /** 保存などに失敗したとき、ユーザーに見える形で通知する（console のみの握りつぶしにしない） */
     notifyError?: (message: string) => void;
-    /** 名前生成の期限(ms)。既定 30 秒。超えたら承認を打ち切ってロックを解く */
+    /** 名前生成の期限(ms)。既定 30 秒。超えたら本文を名前にして保存し、ロックを解く */
     nameTimeoutMs?: number;
+    /** 失敗ではないがユーザーに知らせたいこと（期限切れで本文を名前にした、など）を通知する */
+    notifyInfo?: (message: string) => void;
 }
 
 const DEFAULT_NAME_TIMEOUT_MS = 30_000;
@@ -59,12 +61,13 @@ export const createKnowledgeApprover = (deps: KnowledgeApproverDeps) => {
                 if (result.success) name = result.data.name;
             } catch (error) {
                 if (error instanceof NameGenerationTimeoutError) {
-                    // 期限切れは承認の失敗として扱う（保存しない・提案は残す）。finally でロックを解くので再試行できる
-                    console.error('Knowledge name generation timed out');
-                    deps.notifyError?.('名前の生成がタイムアウトしました。もう一度お試しください。');
-                    return;
+                    // 期限切れも他の失敗と同じく本文を名前にして保存する。打ち切って再試行させると、サーバー側で
+                    // 元のリクエストが成功していた場合に別 requestId で二重課金になり得るため、再試行は求めない
+                    console.error('Knowledge name generation timed out; using the body as the name');
+                    deps.notifyInfo?.('名前の自動生成に時間がかかったため、本文を名前にして追加しました。');
+                } else {
+                    console.error('Error generating knowledge name:', error);
                 }
-                console.error('Error generating knowledge name:', error);
             }
             deps.saveKnowledge({ name, content: suggestion.content });
             deps.removeSuggestion(suggestion);
