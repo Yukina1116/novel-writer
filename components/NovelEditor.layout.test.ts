@@ -52,4 +52,12 @@ describe('NovelEditor bottom panel layout (small viewport height)', () => {
         // ボタン自体が入力パネル(#new-chunk-panel)より前にある（パネルの内側に入っていない）
         expect(source.indexOf('aria-label="一番下までスクロール"')).toBeLessThan(source.indexOf('id="new-chunk-panel"'));
     });
+    it('REGRESSION: 直接入力のテキストエリアは自動で伸びる高さに上限を設け、超えた分は内部スクロールにする（ボタン行を押し出さない）', () => {
+        // 上限がないと長文でテキストエリアが数千 px になり、「本文に追加」ボタンがパネル内スクロールの奥に隠れる
+        expect(source).toMatch(/NEW_CHUNK_TEXTAREA_MAX_HEIGHT_PX\s*=\s*\d+/);
+        expect(source).toMatch(/Math\.min\(\s*scrollHeight\s*,\s*NEW_CHUNK_TEXTAREA_MAX_HEIGHT_PX\s*\)/);
+        expect(classNameOf(/placeholder="ここに新しい段落/ ) ).toBeTruthy();
+        const textarea = source.slice(source.indexOf('ref={newChunkTextareaRef}'), source.indexOf('rows={3}'));
+        expect(textarea).toMatch(/overflow-y-auto/);
+    });
 });

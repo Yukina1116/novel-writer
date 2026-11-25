@@ -12,6 +12,9 @@ import {
     getChapterGroups,
 } from '../utils';
 
+// 「本文を直接入力」テキストエリアの自動伸長の上限(px)。パネル(max-h-96=384px)に「本文に追加」ボタン行が収まる高さ
+const NEW_CHUNK_TEXTAREA_MAX_HEIGHT_PX = 240;
+
 export const NovelEditor: React.FC = () => {
     const activeProjectId = useStore(state => state.activeProjectId);
     const novelContent = useStore(useShallow(state => activeProjectId ? state.allProjectsData[activeProjectId]?.novelContent : EMPTY_ARRAY));
@@ -51,7 +54,8 @@ export const NovelEditor: React.FC = () => {
         if (newChunkTextareaRef.current) {
             newChunkTextareaRef.current.style.height = 'auto';
             const scrollHeight = newChunkTextareaRef.current.scrollHeight;
-            newChunkTextareaRef.current.style.height = `${scrollHeight}px`;
+            // 上限を設けて超えた分は内部スクロールにする（無制限だと長文でボタン行がパネルスクロールの奥へ押し出される）
+            newChunkTextareaRef.current.style.height = `${Math.min(scrollHeight, NEW_CHUNK_TEXTAREA_MAX_HEIGHT_PX)}px`;
         }
     }, [newChunkText]);
     
@@ -188,7 +192,7 @@ export const NovelEditor: React.FC = () => {
                             onChange={(e) => setNewChunkText(e.target.value)}
                             onKeyDown={handleNewChunkKeyDown}
                             placeholder="ここに新しい段落を直接入力できます..."
-                            className={`w-full border rounded-md p-3 focus:ring-indigo-500 focus:border-indigo-500 resize-none transition-colors duration-300`}
+                            className={`w-full border rounded-md p-3 focus:ring-indigo-500 focus:border-indigo-500 resize-none overflow-y-auto transition-colors duration-300`}
                             style={{ ...contentStyles, color: newChunkInputTextColor, backgroundColor: 'rgba(128, 128, 128, 0.1)' }}
                             rows={3}
                         />
