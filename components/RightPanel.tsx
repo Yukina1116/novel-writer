@@ -11,6 +11,7 @@ import { useHorizontalResize } from '../hooks/useHorizontalResize';
 import { ChatMessage, PlotItem } from '../types';
 import { QuickSettingsArea } from './QuickSettingsArea';
 import { useRequiresAuth } from '../hooks/useRequiresAuth';
+import { AiLoginNotice } from './AiLoginNotice';
 
 interface RightPanelProps {
     userInputRef: React.RefObject<HTMLTextAreaElement>;
@@ -287,6 +288,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({ userInputRef, isMobile =
                             )}
                         </div>
                     </div>
+                    <AiLoginNotice isMobile={isMobile} />
                     <div ref={panelRef} className="flex-grow flex flex-col min-h-0">
                         <div className="flex-grow flex flex-col min-h-0">
                             <QuickSettingsArea />

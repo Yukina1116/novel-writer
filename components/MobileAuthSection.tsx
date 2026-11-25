@@ -1,6 +1,7 @@
 import React from 'react';
 import { useStore } from '../store/index';
 import { selectMobileAuthVariant } from './mobileAuthVariant';
+import { AI_LOGIN_HINT } from '../store/authConstants';
 
 export const MobileAuthSection: React.FC = () => {
     const authStatus = useStore(state => state.authStatus);
@@ -34,7 +35,7 @@ export const MobileAuthSection: React.FC = () => {
                     <span className="font-bold">Google でログイン</span>
                 </button>
                 <p className="mt-2 text-xs text-text-muted text-center">
-                    ログインすると AI 機能（小説生成・キャラクター作成など）が使えます
+                    {AI_LOGIN_HINT}
                 </p>
             </div>
         );
